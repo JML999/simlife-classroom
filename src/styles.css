@@ -91,6 +91,10 @@ th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--lin
 th { color: var(--muted); font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 td { font-variant-numeric: tabular-nums; }
 tbody tr:hover { background: rgba(238,239,229,.55); }
+.clickable-row { cursor: pointer; }
+.selected-row { cursor: pointer; background: var(--olive-pale); }
+.name-button { padding: 0; color: var(--ink); background: transparent; border: 0; border-radius: 2px; font-family: var(--sans); font-size: 12px; font-weight: 700; text-align: left; }
+.name-button:hover:not(:disabled) { color: var(--olive); background: transparent; border-color: transparent; transform: none; text-decoration: underline; text-underline-offset: 3px; }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--olive-dark); }
 
@@ -104,12 +108,14 @@ th.sortable:hover { color: var(--olive-dark); }
 .confirm { color: var(--ink); background: #f7f0df; border: 1px solid #d4bd80; }
 .confirm p { margin: 3px 0 12px; }
 .reversal-box { margin: 15px 0; padding: 14px; background: var(--rose-pale); border: 1px solid #dec0bb; border-radius: 9px; }
+.cash-panel { border-color: #c7c9b2; background: var(--olive-pale); }
 .login-box { width: min(520px, 100%); margin: 70px auto 0; padding: 26px; }
 .login-box > h2:first-child { font-size: 30px; }
 
 .drawer-overlay { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: flex-end; background: rgba(28,28,26,.42); backdrop-filter: blur(2px); }
 .drawer { width: min(610px, 100%); height: 100%; overflow-y: auto; padding: 28px; background: var(--paper); border-left: 1px solid var(--line-dark); box-shadow: -16px 0 50px rgba(28,28,26,.13); }
 .drawer > .row h2 { margin: 0; font-family: var(--serif); font-size: 30px; font-weight: 550; }
+.drawer table { min-width: 520px; }
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 12px 0; }
 .stat { padding: 11px; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 8px; }
 .stat .value { margin-top: 4px; font-family: var(--serif); font-size: 19px; font-weight: 550; }

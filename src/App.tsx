@@ -397,7 +397,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
 
   const openProfile = async (id: string) => {
     setProfileId(id); setProfile(null);
-    setSelected(roster.find((s) => s.id === id) ?? null); setConfirming(false);
+    setSelected(roster.find((s) => s.id === id) ?? null);
+    setConfirming(false); setDollars(""); setReason(""); setDirection("add");
     try { setProfile(await api(`/api/teacher/student?studentId=${id}`)); }
     catch (e: any) { setErr(e.message); }
   };
@@ -433,7 +434,12 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
       });
       setNotice(r.deduped ? "Already processed — duplicate ignored." : `Done. ${selected.name}'s simulated cash updated.`);
       cashKey.current = uid(); setConfirming(false); setDollars(""); setReason("");
-      load();
+      await load();
+      if (profileId === selected.id) {
+        const updated = await api<any>(`/api/teacher/student?studentId=${selected.id}`);
+        setProfile(updated);
+        setSelected((current: any) => current ? { ...current, cash_cents: updated.portfolio.cashCents } : current);
+      }
     } catch (e: any) {
       if (e instanceof ApiError) setErr(e.message); else setErr(String(e.message || e));
     } finally { setBusy(false); }
@@ -494,17 +500,17 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
 
       <div className="panel">
         <h2>Roster — simulated brokerage accounts</h2>
-        <p className="hint">Click a row for the student profile (logins, trades, history). Select a student below to adjust simulated cash.</p>
+        <p className="hint">Click a student to open their account profile, review activity, and adjust simulated cash.</p>
         <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
         <div className="table-wrap"><table>
-          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}<th></th></tr></thead>
+          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
           <tbody>
             {sorted.map((s) => {
               const ref = refById[s.id];
               const funded = ref && (ref.checking != null || ref.savings != null);
               return (
-                <tr key={s.id} style={selected?.id === s.id ? { background: "#eef6f3" } : { cursor: "pointer" }} onClick={() => openProfile(s.id)}>
-                  <td><strong>{s.name}</strong><br /><span className="small">{s.email || "no email yet"}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
+                <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
+                  <td><button className="name-button" onClick={(e) => { e.stopPropagation(); openProfile(s.id); }}>{s.name}</button><br /><span className="small">{s.email || "no email yet"}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
                   <td className="small">{s.class_name || "—"}</td>
                   <td>{money(s.cash_cents)}</td>
                   <td>{money(s.investedCents)}</td>
@@ -512,45 +518,12 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <td className={s.gainLossCents >= 0 ? "up" : "down"}>{money(s.gainLossCents)}</td>
                   <td>{s.trades}</td>
                   <td className="small">{fmtWhen(s.last_active_at)}</td>
-                  <td><button className="ghost" onClick={(e) => { e.stopPropagation(); setSelected(s); setConfirming(false); }}>Select</button></td>
                 </tr>
               );
             })}
           </tbody>
         </table></div>
       </div>
-
-      {selected && (
-        <div className="panel">
-          <h2>Adjust cash — {selected.name} (simulated)</h2>
-          <p className="hint">Current simulated cash: {money(selected.cash_cents)}. Removing cash never sells shares — if cash is short, the student must sell first.</p>
-          <div className="row">
-            <div className="field"><label>Add or remove</label>
-              <select value={direction} onChange={(e) => setDirection(e.target.value as any)}>
-                <option value="add">Add cash</option>
-                <option value="remove">Remove cash</option>
-              </select>
-            </div>
-            <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => setDollars(e.target.value)} placeholder="50.00" inputMode="decimal" /></div>
-          </div>
-          <div className="field" style={{ marginTop: 8 }}>
-            <label>Reason (required — shown to the student and in the audit log)</label>
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="e.g. Transferred from ClassBank per student's signed slip." />
-          </div>
-          {!confirming
-            ? <div className="row" style={{ marginTop: 8 }}><button disabled={!dollars || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review {direction === "add" ? "deposit" : "withdrawal"}</button></div>
-            : (
-              <div className="confirm">
-                <p><strong>Confirm:</strong> {direction === "add" ? "add" : "remove"} <strong>{money(Math.round(Number(dollars || 0) * 100))}</strong> of simulated cash {direction === "add" ? "to" : "from"} <strong>{selected.name}</strong>?</p>
-                <p className="small">Reason: {reason}</p>
-                <div className="row">
-                  <button disabled={busy} onClick={submitCash}>Yes, record it</button>
-                  <button className="ghost" onClick={() => setConfirming(false)}>Cancel</button>
-                </div>
-              </div>
-            )}
-        </div>
-      )}
 
       <div className="panel">
         <div className="panel-heading"><div><h2>Audit history</h2><p className="hint">Complete record for {classId ? "this class" : "all students"}. Open this only when you need to investigate or reverse an entry.</p></div><button className="ghost" onClick={() => setAuditOpen((v) => !v)}>{auditOpen ? "Hide audit" : `Open audit (${audit.length})`}</button></div>
@@ -603,6 +576,18 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <div className="stat"><div className="label">Cash added</div><div className="value">{money(profile.totals?.added ?? 0)}</div></div>
                   <div className="stat"><div className="label">Cash removed</div><div className="value">{money(profile.totals?.removed ?? 0)}</div></div>
                 </div>
+                {selected && <div className="panel cash-panel">
+                  <h2>Adjust simulated cash</h2>
+                  <p className="hint">Current cash: {money(profile.portfolio.cashCents)}. Removing cash never sells shares; if cash is short, the student must sell first.</p>
+                  <div className="row">
+                    <div className="field"><label>Add or remove</label><select value={direction} onChange={(e) => { setDirection(e.target.value as any); setConfirming(false); }}><option value="add">Add cash</option><option value="remove">Remove cash</option></select></div>
+                    <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirming(false); }} placeholder="50.00" inputMode="decimal" /></div>
+                  </div>
+                  <div className="field" style={{ marginTop: 9 }}><label>Reason (required — student can see this)</label><textarea value={reason} onChange={(e) => { setReason(e.target.value); setConfirming(false); }} rows={2} placeholder="e.g. Transferred from ClassBank per student's signed slip." /></div>
+                  {!confirming
+                    ? <div className="row" style={{ marginTop: 9 }}><button disabled={!(Number(dollars) > 0) || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review {direction === "add" ? "deposit" : "withdrawal"}</button></div>
+                    : <div className="confirm"><p><strong>Confirm:</strong> {direction === "add" ? "add" : "remove"} <strong>{money(Math.round(Number(dollars) * 100))}</strong> {direction === "add" ? "to" : "from"} <strong>{selected.name}</strong>?</p><p className="small">Reason: {reason}</p><div className="row"><button disabled={busy} onClick={submitCash}>Yes, record it</button><button className="ghost" onClick={() => setConfirming(false)}>Cancel</button></div></div>}
+                </div>}
                 <div className="panel">
                   <h2>Activity</h2>
                   <p className="hint">
@@ -624,9 +609,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
-                <div className="row" style={{ marginTop: 12 }}>
-                  <button onClick={() => { setProfileId(null); setSelected(roster.find((s) => s.id === profileId) ?? null); }}>Adjust this student's cash ↓</button>
                 </div>
               </>
             )}
