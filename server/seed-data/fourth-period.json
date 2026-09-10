@@ -1,0 +1,32 @@
+{
+  "class": { "id": "class-p4-2026", "name": "4th Period — Personal Finance", "joinCode": "PERIOD4" },
+  "source": "Teacher-pasted ClassBank snapshot (Finance 3Upgrade plan), 2026-09-10. Amounts are reference only — brokerage accounts seed at $0 until student-reported investment values are approved.",
+  "resolved": {
+    "nameMapping": { "tj samuel": "Tremayne Samuel Jr. (roster; job matches: Stocking Team Associate)", "Zaniya Mills": "Za'Niya Mills (roster; job matches: Automotive Mechanic)", "Melvin Holmes": "Melvin Holmes III (roster)" },
+    "negativePolicy": "Ledger rejects negative cash; any approved starting amount floors at $0 with the ClassBank debt noted in the reason."
+  },
+  "pending": ["Serenity Harper (in job pool, missing from paste)", "2 registrar names unaccounted for (23 on roll, 21 known)", "Aviyonna Prince job mismatch: ClassBank says Accountant, August job pool says CNA — confirm.", "Leah Stewart identity still unconfirmed (3rd period)"],
+  "students": [
+    { "id": "p4-asia-copeland", "name": "Asia Copeland", "job": "Electrician", "checking": 3242, "savings": 698 },
+    { "id": "p4-aviyonna-prince", "name": "Aviyonna Prince", "job": "Accountant", "checking": 4053, "savings": 279, "note": "ClassBank job is Accountant; August pool says CNA — confirm." },
+    { "id": "p4-brianna-barnes", "name": "Brianna Barnes", "job": "HVAC Technician", "checking": 2494, "savings": 2494 },
+    { "id": "p4-cole-west", "name": "Cole West", "job": "Home-Health Physical Therapist", "checking": 5770, "savings": 0 },
+    { "id": "p4-djaylin-sharper", "name": "D'Jaylin Sharper", "job": "Aerospace Manufacturing Engineer", "checking": 5978, "savings": 0 },
+    { "id": "p4-jacoby-brown", "name": "Jacoby Brown", "job": "Cardiologist", "checking": 25826, "savings": 5969 },
+    { "id": "p4-jamicheal-peeks", "name": "Jamicheal Peeks", "job": "Paralegal", "checking": 2618, "savings": -150, "note": "Negative savings; floor at $0." },
+    { "id": "p4-jordan-collins", "name": "Jordan Collins", "job": "Manufacturing Welder", "checking": 1200, "savings": 0 },
+    { "id": "p4-jsean-stephens", "name": "J'Sean Stephens", "job": "Truck Driver", "checking": 2324, "savings": 712 },
+    { "id": "p4-keara-coleman", "name": "Ke'Ara Coleman", "job": "Plumber / Pipefitter", "checking": 1771, "savings": 0 },
+    { "id": "p4-knowledge-brown", "name": "Knowledge Brown", "job": "Lead Preschool Teacher", "checking": 1318, "savings": 584 },
+    { "id": "p4-loriyah-coston", "name": "Lo'Riyah Coston", "job": "Child Care Teacher", "checking": 1062, "savings": 1062 },
+    { "id": "p4-malachi-hill", "name": "Malachi Hill", "job": "Public Works Equipment Operator", "checking": 1394, "savings": 0 },
+    { "id": "p4-melvin-holmes", "name": "Melvin Holmes III", "job": "Farm Equipment Operator", "checking": 408, "savings": -963, "note": "Combined balance is -$555; floor at $0." },
+    { "id": "p4-rreyona-willis", "name": "R'Reyona Willis", "job": "Accountant", "checking": 4053, "savings": 0, "note": "New — not in August job pool (was in intake docs as roster match)." },
+    { "id": "p4-samijae-everett", "name": "Samijae Everett", "job": "Door Dash Driver", "checking": 462, "savings": 189, "note": "New — not in August job pool." },
+    { "id": "p4-shalanda-nixon", "name": "Shalanda Nixon", "job": "Accountant", "checking": 4382, "savings": 0 },
+    { "id": "p4-tremayne-samuel", "name": "Tremayne Samuel Jr.", "job": "Stocking Team Associate", "checking": 1093, "savings": 0, "note": "ClassBank lists 'tj samuel' — confirm same student." },
+    { "id": "p4-tommy-williams", "name": "Tommy Williams Jr.", "job": "USPS Mail Carrier", "checking": 1826, "savings": 538 },
+    { "id": "p4-zaniya-mills", "name": "Za'Niya Mills", "job": "Automotive Mechanic", "checking": 1593, "savings": -150, "note": "Negative savings; floor at $0." },
+    { "id": "p4-serenity-harper", "name": "Serenity Harper", "job": "Emergency Medical Technician", "checking": null, "savings": null, "note": "In job pool; missing from ClassBank paste — pending." }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "class": { "id": "class-p3-2026", "name": "3rd Period — Personal Finance", "joinCode": "PERIOD3" },
+  "source": "Teacher-pasted ClassBank snapshot (Finance 3Upgrade plan), 2026-09-10. Amounts are reference only — brokerage accounts seed at $0 until student-reported investment values are approved.",
+  "resolved": {
+    "tytianaAndJanya": "Confirmed third period (present in KJOM6Y data).",
+    "demarionDuplicate": "Seeded Fabricator account only ($2,050 checking / $1,500 savings); 'No jobs' row treated as stale duplicate.",
+    "nameMapping": { "Leah Stewart": "Daleah Stewart (roster)", "Jakarhi Hill": "Jakhari Hill (roster)", "Cam Samuel": "Cameron Samuel (roster)" },
+    "negativePolicy": "Ledger rejects negative cash; any approved starting amount floors at $0 with the ClassBank debt noted in the reason."
+  },
+  "pending": ["Jeremiah Henry (in job pool, missing from paste)", "2 registrar names unaccounted for (23 on roll, 21 known)"],
+  "students": [
+    { "id": "p3-aniya-bates", "name": "Aniya Bates", "job": "Communication Officer Trainee", "checking": 1442, "savings": 0 },
+    { "id": "p3-cameron-samuel", "name": "Cameron Samuel", "job": "Light Truck Driver", "checking": 1258, "savings": 0 },
+    { "id": "p3-christopher-tims", "name": "Christopher Tims", "job": "City Manager", "checking": 4706, "savings": 0 },
+    { "id": "p3-demarion-gilbert", "name": "De'Marion Gilbert", "job": "Fabricator", "checking": 2050, "savings": 1500 },
+    { "id": "p3-isaiah-palacios", "name": "Isaiah Palacios", "job": "Delivery Truck Driver", "checking": 2910, "savings": 0 },
+    { "id": "p3-jakhari-hill", "name": "Jakhari Hill", "job": "No jobs", "checking": 0, "savings": 0 },
+    { "id": "p3-janya-randall", "name": "Ja'Nya Randall", "job": "Manufacturing Welder", "checking": 2385, "savings": 0 },
+    { "id": "p3-jayden-jones", "name": "Jayden Jones", "job": "Supply Chain Technician", "checking": 1530, "savings": 0 },
+    { "id": "p3-jehniyah-wheeler", "name": "Jeh'Niyah Wheeler", "job": "Public Safety IT Support Specialist", "checking": 1840, "savings": 0 },
+    { "id": "p3-jmychael-robinson", "name": "J'Mychael Robinson", "job": "DoorDash Delivery Driver", "checking": 214, "savings": 214 },
+    { "id": "p3-jordin-hamm", "name": "Jordin Hamm", "job": "Automotive Sales Consultant", "checking": 2397, "savings": 0 },
+    { "id": "p3-kyland-butler", "name": "Ky'Land Butler", "job": "Lead Preschool Teacher", "checking": 1318, "savings": 951 },
+    { "id": "p3-leah-stewart", "name": "Leah Stewart", "job": "Restaurant Team Member", "checking": 786, "savings": 786, "note": "Roster lists Daleah Stewart — confirm same student." },
+    { "id": "p3-lemariah-johnson", "name": "Lemariah Johnson", "job": "Truck Driver", "checking": 2528, "savings": -672, "note": "Negative savings; floor at $0." },
+    { "id": "p3-lucas-barfield", "name": "Lucas Barfield", "job": "Utility Services Technician", "checking": 1417, "savings": -150, "note": "Negative savings; floor at $0." },
+    { "id": "p3-makhia-banks", "name": "Ma'Khia Banks", "job": "HVAC Tech", "checking": 1764, "savings": 0 },
+    { "id": "p3-princess-blake", "name": "Princess Blake", "job": "Emergency Medical Technician (EMT)", "checking": 1046, "savings": 0 },
+    { "id": "p3-teonni-bethea", "name": "Teonni Bethea", "job": "Welder", "checking": 1272, "savings": -150, "note": "Negative savings; floor at $0." },
+    { "id": "p3-tytiana-edwards", "name": "Ty'Tiana Edwards", "job": "Cashier", "checking": 1177, "savings": -150, "note": "Negative savings; floor at $0." },
+    { "id": "p3-zorriyah-mccoy", "name": "Zorriyah McCoy", "job": "Communication Officer Trainee", "checking": 1271, "savings": 1271, "note": "New — not in August job pool." },
+    { "id": "p3-jeremiah-henry", "name": "Jeremiah Henry", "job": "Plumber / Pipefitter", "checking": null, "savings": null, "note": "In job pool; missing from ClassBank paste — pending." }
+  ]
+}

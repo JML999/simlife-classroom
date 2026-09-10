@@ -1,0 +1,526 @@
+/**
+ * SimLife Investing API. One Express process serves /api and (in production)
+ * the built Vite app. Ports, cookie, database, and env vars are all
+ * SimLife-specific — nothing shared with CodeWorld.
+ */
+import "./env.js";
+import express from "express";
+import cookieParser from "cookie-parser";
+import path from "node:path";
+import fs from "node:fs";
+import { ROOT, validateProductionEnv } from "./env.js";
+import { initSchema, ensureColumn, dialect, one, q, run, newId, nowIso } from "./db.js";
+import { readSession, setSessionCookie, clearSessionCookie, requireAuth } from "./session.js";
+import {
+  verifyGoogleToken, isTeacherEmail, googleClientId, allowedDomain,
+  demoEnabled, normalizeJoinCode, validateJoinCode, generateJoinCode,
+} from "./auth.js";
+import {
+  adjustCash, reverseCash, buy, sell, holdingsFor, historyFor, checkInvariant,
+  LedgerError, MICRO,
+} from "./ledger.js";
+import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
+import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
+
+const PORT = Number(process.env["SIMLIFE_PORT"] || 4101);
+const app = express();
+app.use(express.json({ limit: "100kb" }));
+app.use(cookieParser());
+
+const quotes = makeQuoteProvider();
+
+// ---------- helpers ----------
+
+async function currentUser(req: express.Request) {
+  const s = readSession(req);
+  if (!s) return null;
+  const user = await one<{ id: string; email: string | null; name: string; role: string; class_id: string | null }>(
+    `SELECT id, email, name, role, class_id FROM users WHERE id = ?`, [s.userId],
+  );
+  if (!user) return null;
+  // Heartbeat: every authenticated request marks the account seen.
+  // Powers the teacher roster's "last active" column.
+  await run(`UPDATE users SET last_active_at = ? WHERE id = ?`, [nowIso(), user.id]).catch(() => {});
+  // Role is authoritative from the DB (set server-side at login).
+  return user;
+}
+
+/** Teacher authorization is checked against the database on every request.
+ * The cookie proves identity; it is not the source of truth for privileges. */
+async function requireCurrentTeacher(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    const user = await currentUser(req);
+    if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+    if (user.role !== "teacher") { res.status(403).json({ error: "Teacher access only." }); return; }
+    (req as any).currentUser = user;
+    next();
+  } catch (err) { next(err); }
+}
+
+async function tradingFrozenFor(userId: string): Promise<boolean> {
+  const row = await one<{ trading_frozen: number }>(
+    `SELECT c.trading_frozen AS trading_frozen FROM users u JOIN classes c ON c.id = u.class_id WHERE u.id = ?`,
+    [userId],
+  );
+  return (row?.trading_frozen ?? 0) === 1;
+}
+
+function ledgerError(res: express.Response, err: unknown) {
+  if (err instanceof LedgerError) {
+    const status =
+      err.code === "INSUFFICIENT_CASH" || err.code === "INSUFFICIENT_SHARES" ? 422
+      : err.code === "TRADING_FROZEN" ? 423
+      : err.code === "NOT_FOUND" ? 404
+      : 400;
+    res.status(status).json({ error: err.message, code: err.code });
+    return;
+  }
+  throw err;
+}
+
+// ---------- public ----------
+
+app.get("/api/health", async (_req, res) => {
+  try {
+    await one(`SELECT 1 AS ok`);
+    res.json({ ok: true, app: "simlife-investing", quotes: quotes.providerName });
+  } catch (e) {
+    res.status(503).json({ ok: false });
+  }
+});
+
+app.get("/api/auth/config", (_req, res) => {
+  res.json({
+    googleClientId: googleClientId(),
+    domain: allowedDomain(),
+    demoEnabled: demoEnabled(),
+  });
+});
+
+app.post("/api/auth/google", async (req, res) => {
+  const identity = await verifyGoogleToken(req.body?.credential);
+  if (!identity) { res.status(401).json({ error: "Google sign-in failed. Use your school account." }); return; }
+  const role = isTeacherEmail(identity.email) ? "teacher" : "student";
+  const now = nowIso();
+  let user = await one<{ id: string; role: string }>(`SELECT id, role FROM users WHERE google_sub = ?`, [identity.sub]);
+  if (!user) {
+    const byEmail = identity.email
+      ? await one<{ id: string }>(`SELECT id FROM users WHERE email = ?`, [identity.email])
+      : undefined;
+    const id = byEmail?.id ?? newId("u");
+    if (byEmail) {
+      await run(`UPDATE users SET google_sub = ?, name = ?, role = ?, last_active_at = ? WHERE id = ?`, [identity.sub, identity.name, role, now, id]);
+    } else {
+      await run(`INSERT INTO users (id, email, name, role, google_sub, created_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, identity.email, identity.name, role, identity.sub, now, now]);
+    }
+    user = { id, role };
+  } else if (user.role !== role) {
+    await run(`UPDATE users SET role = ? WHERE id = ?`, [role, user.id]);
+    user.role = role;
+  }
+  setSessionCookie(res, { userId: user.id, role: user.role as "student" | "teacher" });
+  res.json({ ok: true, role: user.role });
+});
+
+app.post("/api/auth/demo", async (req, res) => {
+  if (!demoEnabled()) { res.status(404).json({ error: "Not found." }); return; }
+  const id = String(req.body?.userId || "");
+  const user = await one<{ id: string; role: string; name: string }>(
+    `SELECT id, role, name FROM users WHERE id = ?`, [id],
+  );
+  if (!user || !(DEMO_IDS as readonly string[]).includes(id)) {
+    res.status(404).json({ error: "Unknown demo user." });
+    return;
+  }
+  await run(`UPDATE users SET last_active_at = ? WHERE id = ?`, [nowIso(), user.id]).catch(() => {});
+  setSessionCookie(res, { userId: user.id, role: user.role as "student" | "teacher" });
+  res.json({ ok: true, role: user.role, name: user.name });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+if (demoEnabled()) {
+  app.get("/api/demo/users", async (_req, res) => {
+    const users = await q<{ id: string; name: string; role: string }>(
+      `SELECT id, name, role FROM users WHERE id LIKE 'demo-%' ORDER BY id`,
+    );
+    res.json({ users });
+  });
+  // Demo-only price override ("what if it goes up?"). The mock provider is
+  // the only one that supports it; the cache is cleared so the next quote
+  // reflects the new price. Unreachable in production (404 like demo login).
+  app.post("/api/demo/quote", async (req, res) => {
+    const inner = quotes.provider;
+    if (inner.name !== "mock" || typeof (inner as any).setPrice !== "function") {
+      res.status(409).json({ error: "Price override needs the mock provider." });
+      return;
+    }
+    const cents = Math.round(Number(req.body?.priceCents));
+    if (!Number.isFinite(cents) || cents <= 0 || cents > 100000000) {
+      res.status(400).json({ error: "priceCents must be a positive integer of cents." });
+      return;
+    }
+    try {
+      const ticker = normalizeTicker(req.body?.ticker);
+      (inner as any).setPrice(ticker, cents);
+      quotes.clear();
+      const { quote } = await quotes.getQuote(ticker);
+      res.json({ ok: true, quote });
+    } catch (err) {
+      if (err instanceof QuoteError) { res.status(404).json({ error: err.message }); return; }
+      throw err;
+    }
+  });
+}
+
+// ---------- student ----------
+
+app.get("/api/me", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const cls = user.class_id
+    ? await one(`SELECT id, name, join_code, trading_frozen FROM classes WHERE id = ?`, [user.class_id])
+    : null;
+  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, class: cls });
+});
+
+app.post("/api/classes/join", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const code = normalizeJoinCode(req.body?.code);
+  if (!validateJoinCode(code)) { res.status(400).json({ error: "Enter the 4–12 character join code from your teacher." }); return; }
+  const cls = await one<{ id: string; name: string }>(`SELECT id, name FROM classes WHERE join_code = ?`, [code]);
+  if (!cls) { res.status(404).json({ error: "No class uses that code. Check with your teacher." }); return; }
+  await run(`UPDATE users SET class_id = ? WHERE id = ?`, [cls.id, user.id]);
+  res.json({ ok: true, class: cls });
+});
+
+app.get("/api/search", requireAuth, async (req, res) => {
+  const results = await quotes.search(String(req.query["q"] || ""));
+  res.json({ results, delayed: true });
+});
+
+app.get("/api/quotes", requireAuth, async (req, res) => {
+  try {
+    const { quote, cached } = await quotes.getQuote(String(req.query["symbol"] || ""));
+    res.json({ quote, cached, delayed: quote.delayed });
+  } catch (err) {
+    if (err instanceof QuoteError) {
+      const status = err.code === "NOT_FOUND" || err.code === "INVALID_TICKER" ? 404 : 503;
+      res.status(status).json({ error: err.message, code: err.code });
+      return;
+    }
+    throw err;
+  }
+});
+
+async function portfolioFor(userId: string) {
+  // Batch current prices (mock is sync-fast; live path is cached server-side).
+  const { holdings, cashCents } = await holdingsFor(userId, () => null);
+  let invested = 0;
+  let value = cashCents;
+  const enriched = [];
+  for (const h of holdings) {
+    let price: number | null = null;
+    try { price = (await quotes.getQuote(h.ticker)).quote.priceCents; } catch { price = null; }
+    const market = price == null ? h.costBasisCents : Math.round((h.qtyMicro * price) / MICRO);
+    invested += h.costBasisCents;
+    value += market;
+    enriched.push({ ...h, priceCents: price, marketCents: market, gainLossCents: market - h.costBasisCents });
+  }
+  const funding = await one<{ net_funding: number }>(
+    `SELECT COALESCE(SUM(CASE WHEN l.kind IN ('cash_adjust','cash_reversal') THEN l.amount_cents ELSE 0 END), 0) AS net_funding
+     FROM ledger l JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ?`,
+    [userId],
+  );
+  const unrealizedGainLoss = value - cashCents - invested;
+  const gainLoss = value - Number(funding?.net_funding ?? 0);
+  return {
+    cashCents,
+    investedCents: invested,
+    portfolioCents: value,
+    gainLossCents: gainLoss,
+    unrealizedGainLossCents: unrealizedGainLoss,
+    realizedGainLossCents: gainLoss - unrealizedGainLoss,
+    holdings: enriched,
+    quotesDelayed: true,
+    quoteSource: quotes.providerName,
+  };
+}
+
+app.get("/api/portfolio", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  res.json(await portfolioFor(user.id));
+});
+
+app.get("/api/history", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  res.json({ entries: await historyFor(user.id) });
+});
+
+app.post("/api/trades/buy", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers cannot trade." }); return; }
+  try {
+    const ticker = normalizeTicker(req.body?.ticker);
+    const { quote } = await quotes.getQuote(ticker);
+    const qtyMicro = req.body?.qtyMicro !== undefined ? Math.floor(Number(req.body.qtyMicro)) : undefined;
+    const dollarsCents = req.body?.dollarsCents !== undefined ? Math.floor(Number(req.body.dollarsCents)) : undefined;
+    const frozen = await tradingFrozenFor(user.id);
+    const r = await buy({
+      userId: user.id, ticker, qtyMicro, dollarsCents,
+      priceCents: quote.priceCents, quoteTs: quote.asOf, quoteSource: quote.source,
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+      tradingFrozen: frozen,
+    });
+    res.json({ ok: true, deduped: r.deduped, entry: r.entry, qtyMicro: r.qtyMicro, costCents: r.costCents, portfolio: await portfolioFor(user.id) });
+  } catch (err) {
+    if (err instanceof QuoteError) { res.status(err.code === "UNAVAILABLE" ? 503 : 404).json({ error: err.message, code: err.code }); return; }
+    ledgerError(res, err);
+  }
+});
+
+app.post("/api/trades/sell", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers cannot trade." }); return; }
+  try {
+    const ticker = normalizeTicker(req.body?.ticker);
+    const { quote } = await quotes.getQuote(ticker);
+    const frozen = await tradingFrozenFor(user.id);
+    const r = await sell({
+      userId: user.id, ticker,
+      qtyMicro: req.body?.qtyMicro !== undefined ? Math.floor(Number(req.body.qtyMicro)) : undefined,
+      sellAll: req.body?.sellAll === true,
+      priceCents: quote.priceCents, quoteTs: quote.asOf, quoteSource: quote.source,
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+      tradingFrozen: frozen,
+    });
+    res.json({ ok: true, deduped: r.deduped, entry: r.entry, qtyMicro: r.qtyMicro, proceedsCents: r.proceedsCents, portfolio: await portfolioFor(user.id) });
+  } catch (err) {
+    if (err instanceof QuoteError) { res.status(err.code === "UNAVAILABLE" ? 503 : 404).json({ error: err.message, code: err.code }); return; }
+    ledgerError(res, err);
+  }
+});
+
+// ---------- teacher ----------
+
+app.get("/api/teacher/roster", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "");
+  const students = await q(
+    `SELECT u.id, u.name, u.email, u.class_id, u.created_at, u.last_active_at,
+            c.name AS class_name, c.trading_frozen,
+            ac.id AS account_id, COALESCE(ac.cash_cents, 0) AS cash_cents
+     FROM users u LEFT JOIN classes c ON c.id = u.class_id
+     LEFT JOIN accounts ac ON ac.user_id = u.id
+     WHERE u.role = 'student' ${classId ? "AND u.class_id = ?" : ""}
+     ORDER BY u.name`,
+    classId ? [classId] : [],
+  );
+  // Batched enrichment: ONE aggregate query for every student's share legs
+  // (was: N sequential portfolio computations × several round-trips each —
+  // the lag when switching classes).
+  const acctIds = (students as any[]).map((s) => s.account_id).filter(Boolean);
+  let legs: any[] = [];
+  let fundingRows: any[] = [];
+  if (acctIds.length) {
+    const d = await dialect();
+    const where = d === "pg" ? `WHERE account_id = ANY(?)` : `WHERE account_id IN (${acctIds.map(() => "?").join(",")})`;
+    legs = await q(
+      `SELECT account_id, ticker,
+         COALESCE(SUM(CASE WHEN kind = 'buy' THEN qty_micro ELSE 0 END), 0) AS buy_qty,
+         COALESCE(SUM(CASE WHEN kind = 'buy' THEN -amount_cents ELSE 0 END), 0) AS buy_cost,
+         COALESCE(SUM(CASE WHEN kind = 'sell' THEN -qty_micro ELSE 0 END), 0) AS sell_qty,
+         COALESCE(SUM(CASE WHEN kind IN ('buy','sell') THEN 1 ELSE 0 END), 0) AS trades
+       FROM ledger ${where} AND ticker IS NOT NULL GROUP BY account_id, ticker`,
+      d === "pg" ? [acctIds] : acctIds,
+    );
+    fundingRows = await q(
+      `SELECT account_id, COALESCE(SUM(CASE WHEN kind IN ('cash_adjust','cash_reversal') THEN amount_cents ELSE 0 END), 0) AS net_funding
+       FROM ledger ${where} GROUP BY account_id`,
+      d === "pg" ? [acctIds] : acctIds,
+    );
+  }
+  const tickers = [...new Set(legs.map((l) => l.ticker))];
+  const prices = new Map<string, number>();
+  await Promise.all(tickers.map(async (t) => {
+    try { prices.set(t, (await quotes.getQuote(t)).quote.priceCents); } catch { /* unknown → basis */ }
+  }));
+  const byAccount = new Map<string, { invested: number; market: number }>();
+  const tradeCounts = new Map<string, number>();
+  for (const l of legs) {
+    tradeCounts.set(l.account_id, (tradeCounts.get(l.account_id) ?? 0) + Number(l.trades));
+  }
+  const fundingByAccount = new Map(fundingRows.map((r) => [r.account_id, Number(r.net_funding)]));
+  for (const l of legs) {
+    const remaining = Number(l.buy_qty) - Number(l.sell_qty);
+    if (remaining <= 0) continue;
+    const avgPerMicro = Number(l.buy_qty) > 0 ? Number(l.buy_cost) / Number(l.buy_qty) : 0;
+    const basis = Math.round(avgPerMicro * remaining);
+    const price = prices.get(l.ticker);
+    const market = price == null ? basis : Math.round((remaining * price) / MICRO);
+    const cur = byAccount.get(l.account_id) ?? { invested: 0, market: 0 };
+    cur.invested += basis; cur.market += market;
+    byAccount.set(l.account_id, cur);
+  }
+  const out = (students as any[]).map((s) => {
+    const agg = byAccount.get(s.account_id) ?? { invested: 0, market: 0 };
+    const portfolioCents = Number(s.cash_cents) + agg.market;
+    return {
+      ...s,
+      investedCents: agg.invested,
+      portfolioCents,
+      gainLossCents: portfolioCents - (fundingByAccount.get(s.account_id) ?? 0),
+      trades: tradeCounts.get(s.account_id) ?? 0,
+    };
+  });
+  res.json({ students: out });
+});
+
+app.get("/api/teacher/classes", requireCurrentTeacher, async (_req, res) => {
+  res.json({ classes: await q(`SELECT * FROM classes ORDER BY created_at`) });
+});
+
+app.post("/api/teacher/classes", requireCurrentTeacher, async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  if (name.length < 2 || name.length > 80) { res.status(400).json({ error: "Class name must be 2–80 characters." }); return; }
+  let code = normalizeJoinCode(req.body?.joinCode || generateJoinCode());
+  if (!validateJoinCode(code)) { res.status(400).json({ error: "Join code must be 4–12 letters/digits." }); return; }
+  const id = newId("cls");
+  try {
+    await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+      [id, name, code, nowIso()]);
+  } catch {
+    res.status(409).json({ error: "That join code is taken. Pick another." });
+    return;
+  }
+  res.json({ ok: true, class: { id, name, join_code: code } });
+});
+
+app.post("/api/teacher/freeze", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.body?.classId || "");
+  const frozen = req.body?.frozen === true ? 1 : 0;
+  const n = await run(`UPDATE classes SET trading_frozen = ? WHERE id = ?`, [frozen, classId]);
+  if (!n) { res.status(404).json({ error: "Class not found." }); return; }
+  res.json({ ok: true, frozen });
+});
+
+app.post("/api/teacher/cash", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try {
+    const studentId = String(req.body?.studentId || "");
+    const student = await one<{ id: string; role: string }>(`SELECT id, role FROM users WHERE id = ?`, [studentId]);
+    if (!student || student.role !== "student") { res.status(404).json({ error: "Student not found." }); return; }
+    const dollars = Number(req.body?.dollars);
+    if (!Number.isFinite(dollars) || dollars === 0 || Math.abs(dollars) > 100000) {
+      res.status(400).json({ error: "Enter a non-zero dollar amount (max $100,000)." });
+      return;
+    }
+    const amountCents = Math.round(dollars * 100);
+    const r = await adjustCash({
+      userId: studentId, actorId: teacher.userId, amountCents,
+      reason: String(req.body?.reason || ""),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    res.json({ ok: true, deduped: r.deduped, entry: r.entry, portfolio: await portfolioFor(studentId) });
+  } catch (err) { ledgerError(res, err); }
+});
+
+app.post("/api/teacher/cash/reverse", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try {
+    const r = await reverseCash({
+      entryId: String(req.body?.entryId || ""),
+      actorId: teacher.userId,
+      reason: String(req.body?.reason || ""),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    res.json({ ok: true, deduped: r.deduped, entry: r.entry });
+  } catch (err) { ledgerError(res, err); }
+});
+
+app.get("/api/teacher/audit", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "");
+  const studentId = String(req.query["studentId"] || "");
+  const rows = await q(
+    `SELECT l.*, u.name AS student_name, a.name AS actor_name
+     FROM ledger l
+     JOIN accounts ac ON ac.id = l.account_id
+     JOIN users u ON u.id = ac.user_id
+     LEFT JOIN users a ON a.id = l.actor_id
+     ${studentId ? "WHERE u.id = ?" : classId ? "WHERE u.class_id = ?" : "WHERE 1=1"}
+     ORDER BY l.created_at DESC LIMIT 500`,
+    studentId ? [studentId] : classId ? [classId] : [],
+  );
+  // SQLite quirk note (resolved): actor name comes from users.name via alias.
+  res.json({ entries: rows });
+});
+
+app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
+  const studentId = String(req.query["studentId"] || "");
+  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
+  if (!student) { res.status(404).json({ error: "Student not found." }); return; }
+  const counts = await q<{ kind: string; n: number }>(
+    `SELECT l.kind AS kind, COUNT(*) AS n FROM ledger l
+     JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ? GROUP BY l.kind`, [studentId],
+  );
+  const totals = await one<{ added: number; removed: number }>(
+    `SELECT COALESCE(SUM(CASE WHEN l.amount_cents > 0 AND l.kind IN ('cash_adjust','cash_reversal') THEN l.amount_cents ELSE 0 END), 0) AS added,
+            COALESCE(SUM(CASE WHEN l.amount_cents < 0 AND l.kind IN ('cash_adjust','cash_reversal') THEN -l.amount_cents ELSE 0 END), 0) AS removed
+     FROM ledger l JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ?`, [studentId],
+  );
+  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId) });
+});
+
+/** ClassBank reference snapshot (teacher-only): the pasted checking/savings
+ *  figures next to live brokerage balances, for approving starting amounts. */
+app.get("/api/teacher/reference", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "");
+  const file = classId === "class-p3-2026" ? "third-period.json" : classId === "class-p4-2026" ? "fourth-period.json" : null;
+  if (!file) { res.json({ students: [] }); return; }
+  try {
+    const raw = fs.readFileSync(path.join(ROOT, "server", "seed-data", file), "utf8");
+    const data = JSON.parse(raw);
+    res.json({ students: data.students });
+  } catch {
+    res.json({ students: [] });
+  }
+});
+
+// ---------- static (prod) ----------
+
+const dist = path.join(ROOT, "dist");
+if (fs.existsSync(path.join(dist, "index.html"))) {
+  app.use(express.static(dist));
+  app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
+}
+
+// ---------- boot ----------
+
+async function boot() {
+  validateProductionEnv();
+  await initSchema();
+  await ensureColumn("users", "last_active_at", "TEXT");
+  if (demoEnabled()) await ensureDemoUsers();
+  app.listen(PORT, "127.0.0.1", () => {
+    console.log(`[simlife] api on http://127.0.0.1:${PORT} (quotes: ${quotes.providerName})`);
+  });
+}
+
+// Friendlier audit SELECT: the LEFT JOIN alias above selects a.* name via subquery fallback.
+app.use(((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[simlife] error:", err);
+  res.status(500).json({ error: "Something went wrong. Try again." });
+}) as express.ErrorRequestHandler);
+
+boot().catch((err) => {
+  console.error("[simlife] boot failed:", err);
+  process.exit(1);
+});
