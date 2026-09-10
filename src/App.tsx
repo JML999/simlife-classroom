@@ -149,6 +149,10 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   const [buyDollars, setBuyDollars] = useState("");
   const [sellQty, setSellQty] = useState("");
   const [sellTicker, setSellTicker] = useState("");
+  const [expandedTicker, setExpandedTicker] = useState("");
+  const [portfolioQuery, setPortfolioQuery] = useState("");
+  const [portfolioSort, setPortfolioSort] = useState("value");
+  const [portfolioPage, setPortfolioPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   // One idempotency key per form submission; reused across retries.
@@ -218,6 +222,18 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   const frozen = me.class?.trading_frozen === 1;
   const gl = pf?.gainLossCents ?? 0;
   const holdingsMarketValue = pf?.holdings.reduce((sum, item) => sum + item.marketCents, 0) ?? 0;
+  const portfolioPageSize = 15;
+  const filteredHoldings = (pf?.holdings ?? [])
+    .filter((holding) => holding.ticker.toLowerCase().includes(portfolioQuery.trim().toLowerCase()))
+    .sort((a, b) => {
+      if (portfolioSort === "ticker") return a.ticker.localeCompare(b.ticker);
+      if (portfolioSort === "return") return (b.costBasisCents ? b.gainLossCents / b.costBasisCents : 0) - (a.costBasisCents ? a.gainLossCents / a.costBasisCents : 0);
+      if (portfolioSort === "return-low") return (a.costBasisCents ? a.gainLossCents / a.costBasisCents : 0) - (b.costBasisCents ? b.gainLossCents / b.costBasisCents : 0);
+      return b.marketCents - a.marketCents;
+    });
+  const portfolioPageCount = Math.max(1, Math.ceil(filteredHoldings.length / portfolioPageSize));
+  const currentPortfolioPage = Math.min(portfolioPage, portfolioPageCount);
+  const visibleHoldings = filteredHoldings.slice((currentPortfolioPage - 1) * portfolioPageSize, currentPortfolioPage * portfolioPageSize);
 
   return (
     <>
@@ -278,34 +294,52 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
           </div>
           {!pf?.holdings.length && <div className="portfolio-empty"><span>01</span><strong>Your portfolio is ready to begin.</strong><p>Look up a ticker and make your first simulated investment.</p></div>}
           {pf && pf.holdings.length > 0 && (
-            <div className="portfolio-list">
-              {pf.holdings.map((h) => {
+            <>
+              <div className="portfolio-tools">
+                <div className="field grow"><label htmlFor="portfolio-search">Find an investment</label><input id="portfolio-search" type="search" value={portfolioQuery} onChange={(e) => { setPortfolioQuery(e.target.value); setPortfolioPage(1); }} placeholder="Search ticker" /></div>
+                <div className="field"><label htmlFor="portfolio-sort">Sort by</label><select id="portfolio-sort" value={portfolioSort} onChange={(e) => { setPortfolioSort(e.target.value); setPortfolioPage(1); }}><option value="value">Largest position</option><option value="ticker">Ticker A–Z</option><option value="return">Best return</option><option value="return-low">Lowest return</option></select></div>
+              </div>
+              <div className="portfolio-column-heads" aria-hidden="true"><span>Investment</span><span>Value</span><span>Allocation</span><span>Return</span><span /></div>
+              <div className="portfolio-list">
+              {visibleHoldings.map((h) => {
                 const allocation = holdingsMarketValue > 0 ? (h.marketCents / holdingsMarketValue) * 100 : 0;
                 const returnPct = h.costBasisCents > 0 ? (h.gainLossCents / h.costBasisCents) * 100 : 0;
                 const selling = sellTicker === h.ticker;
-                return <article className="portfolio-item" key={h.ticker}>
-                  <div className="portfolio-item-head">
-                    <div><strong className="ticker">{h.ticker}</strong><span>{allocation.toFixed(1)}% of investments</span></div>
-                    <div className="holding-value"><strong>{money(h.marketCents)}</strong><span>current value</span></div>
-                  </div>
-                  <div className="allocation-track" aria-label={`${h.ticker} is ${allocation.toFixed(1)} percent of investments`}><span style={{ width: `${Math.max(2, allocation)}%` }} /></div>
-                  <div className="portfolio-metrics">
-                    <div><span>Shares</span><strong>{h.shares.toFixed(4)}</strong></div>
-                    <div><span>Avg. cost</span><strong>{money(h.avgCostCents)}</strong></div>
-                    <div><span>Current price</span><strong>{h.priceCents == null ? "—" : money(h.priceCents)}</strong></div>
-                    <div><span>Return</span><strong className={h.gainLossCents >= 0 ? "up" : "down"}>{money(h.gainLossCents)} <small>({returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%)</small></strong></div>
-                  </div>
-                  <div className="portfolio-actions">
-                    <button className="ghost" disabled={busy || frozen} onClick={() => { setSellTicker(selling ? "" : h.ticker); setSellQty(""); }}>{selling ? "Cancel" : "Sell shares"}</button>
-                    <button className="text-danger" disabled={busy || frozen} onClick={() => submitSell(h, true)}>Sell all</button>
-                  </div>
-                  {selling && <div className="inline-sell">
-                    <div className="field"><label htmlFor={`sell-${h.ticker}`}>How many shares?</label><input id={`sell-${h.ticker}`} value={sellQty} onChange={(e) => setSellQty(e.target.value)} placeholder={`Up to ${h.shares.toFixed(4)}`} inputMode="decimal" autoFocus /></div>
-                    <button disabled={busy || frozen || !(Number(sellQty) > 0) || Number(sellQty) > h.shares} onClick={() => submitSell(h, false)}>Sell shares</button>
+                const expanded = expandedTicker === h.ticker;
+                return <article className={`portfolio-item ${expanded ? "expanded" : ""}`} key={h.ticker}>
+                  <button className="portfolio-row-summary" aria-expanded={expanded} onClick={() => { setExpandedTicker(expanded ? "" : h.ticker); setSellTicker(""); setSellQty(""); }}>
+                    <span className="portfolio-identity"><strong className="ticker">{h.ticker}</strong><small>{h.shares.toFixed(4)} shares</small></span>
+                    <span className="portfolio-cell"><small>Value</small><strong>{money(h.marketCents)}</strong></span>
+                    <span className="portfolio-cell"><small>Allocation</small><strong>{allocation.toFixed(1)}%</strong></span>
+                    <span className={`portfolio-cell ${h.gainLossCents >= 0 ? "up" : "down"}`}><small>Return</small><strong>{returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%</strong></span>
+                    <span className="portfolio-chevron" aria-hidden="true">{expanded ? "−" : "+"}</span>
+                  </button>
+                  {expanded && <div className="portfolio-detail">
+                    <div className="allocation-track" aria-label={`${h.ticker} is ${allocation.toFixed(1)} percent of investments`}><span style={{ width: `${Math.max(2, allocation)}%` }} /></div>
+                    <div className="portfolio-metrics">
+                      <div><span>Shares owned</span><strong>{h.shares.toFixed(4)}</strong></div>
+                      <div><span>Average cost</span><strong>{money(h.avgCostCents)}</strong></div>
+                      <div><span>Current price</span><strong>{h.priceCents == null ? "—" : money(h.priceCents)}</strong></div>
+                      <div><span>Gain / loss</span><strong className={h.gainLossCents >= 0 ? "up" : "down"}>{money(h.gainLossCents)} <small>({returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%)</small></strong></div>
+                    </div>
+                    <div className="portfolio-actions">
+                      <button className="ghost" disabled={busy || frozen} onClick={() => { setSellTicker(selling ? "" : h.ticker); setSellQty(""); }}>{selling ? "Cancel" : "Sell shares"}</button>
+                      <button className="text-danger" disabled={busy || frozen} onClick={() => submitSell(h, true)}>Sell all</button>
+                    </div>
+                    {selling && <div className="inline-sell">
+                      <div className="field"><label htmlFor={`sell-${h.ticker}`}>How many shares?</label><input id={`sell-${h.ticker}`} value={sellQty} onChange={(e) => setSellQty(e.target.value)} placeholder={`Up to ${h.shares.toFixed(4)}`} inputMode="decimal" autoFocus /></div>
+                      <button disabled={busy || frozen || !(Number(sellQty) > 0) || Number(sellQty) > h.shares} onClick={() => submitSell(h, false)}>Sell shares</button>
+                    </div>}
                   </div>}
                 </article>;
               })}
-            </div>
+              </div>
+              {visibleHoldings.length === 0 && <div className="portfolio-no-results">No investments match “{portfolioQuery}.”</div>}
+              <div className="portfolio-footer">
+                <span>{filteredHoldings.length === 0 ? "0 investments" : `Showing ${(currentPortfolioPage - 1) * portfolioPageSize + 1}–${Math.min(currentPortfolioPage * portfolioPageSize, filteredHoldings.length)} of ${filteredHoldings.length}`}</span>
+                {portfolioPageCount > 1 && <div className="pagination"><button className="ghost" disabled={currentPortfolioPage === 1} onClick={() => { setPortfolioPage(currentPortfolioPage - 1); setExpandedTicker(""); }}>Previous</button><span>Page {currentPortfolioPage} of {portfolioPageCount}</span><button className="ghost" disabled={currentPortfolioPage === portfolioPageCount} onClick={() => { setPortfolioPage(currentPortfolioPage + 1); setExpandedTicker(""); }}>Next</button></div>}
+              </div>
+            </>
           )}
         </div>
       </div>
