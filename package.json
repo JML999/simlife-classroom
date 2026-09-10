@@ -11,7 +11,7 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
     "pretest": "node scripts/require-node.mjs",
-    "test": "node --import tsx --test server/ledger.test.ts server/trades.test.ts",
+    "test": "node --import tsx --test server/ledger.test.ts server/trades.test.ts server/quotes.test.ts",
     "seed": "tsx server/seed.ts",
     "seed:third": "tsx server/seed-third-period.ts",
     "seed:fourth": "tsx server/seed-fourth-period.ts"

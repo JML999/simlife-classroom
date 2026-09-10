@@ -12,7 +12,8 @@ brokerage connections, no investment advice, no real financial data collection.
   file, separate deployment, separate Supabase project.
 - After every milestone: `git -C ../codeworld diff -- codeworld` (run from the
   repo root as `git diff -- codeworld`) must show no changes.
-- Work stays in this folder on an experimental branch/worktree. No merges to main.
+- Work stays in this folder in its own Git repository. It is never merged into
+  or deployed through the CodeWorld repository.
 
 ## 1. What was adapted from CodeWorld (patterns only, no code copied)
 
@@ -40,7 +41,9 @@ brokerage connections, no investment advice, no real financial data collection.
    via `node:sqlite`) for development and tests. All SQL is written in a
    shared dialect subset (see §5) so both backends behave identically.
 3. **No AI tutor, no lessons, no grading.** Out of scope by design.
-4. **Own visual identity**: SimLife teal/pine palette, distinct from CodeWorld.
+4. **Shared design quality, separate product**: SimLife follows CodeWorld's warm
+   paper, serif, mono-accent design system while retaining finance-specific
+   account language and an always-visible simulation warning.
 
 ## 3. User roles
 
@@ -173,7 +176,8 @@ interface QuoteProvider {
 
 ## 10. Design language
 
-Clean, calm, student-friendly. Pine/teal SimLife identity. Always-visible
+Clean, calm, student-friendly. CodeWorld's warm paper/serif/mono family with
+restrained olive and rose finance accents. Always-visible
 "SIMULATED MONEY — for class only" banner. Key figures in plain order: Cash
 available, Amount invested, Portfolio value, Total gain/loss. No confetti, no
 alarms, no casino language, no rapid-trading prompts, no leaderboards.
