@@ -79,6 +79,8 @@ button.ghost { color: var(--olive-dark); background: transparent; border-color: 
 button.ghost:hover:not(:disabled) { color: var(--ink); background: var(--olive-pale); }
 button.danger { color: var(--down); background: transparent; border-color: #c79790; }
 button.danger-solid { color: #fff; background: var(--down); border-color: var(--down); }
+button.text-danger { color: var(--down); background: transparent; border-color: transparent; }
+button.text-danger:hover:not(:disabled) { color: #783b34; background: var(--rose-pale); border-color: transparent; }
 
 .pills { display: flex; gap: 7px; flex-wrap: wrap; margin: 0 0 7px; }
 .pill { padding: 7px 13px; color: var(--olive-dark); background: transparent; border-color: var(--line); border-radius: 999px; }
@@ -98,7 +100,28 @@ tbody tr:hover { background: rgba(238,239,229,.55); }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--olive-dark); }
 
-.sell-controls { display: grid; grid-template-columns: 1.3fr .8fr auto; align-items: end; gap: 9px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.portfolio-count { flex: none; padding: 6px 9px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.portfolio-empty { display: grid; min-height: 225px; place-content: center; text-align: center; color: var(--muted); }
+.portfolio-empty > span { margin-bottom: 12px; color: var(--line-dark); font-family: var(--serif); font-size: 34px; font-style: italic; }
+.portfolio-empty strong { color: var(--ink); font-family: var(--serif); font-size: 18px; font-weight: 550; }
+.portfolio-empty p { margin: 5px 0 0; font-size: 11px; }
+.portfolio-list { display: grid; gap: 10px; }
+.portfolio-item { padding: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.portfolio-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.portfolio-item-head > div { display: flex; flex-direction: column; gap: 2px; }
+.portfolio-item-head span, .holding-value span { color: var(--muted); font-size: 9px; }
+.ticker { font-family: var(--mono); font-size: 17px; font-weight: 500; letter-spacing: .06em; }
+.holding-value { text-align: right; }
+.holding-value strong { font-family: var(--serif); font-size: 20px; font-weight: 550; }
+.allocation-track { height: 3px; margin: 12px 0 14px; overflow: hidden; background: #deddd5; border-radius: 999px; }
+.allocation-track span { display: block; height: 100%; max-width: 100%; background: var(--olive); border-radius: inherit; }
+.portfolio-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.portfolio-metrics > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.portfolio-metrics span { color: var(--muted); font-family: var(--mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.portfolio-metrics strong { overflow-wrap: anywhere; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.portfolio-metrics small { font-size: 9px; font-weight: 500; }
+.portfolio-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); }
+.inline-sell { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; margin-top: 10px; padding: 12px; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 8px; }
 .small { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .kbd { padding: 2px 5px; background: var(--olive-pale); border-radius: 4px; font-family: var(--mono); }
 .error, .notice, .frozen, .confirm { margin-top: 12px; padding: 12px 14px; border-radius: 9px; font-size: 12px; line-height: 1.5; }
@@ -137,7 +160,8 @@ th.sortable:hover { color: var(--olive-dark); }
   .card { min-height: 105px; padding: 14px; }
   .card .value { font-size: 23px; }
   .panel { padding: 15px; }
-  .sell-controls { grid-template-columns: 1fr; }
+  .portfolio-metrics { grid-template-columns: 1fr 1fr; row-gap: 12px; }
+  .inline-sell { grid-template-columns: 1fr; }
   .roster-tools { align-items: flex-start; flex-direction: column; }
   .drawer { padding: 20px 14px; }
 }

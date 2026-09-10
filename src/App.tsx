@@ -217,6 +217,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
 
   const frozen = me.class?.trading_frozen === 1;
   const gl = pf?.gainLossCents ?? 0;
+  const holdingsMarketValue = pf?.holdings.reduce((sum, item) => sum + item.marketCents, 0) ?? 0;
 
   return (
     <>
@@ -270,34 +271,40 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
           )}
         </div>
 
-        <div className="panel">
-          <h2>Holdings (simulated)</h2>
-          <p className="hint">What you own right now, with gain or loss per holding.</p>
-          {!pf?.holdings.length && <p className="small">No holdings yet. Look up a ticker to buy your first simulated shares.</p>}
+        <div className="panel portfolio-panel">
+          <div className="panel-heading">
+            <div><h2>Portfolio</h2><p className="hint">A clear picture of what you own and how each investment is performing.</p></div>
+            {pf && pf.holdings.length > 0 && <span className="portfolio-count">{pf.holdings.length} investment{pf.holdings.length === 1 ? "" : "s"}</span>}
+          </div>
+          {!pf?.holdings.length && <div className="portfolio-empty"><span>01</span><strong>Your portfolio is ready to begin.</strong><p>Look up a ticker and make your first simulated investment.</p></div>}
           {pf && pf.holdings.length > 0 && (
-            <div className="table-wrap"><table>
-              <thead><tr><th>Ticker</th><th>Shares</th><th>Value</th><th>Gain/Loss</th><th></th></tr></thead>
-              <tbody>
-                {pf.holdings.map((h) => (
-                  <tr key={h.ticker}>
-                    <td><strong>{h.ticker}</strong><br /><span className="small">avg {money(h.avgCostCents)}/sh</span></td>
-                    <td>{h.shares.toFixed(4)}</td>
-                    <td>{money(h.marketCents)}</td>
-                    <td className={h.gainLossCents >= 0 ? "up" : "down"}>{money(h.gainLossCents)}</td>
-                    <td><button className="ghost" disabled={busy || frozen} onClick={() => submitSell(h, true)}>Sell all</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-          )}
-          {pf && pf.holdings.length > 0 && (
-            <div className="sell-controls">
-              <div className="field"><label>Investment</label><select value={sellTicker} onChange={(e) => setSellTicker(e.target.value)}><option value="">Choose a ticker</option>{pf.holdings.map((h) => <option key={h.ticker} value={h.ticker}>{h.ticker} · {h.shares.toFixed(4)} shares</option>)}</select></div>
-              <div className="field"><label>Shares to sell</label><input value={sellQty} onChange={(e) => setSellQty(e.target.value)} placeholder="0.25" inputMode="decimal" /></div>
-              <button disabled={busy || frozen || !sellTicker || !(Number(sellQty) > 0)} onClick={() => {
-                const holding = pf.holdings.find((h) => h.ticker === sellTicker);
-                if (holding) submitSell(holding, false);
-              }}>Sell selected shares</button>
+            <div className="portfolio-list">
+              {pf.holdings.map((h) => {
+                const allocation = holdingsMarketValue > 0 ? (h.marketCents / holdingsMarketValue) * 100 : 0;
+                const returnPct = h.costBasisCents > 0 ? (h.gainLossCents / h.costBasisCents) * 100 : 0;
+                const selling = sellTicker === h.ticker;
+                return <article className="portfolio-item" key={h.ticker}>
+                  <div className="portfolio-item-head">
+                    <div><strong className="ticker">{h.ticker}</strong><span>{allocation.toFixed(1)}% of investments</span></div>
+                    <div className="holding-value"><strong>{money(h.marketCents)}</strong><span>current value</span></div>
+                  </div>
+                  <div className="allocation-track" aria-label={`${h.ticker} is ${allocation.toFixed(1)} percent of investments`}><span style={{ width: `${Math.max(2, allocation)}%` }} /></div>
+                  <div className="portfolio-metrics">
+                    <div><span>Shares</span><strong>{h.shares.toFixed(4)}</strong></div>
+                    <div><span>Avg. cost</span><strong>{money(h.avgCostCents)}</strong></div>
+                    <div><span>Current price</span><strong>{h.priceCents == null ? "—" : money(h.priceCents)}</strong></div>
+                    <div><span>Return</span><strong className={h.gainLossCents >= 0 ? "up" : "down"}>{money(h.gainLossCents)} <small>({returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%)</small></strong></div>
+                  </div>
+                  <div className="portfolio-actions">
+                    <button className="ghost" disabled={busy || frozen} onClick={() => { setSellTicker(selling ? "" : h.ticker); setSellQty(""); }}>{selling ? "Cancel" : "Sell shares"}</button>
+                    <button className="text-danger" disabled={busy || frozen} onClick={() => submitSell(h, true)}>Sell all</button>
+                  </div>
+                  {selling && <div className="inline-sell">
+                    <div className="field"><label htmlFor={`sell-${h.ticker}`}>How many shares?</label><input id={`sell-${h.ticker}`} value={sellQty} onChange={(e) => setSellQty(e.target.value)} placeholder={`Up to ${h.shares.toFixed(4)}`} inputMode="decimal" autoFocus /></div>
+                    <button disabled={busy || frozen || !(Number(sellQty) > 0) || Number(sellQty) > h.shares} onClick={() => submitSell(h, false)}>Sell shares</button>
+                  </div>}
+                </article>;
+              })}
             </div>
           )}
         </div>
