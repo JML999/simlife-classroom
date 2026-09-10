@@ -231,6 +231,72 @@ export async function initSchema(): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_sl_ledger_account ON ledger(account_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS idx_sl_ledger_idem ON ledger(idempotency_key)`,
     `CREATE INDEX IF NOT EXISTS idx_sl_users_class ON users(class_id)`,
+    // ---- Banking subsystem (experiment/simlife-banking). Separate from the
+    // brokerage accounts/ledger above: bank money and brokerage money never
+    // share rows. Transfers touch both sides atomically (see server/bank.ts).
+    `CREATE TABLE IF NOT EXISTS bank_accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      checking_cents INTEGER NOT NULL DEFAULT 0,
+      savings_cents INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )`,
+    // Append-only bank journal. Each row carries signed checking + savings
+    // legs (a checking→savings transfer is one row: -x checking, +x savings).
+    // Invariant per user: checking == SUM(checking_leg), savings == SUM(savings_leg).
+    `CREATE TABLE IF NOT EXISTS bank_journal (
+      id TEXT PRIMARY KEY,
+      bank_account_id TEXT NOT NULL REFERENCES bank_accounts(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      checking_leg INTEGER NOT NULL DEFAULT 0,
+      savings_leg INTEGER NOT NULL DEFAULT 0,
+      memo TEXT,
+      actor_id TEXT,
+      idempotency_key TEXT UNIQUE,
+      related_id TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_bank_journal_acct ON bank_journal(bank_account_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_bank_journal_idem ON bank_journal(idempotency_key)`,
+    `CREATE TABLE IF NOT EXISTS bill_templates (
+      id TEXT PRIMARY KEY,
+      teacher_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      late_fee_cents INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS bills (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      template_id TEXT,
+      title TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      late_fee_cents INTEGER NOT NULL DEFAULT 0,
+      issued_at TEXT NOT NULL,
+      due_at TEXT NOT NULL,
+      paid_at TEXT,
+      payment_journal_id TEXT,
+      idempotency_key TEXT UNIQUE,
+      issued_by TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_bills_user ON bills(user_id, due_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_bills_idem ON bills(idempotency_key)`,
+    `CREATE TABLE IF NOT EXISTS income_postings (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      posted_at TEXT NOT NULL,
+      posted_by TEXT,
+      batch_id TEXT,
+      idempotency_key TEXT UNIQUE,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_income_user ON income_postings(user_id, posted_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_income_idem ON income_postings(idempotency_key)`,
   ];
   for (const s of stmts) await b.run(s);
 }
