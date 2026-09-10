@@ -19,6 +19,10 @@ import {
   adjustCash, reverseCash, buy, sell, holdingsFor, historyFor, checkInvariant,
   LedgerError, MICRO,
 } from "./ledger.js";
+import {
+  postIncome, transfer, payBill, createBillTemplate, issueIncomeBatch,
+  issueBillBatch, bankSummaryFor, checkBankInvariant, BankError,
+} from "./bank.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 
@@ -476,7 +480,7 @@ app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
             COALESCE(SUM(CASE WHEN l.amount_cents < 0 AND l.kind IN ('cash_adjust','cash_reversal') THEN -l.amount_cents ELSE 0 END), 0) AS removed
      FROM ledger l JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ?`, [studentId],
   );
-  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId) });
+  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId), bank: await bankSummaryFor(studentId), bankInvariant: await checkBankInvariant(studentId) });
 });
 
 /** ClassBank reference snapshot (teacher-only): the pasted checking/savings
@@ -492,6 +496,227 @@ app.get("/api/teacher/reference", requireCurrentTeacher, async (req, res) => {
   } catch {
     res.json({ students: [] });
   }
+});
+
+// ---------- banking (student) ----------
+
+function bankError(res: express.Response, err: unknown) {
+  if (err instanceof BankError) {
+    const status =
+      err.code === "INSUFFICIENT_FUNDS" ? 422
+      : err.code === "NOT_FOUND" ? 404
+      : err.code === "NOT_YOUR_BILL" ? 403
+      : 400;
+    res.status(status).json({ error: err.message, code: err.code });
+    return;
+  }
+  throw err;
+}
+
+app.get("/api/bank", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const bank = await bankSummaryFor(user.id);
+  const pf = await portfolioFor(user.id);
+  res.json({
+    checkingCents: bank.checkingCents,
+    savingsCents: bank.savingsCents,
+    bills: bank.bills,
+    recent: bank.recent,
+    brokerage: { cashCents: pf.cashCents, portfolioCents: pf.portfolioCents },
+  });
+});
+
+app.post("/api/bank/transfer", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers cannot move student money." }); return; }
+  try {
+    const dollars = Number(req.body?.dollars);
+    if (!Number.isFinite(dollars) || dollars <= 0) {
+      res.status(400).json({ error: "Enter a positive dollar amount." });
+      return;
+    }
+    const r = await transfer({
+      userId: user.id,
+      from: req.body?.from,
+      to: req.body?.to,
+      amountCents: Math.round(dollars * 100),
+      memo: String(req.body?.memo || ""),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    const bank = await bankSummaryFor(user.id);
+    res.json({ ok: true, deduped: r.deduped, entry: r.entry, bank });
+  } catch (err) { bankError(res, err); }
+});
+
+app.post("/api/bank/bills/:id/pay", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers cannot pay student bills." }); return; }
+  try {
+    const r = await payBill({
+      userId: user.id, billId: String(req.params.id),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    const bank = await bankSummaryFor(user.id);
+    res.json({ ok: true, deduped: r.deduped, totalCents: r.totalCents, bank });
+  } catch (err) { bankError(res, err); }
+});
+
+// ---------- banking (teacher) ----------
+
+/** Resolve + validate the student set for a class-scoped batch. */
+async function batchStudents(classId: string, studentIds: unknown): Promise<{ id: string; name: string }[]> {
+  if (!classId) throw new BankError("INVALID_INPUT", "Choose a class first.");
+  const cls = await one(`SELECT id FROM classes WHERE id = ?`, [classId]);
+  if (!cls) throw new BankError("NOT_FOUND", "Class not found.");
+  const all = await q<{ id: string; name: string }>(
+    `SELECT id, name FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId],
+  );
+  if (studentIds === undefined || studentIds === null || studentIds === "") return all;
+  if (!Array.isArray(studentIds) || !studentIds.length) {
+    throw new BankError("EMPTY_BATCH", "Nothing selected — pick at least one student.");
+  }
+  const set = new Set(all.map((s) => s.id));
+  const picked = all.filter((s) => (studentIds as unknown[]).includes(s.id));
+  if (picked.length !== (studentIds as unknown[]).length) {
+    throw new BankError("NOT_FOUND", "One or more selected students are not in this class.");
+  }
+  void set;
+  return picked;
+}
+
+app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "");
+  const where = classId ? "AND u.class_id = ?" : "";
+  const params = classId ? [classId] : [];
+  const rows = await q(
+    `SELECT u.id, u.name, u.class_id, c.name AS class_name,
+            COALESCE(b.checking_cents, 0) AS checking_cents,
+            COALESCE(b.savings_cents, 0) AS savings_cents,
+            COALESCE(a.cash_cents, 0) AS brokerage_cents,
+            (SELECT COUNT(*) FROM bills bl WHERE bl.user_id = u.id AND bl.paid_at IS NULL) AS bills_due,
+            (SELECT COUNT(*) FROM bills bl WHERE bl.user_id = u.id AND bl.paid_at IS NULL AND bl.due_at < ?) AS bills_late
+     FROM users u LEFT JOIN classes c ON c.id = u.class_id
+     LEFT JOIN bank_accounts b ON b.user_id = u.id
+     LEFT JOIN accounts a ON a.user_id = u.id
+     WHERE u.role = 'student' ${where}
+     ORDER BY u.name`,
+    [nowIso(), ...params],
+  );
+  res.json({ students: rows });
+});
+
+app.post("/api/teacher/income/preview", requireCurrentTeacher, async (req, res) => {
+  try {
+    const dollars = Number(req.body?.dollars);
+    if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+      res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
+      return;
+    }
+    const label = String(req.body?.label || "").trim();
+    if (label.length < 2) { res.status(400).json({ error: "Give the deposit a short label." }); return; }
+    const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
+    const cents = Math.round(dollars * 100);
+    res.json({ students, perStudentCents: cents, totalCents: cents * students.length, count: students.length });
+  } catch (err) { bankError(res, err); }
+});
+
+app.post("/api/teacher/income/issue", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try {
+    const dollars = Number(req.body?.dollars);
+    if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+      res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
+      return;
+    }
+    const label = String(req.body?.label || "").trim();
+    if (label.length < 2) { res.status(400).json({ error: "Give the deposit a short label." }); return; }
+    const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
+    const batchId = String(req.body?.batchId || "");
+    if (!batchId) { res.status(400).json({ error: "Batch id is required (prevents double-posting)." }); return; }
+    const cents = Math.round(dollars * 100);
+    const r = await issueIncomeBatch({
+      actorId: teacher.userId, batchId,
+      items: students.map((s) => ({ userId: s.id, label, amountCents: cents })),
+    });
+    res.json({ ok: true, posted: r.posted, batchId: r.batchId, count: students.length, totalCents: cents * r.posted });
+  } catch (err) { bankError(res, err); }
+});
+
+app.get("/api/teacher/bills/templates", requireCurrentTeacher, async (_req, res) => {
+  res.json({ templates: await q(`SELECT * FROM bill_templates ORDER BY created_at DESC`) });
+});
+
+app.post("/api/teacher/bills/templates", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try {
+    const dollars = Number(req.body?.dollars);
+    if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+      res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
+      return;
+    }
+    const feeDollars = req.body?.lateFeeDollars === undefined || req.body?.lateFeeDollars === "" ? 0 : Number(req.body.lateFeeDollars);
+    if (!Number.isFinite(feeDollars) || feeDollars < 0 || feeDollars > 10000) {
+      res.status(400).json({ error: "Late fee must be $0–$10,000." });
+      return;
+    }
+    const r = await createBillTemplate({
+      teacherId: teacher.userId,
+      title: String(req.body?.title || ""),
+      amountCents: Math.round(dollars * 100),
+      lateFeeCents: Math.round(feeDollars * 100),
+      description: String(req.body?.description || ""),
+    });
+    res.json({ ok: true, id: r.id });
+  } catch (err) { bankError(res, err); }
+});
+
+function parseBillForm(body: any) {
+  const dollars = Number(body?.dollars);
+  if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+    throw new BankError("INVALID_INPUT", "Enter a positive dollar amount (max $100,000).");
+  }
+  const feeDollars = body?.lateFeeDollars === undefined || body?.lateFeeDollars === "" ? 0 : Number(body.lateFeeDollars);
+  if (!Number.isFinite(feeDollars) || feeDollars < 0 || feeDollars > 10000) {
+    throw new BankError("INVALID_INPUT", "Late fee must be $0–$10,000.");
+  }
+  const title = String(body?.title || "").trim();
+  if (title.length < 2) throw new BankError("INVALID_INPUT", "Give the bill a short title.");
+  const dueAt = String(body?.dueAt || "");
+  if (!dueAt || isNaN(new Date(dueAt).getTime())) throw new BankError("INVALID_INPUT", "Pick a valid due date.");
+  return { title, cents: Math.round(dollars * 100), feeCents: Math.round(feeDollars * 100), dueAt };
+}
+
+app.post("/api/teacher/bills/preview", requireCurrentTeacher, async (req, res) => {
+  try {
+    const form = parseBillForm(req.body);
+    const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
+    res.json({
+      students, perStudentCents: form.cents, totalCents: form.cents * students.length,
+      count: students.length, title: form.title, dueAt: form.dueAt, lateFeeCents: form.feeCents,
+    });
+  } catch (err) { bankError(res, err); }
+});
+
+app.post("/api/teacher/bills/issue", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try {
+    const form = parseBillForm(req.body);
+    const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
+    const batchId = String(req.body?.batchId || "");
+    if (!batchId) { res.status(400).json({ error: "Batch id is required (prevents double-issuing)." }); return; }
+    const templateId = req.body?.templateId ? String(req.body.templateId) : null;
+    const r = await issueBillBatch({
+      issuedBy: teacher.userId, batchId,
+      items: students.map((s) => ({
+        userId: s.id, title: form.title, amountCents: form.cents,
+        lateFeeCents: form.feeCents, dueAt: form.dueAt, templateId,
+      })),
+    });
+    res.json({ ok: true, issued: r.issued, batchId: r.batchId, totalCents: form.cents * r.issued });
+  } catch (err) { bankError(res, err); }
 });
 
 // ---------- static (prod) ----------
