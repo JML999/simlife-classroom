@@ -185,3 +185,15 @@ th.sortable:hover { color: var(--olive-dark); }
 }
 @media (max-width: 400px) { .cards, .stat-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+.section-tabs { margin-bottom: 4px; }
+.investing-section { display: contents; }
+.mailbox { display: flex; flex-direction: column; gap: 10px; }
+.bill-card { background: var(--panel-strong, #fff); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.bill-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.badge-due, .badge-late, .badge-paid {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid; white-space: nowrap;
+}
+.badge-due { color: #6d5210; border-color: #e3cf8a; background: #fdf3d7; }
+.badge-late { color: #7c2d22; border-color: #e5b3ab; background: #fbeae7; }
+.badge-paid { color: var(--pine-dark, #0a463f); border-color: #bcd8d0; background: #e3f2ee; }
