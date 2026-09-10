@@ -34,12 +34,13 @@ a `node:sqlite` file fallback for offline dev. No ORM.
   `accounts.cash_cents`. Invariant `cash == SUM(amount)`. Idempotency keys
   (UNIQUE). Teacher removals/reversals never go negative — 422 with "sell
   first" message. Average-cost basis. **Do not alter accounting semantics
-  without running `npm test` (15 tests must stay green).**
+  without running `npm test` (18 tests must stay green).**
 - Quotes (`server/quotes.ts`): `QuoteProvider` interface; `MockQuoteProvider`
   default; `StooqQuoteProvider` opt-in via `SIMLIFE_QUOTE_PROVIDER=stooq`;
   `CachedQuotes` 60s TTL. Every price labeled delayed with timestamp+source.
-- Frontend (`src/`): no router; conditional views. SimLife pine/teal scheme
-  (deliberate differentiator from CodeWorld) — keep it.
+- Frontend (`src/`): no router; conditional views. The warm paper/olive visual
+  system matches CodeWorld's level of finish while remaining recognizably
+  SimLife — keep it coherent.
 
 ## 4. Current environment state (important context)
 
@@ -94,10 +95,14 @@ a `node:sqlite` file fallback for offline dev. No ORM.
    removed via cascade delete — verified gone).
 5. `POST /api/demo/quote` (demo-only mock price override) supports the
    "what-if-it-goes-up" classroom demo; 404 in production.
+6. **Student Portfolio redesign** (`src/App.tsx`, `src/styles.css`): holdings
+   are now a compact, responsive Portfolio with ticker search, sorting,
+   expandable detail/sell controls, and 15-item pagination. It avoids
+   horizontal scrolling and remains usable with large holding counts.
 
 ## 7. Verification status (all green as of this note)
 
-- `npm run typecheck` clean (client + server). `npm test` 15/15 pass.
+- `npm run typecheck` clean (client + server). `npm test` 18/18 pass.
 - `npm run build` succeeds; prod boot serves `dist/` with `demoEnabled:false`
   and demo login 404 (verified on port 4102).
 - Live Postgres round-trips verified: fund → buy → roster math → sell-all →
@@ -116,6 +121,16 @@ a `node:sqlite` file fallback for offline dev. No ORM.
   no code yet); CSV roster import; real deployment; `stooq` evaluation.
 - Pending owner decisions: restore domain lock, delete demo accounts,
   roster identity confirmations (§5), approve student starting amounts.
+
+## 8a. Product-direction update
+
+The owner is considering expanding this isolated application into a broader
+**SimLife** one-stop shop with checking, savings, paychecks, student-paid bills,
+and atomic transfers into the existing brokerage. The brokerage on `main` is
+the known-good fallback. Banking work must be developed on
+`experiment/simlife-banking` in a separate `simlife-banking/` Git worktree and
+must not be merged until separately reviewed. See
+`OPENCODE_NEXT_DIRECTIVE.md`.
 
 ## 9. Guidance for the reviewing agent
 

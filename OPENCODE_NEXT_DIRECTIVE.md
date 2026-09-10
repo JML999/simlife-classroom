@@ -1,149 +1,235 @@
-# OpenCode Directive — SimLife Investing Launch-Candidate Phase
+# OpenCode Directive — SimLife Banking Worktree Experiment
 
-## Objective
+## Goal
 
-Turn the existing isolated SimLife brokerage MVP into a classroom-ready launch
-candidate. Focus on scale, teacher setup, pagination, and verification. Do not
-expand this phase into paychecks, bills, rent, savings, or a full ClassBank
-replacement.
+Build the first working banking-and-bills expansion of SimLife on an isolated
+Git branch and worktree. The existing investing application on `main` is the
+known-good fallback and must continue to work unchanged.
+
+This phase should prove the core one-stop-shop workflow:
+
+> Teacher issues income and bills → student manages checking and savings →
+> student pays bills → student transfers genuinely available money into the
+> existing brokerage account → teacher can see and audit the result.
+
+Do not attempt to reproduce every ClassBank feature in this phase.
+
+## Create the isolation boundary before editing
+
+The source repository is:
+
+`/Users/justinlee/Desktop/_Active/ths_textbook/simlife-investing`
+
+1. Confirm its `main` branch is clean. If it is not clean, stop and report the
+   exact files; do not discard or absorb someone else's changes.
+2. From that repository, create branch `experiment/simlife-banking` in this
+   separate worktree:
+
+   `/Users/justinlee/Desktop/_Active/ths_textbook/simlife-banking`
+
+3. If either the branch or destination already exists, inspect and report it
+   instead of deleting, overwriting, resetting, or inventing another location.
+4. Make every implementation commit on `experiment/simlife-banking` only.
+5. Do not merge into `main`. The owner will request a separate review before
+   deciding whether to merge.
 
 ## Hard safety boundary
 
-- Work only in `simlife-investing/`.
+- Work only in the new `simlife-banking/` worktree.
 - `../codeworld/` is read-only reference. Do not modify, format, move, delete,
-  stage, or commit anything inside it. Do not open or copy its `.env`.
-- Use only `SIMLIFE_*` configuration and the independent financeWRLD database.
-- Do not deploy, create services, change Google OAuth configuration, change
-  Supabase settings, delete demo accounts, alter real student balances, or run
-  seed/import commands against the live database.
-- Do not print or commit secrets. Preserve all existing accounting and auth
-  invariants.
+  stage, or commit anything inside it. Never open or copy `../codeworld/.env`.
+- Do not modify the original `simlife-investing/` worktree after creating the
+  banking worktree.
+- Use only `SIMLIFE_*` configuration. Do not print, copy, or commit secrets.
+- Do not deploy, create services, change OAuth/Supabase settings, delete demo
+  accounts, seed financeWRLD, or alter any real student data or balances.
+- Use a temporary SQLite database and fictional fixtures for all development
+  and testing. Explicitly remove `SIMLIFE_DATABASE_URL` from test processes.
+- Preserve server-side roles, idempotency, append-only records, integer cents,
+  integer micro-shares, and no-negative-brokerage-cash rules.
 
-## Read first
+## Read before editing
 
-Read these files completely before editing:
+Read these files completely in the new worktree:
 
 1. `SESSION_NOTE_FOR_REVIEW.md`
 2. `ARCHITECTURE.md`
 3. `README.md`
-4. `server/ledger.ts` and all three existing test files
-5. The current `src/App.tsx`, especially the student Portfolio and teacher
-   student-profile flows
+4. `server/db.ts`, `server/ledger.ts`, and all existing tests
+5. `server/index.ts`
+6. `src/App.tsx`, `src/api.ts`, and `src/styles.css`
 
-Review recent commits so you do not undo intentional UX decisions:
+Review the most recent commits so the experiment retains intentional UX:
 
 - `412fb1c` scalable student Portfolio
-- `8aa853e` initial Portfolio redesign
+- `8aa853e` Portfolio redesign
 - `7e4e420` cash adjustment moved into individual student profiles
 
-## Required work
+## Architecture requirements
 
-### 1. Make large portfolios fast on the server
+### Preserve the brokerage boundary
 
-`portfolioFor()` currently requests holding quotes sequentially. Refactor it so
-a portfolio with 100 holdings does not wait for 100 serial network round trips.
+The existing `accounts`/brokerage ledger represents brokerage cash and trades.
+Do not reinterpret historical brokerage entries as checking transactions and do
+not wedge bills into trade-ledger kinds.
 
-- Deduplicate symbols.
-- Fetch quotes concurrently with a conservative concurrency limit (about 6–10),
-  not an unbounded `Promise.all` flood.
-- Preserve the current per-symbol failure behavior: one unavailable quote must
-  not break the entire portfolio; that holding may fall back to cost basis.
-- Preserve delayed/source/timestamp labeling and the server cache.
-- Add tests that exercise a large portfolio and partial quote-provider failure.
-  Make the quote-loading logic injectable/testable rather than relying on live
-  network timing.
+Add a banking subsystem with explicit boundaries, such as:
 
-### 2. Paginate growing histories
+- bank accounts (`checking`, `savings`)
+- an append-only bank journal
+- balanced transfer/posting records
+- bill templates and individual bill instances
+- income/paycheck templates and individual postings
 
-The student history and teacher audit endpoints must not return an ever-growing
-unbounded result.
+Exact table names are flexible, but the meaning and invariants must be clear.
+Use additive, repeatable migrations compatible with SQLite and Postgres.
 
-- Add server-side pagination with a hard maximum page size.
-- Return enough metadata for Previous/Next controls and a clear displayed range.
-- Apply it to student transaction history and teacher audit history.
-- Keep newest-first ordering deterministic; use a stable tie-breaker in addition
-  to timestamp.
-- Preserve class and student filters on the teacher audit.
-- Add API/data-layer tests for first page, later page, invalid parameters, empty
-  results, and stable ordering.
-- Update both UIs with compact controls consistent with the current design. Do
-  not introduce horizontally scrolling action buttons.
+### Atomic money movement
 
-### 3. Build a safe bulk brokerage-deposit workflow
+- Checking ↔ savings transfers must debit and credit atomically.
+- Checking → brokerage must debit checking and credit existing brokerage cash
+  atomically in one database transaction.
+- A failed or repeated request must never create, destroy, or duplicate money.
+- Every mutation needs a stable idempotency identity and an audit trail showing
+  student, what, when, amount, and reason/source.
+- Student-facing balances must be derived from or reconciled against the
+  immutable journal, not accepted from browser state.
+- Reject transactions that would make checking, savings, or brokerage cash
+  negative. Do not silently use another account to cover a shortfall.
 
-The teacher needs a practical way to initialize many brokerage accounts from a
-Google Form/Sheet export. This is separate from the individual **Adjust cash**
-control, which must remain inside each student profile.
+### Bills and due dates
 
-Implement a teacher-only **Import brokerage deposits** workflow scoped to one
-selected class:
+- A teacher can create and assign a one-time bill to one student or an entire
+  selected class.
+- A bill has a title, amount, issued date, due date, optional description, and a
+  visible status: `due`, `paid`, or `late`.
+- Bills arrive in a student **Bills / Mailbox** view. The student, not the
+  teacher, chooses **Pay from checking**.
+- Paying a bill is atomic and idempotent. Insufficient checking funds produces a
+  useful error and leaves the bill unpaid.
+- Do not depend on a fragile background process for correctness. Late status can
+  be determined from due date when read; if late fees are included, processing
+  must be explicit and idempotent.
+- For this experiment, recurring bills may be represented by reusable teacher
+  templates plus an explicit **Issue now** action. Do not build a scheduler yet.
 
-- Accept CSV with columns `email`, `amount`, and optional `reason`.
-- Preview first; never apply immediately on file selection.
-- Validate every row: normalized email, known student in the selected class,
-  positive amount, sensible maximum, no duplicate students, and no ambiguous
-  matches.
-- Display valid rows, rejected rows with specific reasons, total students, and
-  total simulated dollars before confirmation.
-- Require an explicit confirmation step and a batch reason.
-- Apply all accepted deposits transactionally: either the entire confirmed batch
-  posts or none does.
-- Give the batch an idempotency identity so a retry/double-click cannot fund the
-  class twice. Each resulting ledger entry must remain individually auditable.
-- Do not add a generic cash-adjustment tray to the bottom of the dashboard.
-- Do not use or mutate the existing roster seed JSON as the import mechanism.
-- Test authorization, class scoping, validation, atomic rollback, audit entries,
-  ledger invariants, and retry/idempotency behavior in isolated SQLite tests.
-- During development, use fixtures only. Do not submit an import to financeWRLD.
+### Income
 
-### 4. Launch-readiness audit
+- A teacher can issue a paycheck/deposit to one student or an entire selected
+  class with amount, label, and date.
+- Class-wide issuance must be atomic and retry-safe.
+- A teacher must see a preview and total before confirming a class-wide posting.
+- Preserve the individual student-profile cash adjustment where it currently
+  lives; do not restore a floating adjustment tray at the bottom of the roster.
 
-Perform a focused audit and fix issues found within scope:
+## Required student experience
 
-- Production must refuse to boot with mock quotes or unsafe/missing auth config.
-- Confirm demo routes remain inaccessible in production.
-- Confirm teacher routes enforce the database-backed teacher role.
-- Confirm student trading still respects the class freeze state.
-- Confirm all money remains integer cents and all shares integer micro-shares.
-- Confirm the new Portfolio search, sorting, disclosure rows, and pagination work
-  at desktop and Chromebook/mobile widths. Test with generated fixture data of
-  at least 100 holdings; do not create those holdings in financeWRLD.
-- Keep all simulated-money and delayed-quote disclosures visible.
+Evolve the product name in the shared navigation to **SimLife**, with clearly
+separated areas for **Banking** and **Investing**.
+
+### Visual and interaction direction
+
+- Preserve the current Investing/Brokerage styling and formatting. Do not
+  redesign the Portfolio, investing summary cards, trade flow, typography,
+  colors, or disclosure treatment unless a banking integration requires a
+  small, clearly justified navigation change.
+- Make Banking feel immediately familiar to students who have used ClassBank:
+  prominent account balances, recognizable checking/savings sections, a clear
+  activity feed, an obvious bill inbox, simple transfer/payment flows, and
+  teacher controls organized around classes and student accounts.
+- Match the useful **experience and mental model**, not ClassBank's identity.
+  Do not copy its source code, logo, name, proprietary artwork, screenshots,
+  exact text, or pixel-for-pixel trade dress. Use original SimLife components,
+  wording, and visual details.
+- Banking may have its own close-to-a-bank visual character, but it must still
+  sit naturally inside the shared SimLife shell. Moving between Banking and
+  Investing should feel like switching sections of one product, not opening two
+  unrelated websites.
+- Where the desired classroom mechanics intentionally differ from ClassBank,
+  follow the SimLife requirement. Most importantly, bills go to the student's
+  mailbox and the **student pays them**; the teacher does not simulate this by
+  sending an expense that automatically removes money.
+
+The student banking dashboard must show:
+
+- checking balance
+- savings balance
+- brokerage cash / portfolio value (from the existing investing subsystem)
+- bills due and late
+- recent banking activity
+- transfer controls for checking ↔ savings and checking → brokerage
+- Bills / Mailbox with an obvious Pay action and paid/due/late state
+
+The central lesson should be visible in the hierarchy: a checking balance is not
+automatically available to invest when bills are still due.
+
+Use the shared SimLife quality and responsive standards. Avoid wide tables for
+primary student actions, horizontal scrolling to reach buttons, or controls
+detached from the item they affect.
+
+## Required teacher experience
+
+Add a **Banking** area to the existing teacher workspace that supports:
+
+- selected-class paycheck/deposit issuance with preview and confirmation
+- selected-class bill issuance with preview and confirmation
+- current counts for due, paid, and late bills
+- per-student checking, savings, brokerage, and outstanding-bill summary
+- opening a student's profile to inspect their banking journal and bills
+
+All teacher mutations must be server-authorized and class-scoped. The UI must
+not be treated as an authorization boundary.
+
+## Required tests
+
+Keep all existing tests green and add isolated tests covering at minimum:
+
+- checking and savings opening balances
+- checking ↔ savings transfer conservation
+- checking → brokerage conservation across both ledgers
+- insufficient-funds rejection with no partial writes
+- duplicate transfer/payment/paycheck requests execute once
+- bill creation, payment, paid-state persistence, and late-state calculation
+- student cannot pay another student's bill
+- student cannot call teacher issuance routes
+- teacher class-wide issuance cannot affect another class
+- atomic rollback for a failed class-wide operation
+- ledger/journal balance reconciliation
+- SQLite behavior plus a written review of Postgres-specific SQL/types
+
+Use generated fictional data only. Never exercise mutation tests against the
+configured remote database.
+
+## Definition of done for this experiment
+
+The branch is ready for review when:
+
+1. A fictional teacher can issue a paycheck and household bill to a fictional
+   class.
+2. A fictional student can see both, pay the bill from checking, move money to
+   savings, transfer money into brokerage, and buy an existing simulated stock.
+3. The teacher can see the resulting balances, bill status, and audit history.
+4. Refreshes and duplicate clicks do not duplicate money or payments.
+5. Existing investing, freeze controls, individual adjustments, authentication,
+   and accounting tests still pass.
+6. `npm run typecheck`, the full test suite, and `npm run build` pass.
+7. Desktop and narrow/mobile layouts have been visually checked.
+8. No files outside the banking worktree changed.
+
+Commit coherent checkpoints on `experiment/simlife-banking`. Finish with a
+review note describing the schema, routes, UI, tests, compromises, screenshots
+or visual evidence, commit hashes, and any decisions the owner still needs to
+make. Do not merge, deploy, or modify live data.
 
 ## Explicitly out of scope
 
-- Deployment or environment/dashboard changes
-- Real student funding or roster mutation
-- Deleting demo data
-- Paychecks, bills, fines, rent, utilities, savings, mailboxes, grades, or a
-  general ClassBank clone
-- Real-money brokerage connections or investment advice
-- Charts, options, crypto, dividends, market orders, or social features
-- Edits to CodeWorld or hosting SimLife inside the CodeWorld process
-
-## Verification required
-
-Use Node 22 or newer. Before handing back:
-
-1. `npm run typecheck`
-2. `npm test`
-3. `npm run build`
-4. Production boot smoke test and `/api/health`
-5. `git diff --check`
-6. Verify `git -C ../codeworld status --short` is unchanged from the start
-
-Do not claim a browser path was tested unless it was actually exercised. Report
-all files changed, tests added, remaining decisions, and any live-state actions
-(there should be none). Commit the completed work in the SimLife repository with
-focused commits.
-
-## Owner decisions that remain outside this directive
-
-Do not guess these values. Report them back for the owner:
-
-- Final brokerage starting amounts/import CSV
-- Resolution of unmatched or ambiguous roster identities
-- Approved production quote provider and its usage terms
-- Independent deployment URL/service
-- Final go-live timing for domain lock, demo-auth disablement, and demo-data
-  cleanup
+- Automatic recurring scheduler
+- Late-fee policy beyond a minimal explicitly tested implementation
+- Class stores, rewards, jobs marketplace, behavior points, or gradebook sync
+- Automated life-event wheel
+- Dividends, options, crypto, short selling, or real-money integrations
+- Production deployment or infrastructure changes
+- CSV balance imports (design later after the banking schema is reviewed)
+- Resolving real roster identities or selecting real starting amounts
+- The existing launch-hardening backlog unless a change is directly required
+  to keep this experiment correct
