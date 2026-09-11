@@ -33,14 +33,14 @@ export default function App() {
 
   return (
     <>
-      <div className="banner">SIMULATED MONEY — FOR CLASS ONLY. Not real investing. No investment advice.</div>
+      <div className="banner">SIMULATED MONEY — FOR CLASS ONLY. Not real banking or investing. No financial advice.</div>
       <div className="wrap">
         <div className="topbar">
           <div className="brand">
             <div className="brand-mark">$</div>
             <div>
-              <h1>SimLife Investing</h1>
-              <p>Classroom brokerage simulator</p>
+              <h1>SimLife</h1>
+              <p>Classroom money · banking + investing</p>
             </div>
           </div>
           {me && (
@@ -158,6 +158,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   // One idempotency key per form submission; reused across retries.
   const buyKey = useRef(uid());
   const sellKey = useRef(uid());
+  const [section, setSection] = useState<"banking" | "investing">("banking");
 
   const load = useCallback(async () => {
     try {
@@ -237,6 +238,12 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
 
   return (
     <>
+      <div className="pills section-tabs" role="tablist" aria-label="Money sections">
+        <button role="tab" aria-selected={section === "banking"} className={`pill${section === "banking" ? " active" : ""}`} onClick={() => setSection("banking")}>Banking</button>
+        <button role="tab" aria-selected={section === "investing"} className={`pill${section === "investing" ? " active" : ""}`} onClick={() => setSection("investing")}>Investing</button>
+      </div>
+      {section === "banking" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
+      {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
           <div className="eyebrow">{me.class?.name || "Personal Finance"}</div>
@@ -361,7 +368,248 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
           </tbody>
         </table></div>
       </div>
+      </div>}
     </>
+  );
+}
+
+function describeBankEntry(e: any): string {
+  if (e.kind === "income") return "Paycheck / deposit";
+  if (e.kind === "transfer") return "Transfer";
+  if (e.kind === "transfer_to_brokerage") return "Moved to brokerage";
+  if (e.kind === "bill_payment") return "Bill paid";
+  if (e.kind === "savings_interest") return "Savings interest";
+  return e.kind;
+}
+
+function bankEntryAmount(e: any): number {
+  if (e.kind === "transfer") return Math.max(Math.abs(e.checking_leg), Math.abs(e.savings_leg));
+  return e.checking_leg + e.savings_leg;
+}
+
+function billBadge(status: string): string {
+  return status === "paid" ? "badge-paid" : status === "late" ? "badge-late" : "badge-due";
+}
+
+function SavingsProjection({ interest }: { interest: any }) {
+  const points = [{ years: 0, balanceCents: 0 }, ...(interest?.projection || [])];
+  const current = points.length > 1 ? Math.max(0, points[1].balanceCents - points[1].interestCents) : 0;
+  points[0].balanceCents = current;
+  const max = Math.max(1, ...points.map((p) => p.balanceCents));
+  const svgPoints = points.map((p) => `${8 + (p.years / 10) * 284},${112 - (p.balanceCents / max) * 94}`).join(" ");
+  return <div className="savings-growth">
+    <div className="growth-heading">
+      <div><span className="bank-kicker">Savings growth</span><h2>Your money earns money</h2></div>
+      <div className="apy-bubble"><strong>{((interest?.apy || 0) * 100).toFixed(2)}%</strong><span>APY</span></div>
+    </div>
+    <p>Projection assumes your current balance stays deposited with no additional contributions or withdrawals.</p>
+    <svg className="growth-chart" viewBox="0 0 300 120" role="img" aria-label="Projected savings balance over ten years">
+      <defs><linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#47c978" stopOpacity=".34" /><stop offset="100%" stopColor="#47c978" stopOpacity=".03" /></linearGradient></defs>
+      <path d={`M ${svgPoints.replaceAll(" ", " L ")} L 292 116 L 8 116 Z`} fill="url(#growthFill)" />
+      <polyline points={svgPoints} fill="none" stroke="#269c58" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((p) => <circle key={p.years} cx={8 + (p.years / 10) * 284} cy={112 - (p.balanceCents / max) * 94} r="4" fill="#fff" stroke="#269c58" strokeWidth="3" />)}
+    </svg>
+    <div className="growth-milestones">
+      {(interest?.projection || []).map((p: any) => <div key={p.years}><span>{p.years} year{p.years === 1 ? "" : "s"}</span><strong>{money(p.balanceCents)}</strong><small>+{money(p.interestCents)} interest</small></div>)}
+    </div>
+    <div className="growth-foot"><span>{interest?.label}</span><span>Rate as of {interest?.asOf ? new Date(`${interest.asOf}T12:00:00`).toLocaleDateString() : "—"} · variable classroom rate</span></div>
+  </div>;
+}
+
+function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged: () => void; onOpenInvesting: () => void }) {
+  const [bank, setBank] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [payDollars, setPayDollars] = useState("");
+  const [showPayment, setShowPayment] = useState(false);
+  const [showDispute, setShowDispute] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [from, setFrom] = useState("checking");
+  const [to, setTo] = useState("savings");
+  const [dollars, setDollars] = useState("");
+  const [confirmX, setConfirmX] = useState(false);
+  const xKey = useRef(uid());
+  const payKey = useRef(uid());
+  const disputeKey = useRef(uid());
+
+  const load = useCallback(async () => {
+    try { setBank(await api("/api/bank")); }
+    catch (e: any) { setErr(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const bills: any[] = bank?.bills || [];
+  const unpaid = bills.filter((b) => !b.paid_at);
+  const paid = bills.filter((b) => b.paid_at);
+  const unpaidTotal = unpaid.reduce((s: number, b: any) => s + b.remaining_cents, 0);
+
+  const openBill = (bill: any, payment = false) => {
+    setSelectedBill(bill); setShowPayment(payment); setShowDispute(false); setDisputeReason("");
+    setPayDollars((bill.remaining_cents / 100).toFixed(2)); setErr("");
+  };
+
+  const submitTransfer = async () => {
+    if (busy || !dollars) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await api<any>("/api/bank/transfer", {
+        method: "POST",
+        body: JSON.stringify({ from, to, dollars: Number(dollars), idempotencyKey: xKey.current }),
+      });
+      setNotice(r.deduped
+        ? "Already processed — duplicate ignored."
+        : to === "brokerage"
+          ? `Moved ${money(Math.round(Number(dollars) * 100))} into your brokerage account. It is ready to invest.`
+          : `Moved ${money(Math.round(Number(dollars) * 100))} from ${from} to ${to}.`);
+      xKey.current = uid(); setDollars(""); setConfirmX(false);
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const pay = async (bill: any) => {
+    if (busy) return;
+    setBusy(true); setPayingId(bill.id); setErr(""); setNotice("");
+    try {
+      const r = await api<any>(`/api/bank/bills/${bill.id}/pay`, {
+        method: "POST", body: JSON.stringify({ dollars: Number(payDollars), idempotencyKey: payKey.current }),
+      });
+      setNotice(r.deduped ? "Already processed — duplicate ignored." : r.remainingCents === 0 ? `Paid “${bill.title}” in full.` : `Payment sent. ${money(r.remainingCents)} remains on “${bill.title}.”`);
+      payKey.current = uid(); setSelectedBill(null); setShowPayment(false);
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); setPayingId(null); }
+  };
+
+  const dispute = async (bill: any) => {
+    if (busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await api<any>(`/api/bank/bills/${bill.id}/dispute`, {
+        method: "POST", body: JSON.stringify({ reason: disputeReason, idempotencyKey: disputeKey.current }),
+      });
+      setNotice(r.deduped ? "That question was already submitted." : "Your question was sent to your teacher. The bill remains due while it is reviewed.");
+      disputeKey.current = uid(); setSelectedBill(null); setDisputeReason(""); setShowDispute(false);
+      await load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="banking-experience">
+      <div className="bank-welcome">
+        <div>
+          <div className="bank-kicker">{me.class?.name || "Personal Finance"}</div>
+          <h2>Welcome back, {me.user.name.split(" ")[0]}!</h2>
+          <p>Check your mail, pay what is due, then decide what to save or invest.</p>
+        </div>
+        <div className="wallet-art" aria-hidden="true"><span>💵</span><strong>👛</strong><i>★</i></div>
+      </div>
+      {unpaidTotal > 0 && (
+        <div className="money-reminder" role="note"><span>🔔</span><div><strong>{money(unpaidTotal)} is still spoken for</strong><p>You have {unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}. Your checking balance is not the same as money available to invest.</p></div></div>
+      )}
+      <div className="bank-section-heading"><div><span className="bank-kicker">My money</span><h2>Your accounts</h2></div><span className="sim-chip">Simulated funds</span></div>
+      <div className="bank-account-grid">
+        <article className="account-tile checking-tile"><div className="account-icon">💳</div><span>Checking</span><strong>{bank ? money(bank.checkingCents) : "…"}</strong><p>Paychecks arrive here. Bills leave from here.</p></article>
+        <article className="account-tile savings-tile"><div className="account-icon">🌱</div><span>High-yield savings</span><strong>{bank ? money(bank.savingsCents) : "…"}</strong><p>{bank ? `${(bank.savingsInterest.apy * 100).toFixed(2)}% APY · ${money(bank.savingsInterest.earnedCents)} earned` : "Interest is loading…"}</p></article>
+        <article className="account-tile investing-tile"><div className="account-icon">📈</div><span>Brokerage</span><strong>{bank ? money(bank.brokerage.portfolioCents) : "…"}</strong><p>{bank ? `${money(bank.brokerage.cashCents)} ready to invest` : "Portfolio is loading…"}</p><button className="tile-link" onClick={onOpenInvesting}>Open investing →</button></article>
+      </div>
+      {err && <div className="error" role="alert">{err}</div>}
+      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+
+      <div className="bank-dashboard-grid">
+        <section className="bank-panel mailbox-panel">
+          <div className="bank-panel-title"><div className="mail-icon">✉️</div><div><span className="bank-kicker">Bills & notices</span><h2>Mailbox</h2></div><span className="mail-count">{unpaid.length} to do</span></div>
+          <p className="bank-hint">Open each letter to review the details. Nothing is taken from checking until you choose to pay.</p>
+          {bills.length === 0 && <p className="small">No bills yet. When your teacher sends one, it will appear here.</p>}
+          <div className="mailbox">
+            {unpaid.map((b) => (
+              <article className="mail-item" key={b.id}>
+                <div className="envelope-mark" aria-hidden="true">✉</div>
+                <div className="mail-copy">
+                <div className="bill-top">
+                  <div><span>{b.sender || "SimLife Mail"}</span><strong>{b.title}</strong></div>
+                  <span className={billBadge(b.status)}>{b.status === "paid" ? "Paid" : b.status === "late" ? "Late" : "Due"}</span>
+                </div>
+                <div className="mail-facts"><span>Due {new Date(b.due_at).toLocaleDateString()}</span><strong>{money(b.remaining_cents)} remaining</strong>{b.paid_cents > 0 && <span>{money(b.paid_cents)} paid</span>}</div>
+                {b.disputes?.some((d: any) => d.status === "open") && <div className="question-sent">Question sent · awaiting teacher review</div>}
+                {(b.disputes || []).some((d: any) => d.status === "resolved") && <div className="question-answered">Teacher replied — open the letter to read the answer</div>}
+                <div className="mail-actions"><button className="ghost" onClick={() => openBill(b)}>Read</button><button disabled={busy} onClick={() => openBill(b, true)}>{payingId === b.id ? "Paying…" : "Pay bill"}</button></div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="bank-panel transfer-panel">
+          <div className="bank-panel-title"><div className="transfer-icon">↔</div><div><span className="bank-kicker">Quick action</span><h2>Move money</h2></div></div>
+          <p className="bank-hint">Move money between checking and savings, or send it to brokerage when it is truly available to invest.</p>
+          <div className="row">
+            <div className="field"><label>From</label>
+              <select value={from} onChange={(e) => { setFrom(e.target.value); setConfirmX(false); }}>
+                <option value="checking">Checking</option>
+                <option value="savings">Savings</option>
+              </select>
+            </div>
+            <div className="field"><label>To</label>
+              <select value={to} onChange={(e) => { setTo(e.target.value); setConfirmX(false); }}>
+                {from === "checking" && <option value="savings">Savings</option>}
+                {from === "savings" && <option value="checking">Checking</option>}
+                {from === "checking" && <option value="brokerage">Brokerage (invest)</option>}
+              </select>
+            </div>
+            <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirmX(false); }} placeholder="50.00" inputMode="decimal" /></div>
+          </div>
+          {!confirmX
+            ? <div className="row" style={{ marginTop: 8 }}><button disabled={!(Number(dollars) > 0) || busy} onClick={() => setConfirmX(true)}>Review transfer</button></div>
+            : <div className="confirm"><p><strong>Confirm:</strong> move <strong>{money(Math.round(Number(dollars) * 100))}</strong> from {from} to {to === "brokerage" ? "brokerage (for investing)" : to}?</p><div className="row"><button disabled={busy} onClick={submitTransfer}>Yes, move it</button><button className="ghost" onClick={() => setConfirmX(false)}>Cancel</button></div></div>}
+          <h3 className="activity-title">Recent activity</h3>
+          {!bank?.recent.length && <p className="small">No bank activity yet.</p>}
+          <div className="activity-list">{(bank?.recent || []).slice(0, 6).map((e: any) => <div className="activity-row" key={e.id}><span>{e.kind === "income" ? "💵" : e.kind === "bill_payment" ? "🧾" : e.kind === "savings_interest" ? "✨" : "↔"}</span><div><strong>{describeBankEntry(e)}</strong><small>{e.memo || new Date(e.created_at).toLocaleDateString()}</small></div><b className={e.kind === "transfer" ? "" : bankEntryAmount(e) >= 0 ? "up" : "down"}>{money(bankEntryAmount(e))}</b></div>)}</div>
+        </section>
+      </div>
+      {bank && <SavingsProjection interest={bank.savingsInterest} />}
+      {paid.length > 0 && (
+        <div className="bank-panel paid-mail">
+          <h2>Paid mail</h2>
+          <table><tbody>
+            {paid.map((b) => (
+              <tr key={b.id}><td><strong>{b.title}</strong></td><td className="small">paid {new Date(b.paid_at).toLocaleDateString()}</td><td>{money(b.paid_cents)}</td><td><button className="ghost" onClick={() => openBill(b)}>Receipt</button></td></tr>
+            ))}
+          </tbody></table>
+        </div>
+      )}
+
+      {selectedBill && <div className="bank-modal-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedBill(null); }}>
+        <div className="bank-modal" role="dialog" aria-modal="true" aria-labelledby="mail-title">
+          <div className="letter-toolbar"><span>Received {new Date(selectedBill.issued_at).toLocaleDateString()}</span><button className="ghost" onClick={() => setSelectedBill(null)}>Close</button></div>
+          <div className="letter-paper">
+            <div className="letter-mark">{selectedBill.sender?.slice(0, 1).toUpperCase() || "$"}</div>
+            <div className="letter-from">{selectedBill.sender || "SimLife Billing Center"}</div>
+            <h2 id="mail-title">{selectedBill.document_title || selectedBill.title}</h2>
+            <p className="letter-body">{selectedBill.document_body || `This is your statement for ${selectedBill.title}. Review the amount and due date below. You may pay the full balance or make a partial payment from checking.`}</p>
+            <div className="statement-box"><div><span>Original amount</span><strong>{money(selectedBill.amount_cents)}</strong></div><div><span>Already paid</span><strong>{money(selectedBill.paid_cents)}</strong></div><div><span>Due date</span><strong>{new Date(selectedBill.due_at).toLocaleDateString()}</strong></div><div className="statement-due"><span>Balance due</span><strong>{money(selectedBill.remaining_cents)}</strong></div></div>
+            {selectedBill.status === "late" && selectedBill.late_fee_cents > 0 && <p className="late-note">This balance includes a {money(selectedBill.late_fee_cents)} late fee.</p>}
+            {(selectedBill.disputes || []).length > 0 && <div className="question-thread">
+              <h3>Questions about this bill</h3>
+              {selectedBill.disputes.map((d: any) => (
+                <div className="question-item" key={d.id}>
+                  <p className="question-q"><strong>You asked · {new Date(d.created_at).toLocaleDateString()}:</strong> {d.reason}</p>
+                  {d.status === "resolved" && d.resolution && <p className="question-a"><strong>Teacher replied{d.resolved_at ? ` · ${new Date(d.resolved_at).toLocaleDateString()}` : ""}:</strong> {d.resolution}</p>}
+                  {d.status !== "resolved" && <p className="small">Awaiting teacher review — the due date still applies.</p>}
+                </div>
+              ))}
+            </div>}
+          </div>
+          {!selectedBill.paid_at && <div className="letter-actions">
+            {err && <div className="error" role="alert">{err}</div>}
+            {!showPayment && !showDispute && <><button onClick={() => { setShowPayment(true); setPayDollars((selectedBill.remaining_cents / 100).toFixed(2)); }}>Pay this bill</button><button className="ghost" onClick={() => setShowDispute(true)}>Question or dispute</button></>}
+            {showPayment && <div className="modal-action-box"><h3>How much do you want to pay?</h3><p>The payment comes from checking. Any unpaid amount stays in your mailbox.</p><div className="row"><div className="field grow"><label htmlFor="bill-payment">Payment amount</label><input id="bill-payment" value={payDollars} onChange={(e) => setPayDollars(e.target.value)} inputMode="decimal" autoFocus /></div><button disabled={busy || !(Number(payDollars) > 0) || Math.round(Number(payDollars) * 100) > selectedBill.remaining_cents} onClick={() => pay(selectedBill)}>{busy ? "Paying…" : "Send payment"}</button></div><button className="text-danger" onClick={() => setShowPayment(false)}>Cancel</button></div>}
+            {showDispute && <div className="modal-action-box"><h3>Ask about this bill</h3><p>Explain what looks wrong. Sending a question does not pause the due date or remove the balance.</p><div className="field"><label htmlFor="bill-dispute">Your message</label><textarea id="bill-dispute" rows={4} value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="The service dates or amount do not match…" autoFocus /></div><div className="row"><button disabled={busy || disputeReason.trim().length < 5} onClick={() => dispute(selectedBill)}>Send to teacher</button><button className="ghost" onClick={() => setShowDispute(false)}>Cancel</button></div></div>}
+          </div>}
+        </div>
+      </div>}
+    </div>
   );
 }
 
@@ -407,6 +655,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [query, setQuery] = useState("");
   const [freezeConfirm, setFreezeConfirm] = useState<any>(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [tsection, setTsection] = useState<"brokerage" | "banking">("banking");
   const cashKey = useRef(uid());
   void me;
 
@@ -516,8 +765,27 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
 
   const cls = classes.find((c) => c.id === classId);
 
+  const workspaceTabs = (
+    <div className="pills section-tabs" role="tablist" aria-label="Workspace sections">
+      <button role="tab" aria-selected={tsection === "brokerage"} className={`pill${tsection === "brokerage" ? " active" : ""}`} onClick={() => setTsection("brokerage")}>Brokerage</button>
+      <button role="tab" aria-selected={tsection === "banking"} className={`pill${tsection === "banking" ? " active" : ""}`} onClick={() => setTsection("banking")}>Banking</button>
+    </div>
+  );
+
+  if (tsection === "banking") {
+    return (
+      <>
+        {workspaceTabs}
+        {err && <div className="error" role="alert">{err}</div>}
+        {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} /></div>
+      </>
+    );
+  }
+
   return (
     <>
+      {workspaceTabs}
       <div className="page-intro">
         <div><div className="eyebrow">Teacher desk</div><h2>Brokerage classroom</h2><p>Fund accounts, monitor participation, and control when students may trade.</p></div>
         <div className="teacher-summary"><strong>{roster.length}</strong><span>students shown</span></div>
@@ -629,6 +897,24 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                     ? <div className="row" style={{ marginTop: 9 }}><button disabled={!(Number(dollars) > 0) || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review {direction === "add" ? "deposit" : "withdrawal"}</button></div>
                     : <div className="confirm"><p><strong>Confirm:</strong> {direction === "add" ? "add" : "remove"} <strong>{money(Math.round(Number(dollars) * 100))}</strong> {direction === "add" ? "to" : "from"} <strong>{selected.name}</strong>?</p><p className="small">Reason: {reason}</p><div className="row"><button disabled={busy} onClick={submitCash}>Yes, record it</button><button className="ghost" onClick={() => setConfirming(false)}>Cancel</button></div></div>}
                 </div>}
+                {profile.bank && <div className="panel">
+                  <h2>Banking</h2>
+                  <p className="hint">Checking {money(profile.bank.checkingCents)} · savings {money(profile.bank.savingsCents)} · {((profile.bank.savingsInterest?.apy || 0) * 100).toFixed(2)}% APY{profile.bankInvariant && !profile.bankInvariant.ok ? " · INVARIANT BROKEN" : ""}</p>
+                  {(profile.bank.bills || []).length > 0 && (
+                    <table><thead><tr><th>Bill</th><th>Status</th><th>Paid</th><th>Remaining</th></tr></thead><tbody>
+                      {profile.bank.bills.map((b: any) => (
+                        <tr key={b.id}><td><strong>{b.title}</strong><br /><span className="small">due {new Date(b.due_at).toLocaleDateString()}{b.disputes?.some((d: any) => d.status === "open") ? " · QUESTION OPEN" : ""}</span></td><td><span className={billBadge(b.status)}>{b.status}</span></td><td>{money(b.paid_cents)}</td><td>{money(b.remaining_cents)}</td></tr>
+                      ))}
+                    </tbody></table>
+                  )}
+                  {(profile.bank.recent || []).length > 0 && (
+                    <table style={{ marginTop: 8 }}><thead><tr><th>When</th><th>Bank activity</th><th>Net</th></tr></thead><tbody>
+                      {profile.bank.recent.slice(0, 10).map((e: any) => (
+                        <tr key={e.id}><td className="small">{new Date(e.created_at).toLocaleString()}</td><td>{describeBankEntry(e)}<br /><span className="small">{e.memo || ""}</span></td><td>{money(bankEntryAmount(e))}</td></tr>
+                      ))}
+                    </tbody></table>
+                  )}
+                </div>}
                 <div className="panel">
                   <h2>Activity</h2>
                   <p className="hint">
@@ -656,6 +942,320 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
+  classId: string; classes: any[]; onClassChange: (id: string) => void; onChanged: () => void;
+}) {
+  const [summary, setSummary] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Paycheck form
+  const [payLabel, setPayLabel] = useState("Weekly paycheck");
+  const [payDollars, setPayDollars] = useState("");
+  const [payPreview, setPayPreview] = useState<any>(null);
+  const payBatch = useRef("");
+  // Bill form
+  const [billTemplate, setBillTemplate] = useState("");
+  const [billTitle, setBillTitle] = useState("");
+  const [billDollars, setBillDollars] = useState("");
+  const [billFee, setBillFee] = useState("");
+  const [billDue, setBillDue] = useState("");
+  const [billSender, setBillSender] = useState("");
+  const [billDocumentTitle, setBillDocumentTitle] = useState("");
+  const [billDocumentBody, setBillDocumentBody] = useState("");
+  const [billPreview, setBillPreview] = useState<any>(null);
+  const billBatch = useRef("");
+  // Template form
+  const [tplTitle, setTplTitle] = useState("");
+  const [tplDollars, setTplDollars] = useState("");
+  const [tplFee, setTplFee] = useState("");
+  const [tplDesc, setTplDesc] = useState("");
+  const [tplSender, setTplSender] = useState("");
+  // Dispute inbox
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const resolveKeys = useRef<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const qs = classId ? `?classId=${classId}` : "";
+      const [s, t, d] = await Promise.all([
+        api<{ students: any[] }>(`/api/teacher/bank${qs}`),
+        api<{ templates: any[] }>("/api/teacher/bills/templates"),
+        api<{ disputes: any[] }>(`/api/teacher/disputes${qs}`),
+      ]);
+      setSummary(s.students);
+      setTemplates(t.templates);
+      setDisputes(d.disputes);
+      setChecked((prev) => {
+        if (prev.size > 0) return prev;
+        return new Set(s.students.map((x: any) => x.id));
+      });
+    } catch (e: any) { setErr(e.message); }
+  }, [classId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setChecked(new Set()); setPayPreview(null); setBillPreview(null); }, [classId]);
+
+  const toggle = (id: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const ids = [...checked];
+
+  const previewPay = async () => {
+    setErr(""); setNotice("");
+    try {
+      const r = await api<any>("/api/teacher/income/preview", {
+        method: "POST",
+        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, dollars: Number(payDollars) }),
+      });
+      payBatch.current = uid();
+      setPayPreview(r);
+    } catch (e: any) { setErr(e.message); }
+  };
+  const issuePay = async () => {
+    if (!payPreview || busy) return;
+    setBusy(true);
+    try {
+      const r = await api<any>("/api/teacher/income/issue", {
+        method: "POST",
+        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, dollars: Number(payDollars), batchId: payBatch.current }),
+      });
+      setNotice(`Posted ${money(r.totalCents)} to ${r.posted} student${r.posted === 1 ? "" : "s"}.`);
+      setPayPreview(null); setPayDollars("");
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const useTemplate = (id: string) => {
+    setBillTemplate(id);
+    const t = templates.find((x) => x.id === id);
+    if (t) {
+      setBillTitle(t.title);
+      setBillDollars((t.amount_cents / 100).toFixed(2));
+      setBillFee((t.late_fee_cents / 100).toFixed(2));
+      setBillSender(t.sender || "");
+      setBillDocumentTitle(t.document_title || t.title);
+      setBillDocumentBody(t.document_body || t.description || "");
+    }
+  };
+
+  const previewBill = async () => {
+    setErr(""); setNotice("");
+    try {
+      const r = await api<any>("/api/teacher/bills/preview", {
+        method: "POST",
+        body: JSON.stringify({
+          classId, studentIds: ids, templateId: billTemplate || undefined,
+          title: billTitle, dollars: Number(billDollars),
+          lateFeeDollars: billFee === "" ? 0 : Number(billFee),
+          dueAt: billDue ? `${billDue}T12:00:00Z` : "",
+          sender: billSender, documentTitle: billDocumentTitle, documentBody: billDocumentBody,
+        }),
+      });
+      billBatch.current = uid();
+      setBillPreview(r);
+    } catch (e: any) { setErr(e.message); }
+  };
+  const issueBill = async () => {
+    if (!billPreview || busy) return;
+    setBusy(true);
+    try {
+      const r = await api<any>("/api/teacher/bills/issue", {
+        method: "POST",
+        body: JSON.stringify({
+          classId, studentIds: ids, templateId: billTemplate || undefined,
+          title: billTitle, dollars: Number(billDollars),
+          lateFeeDollars: billFee === "" ? 0 : Number(billFee),
+          dueAt: billDue ? `${billDue}T12:00:00Z` : "", batchId: billBatch.current,
+          sender: billSender, documentTitle: billDocumentTitle, documentBody: billDocumentBody,
+        }),
+      });
+      setNotice(`Issued “${billTitle}” to ${r.issued} student${r.issued === 1 ? "" : "s"} (${money(r.totalCents)} total). Students must pay from checking.`);
+      setBillPreview(null); setBillTitle(""); setBillDollars(""); setBillFee(""); setBillDue(""); setBillTemplate(""); setBillSender(""); setBillDocumentTitle(""); setBillDocumentBody("");
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const saveTemplate = async () => {
+    setErr(""); setNotice("");
+    try {
+      await api("/api/teacher/bills/templates", {
+        method: "POST",
+        body: JSON.stringify({ title: tplTitle, dollars: Number(tplDollars), lateFeeDollars: tplFee === "" ? 0 : Number(tplFee), description: tplDesc, sender: tplSender, documentTitle: tplTitle, documentBody: tplDesc }),
+      });
+      setNotice(`Template “${tplTitle}” saved.`);
+      setTplTitle(""); setTplDollars(""); setTplFee(""); setTplDesc(""); setTplSender("");
+      const t = await api<{ templates: any[] }>("/api/teacher/bills/templates");
+      setTemplates(t.templates);
+    } catch (e: any) { setErr(e.message); }
+  };
+
+  const dueCount = summary.reduce((s, x) => s + Number(x.bills_due || 0), 0);
+  const lateCount = summary.reduce((s, x) => s + Number(x.bills_late || 0), 0);
+  const openDisputes = disputes.filter((d) => d.status === "open");
+
+  const resolve = async (d: any) => {
+    if (busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      if (!resolveKeys.current[d.id]) resolveKeys.current[d.id] = uid();
+      const r = await api<any>(`/api/teacher/disputes/${d.id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ resolution: replyText, idempotencyKey: resolveKeys.current[d.id] }),
+      });
+      setNotice(r.deduped ? "That answer was already recorded." : `Answered ${d.student_name}'s question about “${d.bill_title}.” The bill itself is unchanged.`);
+      setReplyingId(null); setReplyText("");
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="page-intro">
+        <div><div className="eyebrow">Teacher desk</div><h2>Banking classroom</h2><p>Issue paychecks and bills, then watch students take responsibility for paying.</p></div>
+        <div className="teacher-summary"><strong>{summary.length}</strong><span>students · {dueCount} unpaid · {lateCount} late</span></div>
+      </div>
+      <div className="pills">
+        <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => onClassChange("")}>All students</button>
+        {classes.map((c) => (
+          <button key={c.id} className={`pill${classId === c.id ? " active" : ""}`} onClick={() => onClassChange(c.id)}>{c.name}</button>
+        ))}
+      </div>
+      {err && <div className="error" role="alert">{err}</div>}
+      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+      {!classId && <div className="notice">Choose a class above to issue paychecks or bills. Issuance is always scoped to one class.</div>}
+
+      <div className="panel">
+        <h2>Class accounts</h2>
+        <p className="hint">Check students to target paychecks and bills. Unchecked students are skipped.</p>
+        <div className="table-wrap"><table>
+          <thead><tr><th></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
+          <tbody>
+            {summary.map((s) => (
+              <tr key={s.id}>
+                <td><input type="checkbox" aria-label={`Select ${s.name}`} checked={checked.has(s.id)} onChange={() => toggle(s.id)} /></td>
+                <td><strong>{s.name}</strong><br /><span className="small">{s.class_name || "—"}</span></td>
+                <td>{money(s.checking_cents)}</td>
+                <td>{money(s.savings_cents)}</td>
+                <td>{money(s.brokerage_cents)}</td>
+                <td>{s.bills_due}</td>
+                <td className={Number(s.bills_late) > 0 ? "down" : ""}>{s.bills_late}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        <p className="small">{checked.size} selected</p>
+      </div>
+
+      <div className="panel">
+        <div className="panel-heading"><div><h2>Student questions</h2><p className="hint">Bill questions from students{classId ? " in this class" : ""}. Answering never changes the bill — it only records your reply.</p></div><span className="portfolio-count">{openDisputes.length} open</span></div>
+        {disputes.length === 0 && <p className="small">No questions yet. When a student questions a bill, it appears here.</p>}
+        <div className="mailbox">
+          {disputes.map((d) => (
+            <div className="bill-card" key={d.id}>
+              <div className="bill-top">
+                <div><strong>{d.student_name}</strong> <span className="small">· {d.class_name || "no class"} · {d.bill_title} · {money(d.remaining_cents)} remaining · asked {new Date(d.created_at).toLocaleString()}</span></div>
+                <span className={d.status === "open" ? "badge-due" : "badge-paid"}>{d.status === "open" ? "Open" : "Answered"}</span>
+              </div>
+              <p className="question-q"><strong>Student:</strong> {d.reason}</p>
+              {d.status === "resolved" && <p className="question-a"><strong>Your answer{d.resolved_at ? ` · ${new Date(d.resolved_at).toLocaleDateString()}` : ""}:</strong> {d.resolution}</p>}
+              {d.status === "open" && replyingId !== d.id && (
+                <div className="row" style={{ marginTop: 8 }}><button className="ghost" onClick={() => { setReplyingId(d.id); setReplyText(""); }}>Reply and mark answered</button></div>
+              )}
+              {d.status === "open" && replyingId === d.id && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="field"><label htmlFor={`reply-${d.id}`}>Your answer (the student sees this in the same letter)</label><textarea id={`reply-${d.id}`} rows={3} value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Explain the charge…" autoFocus /></div>
+                  <div className="row" style={{ marginTop: 8 }}><button disabled={busy || replyText.trim().length < 2} onClick={() => resolve(d)}>Send answer</button><button className="ghost" onClick={() => { setReplyingId(null); setReplyText(""); }}>Leave open</button></div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {classId && (
+        <div className="grid2">
+          <div className="panel">
+            <h2>Send paychecks</h2>
+            <p className="hint">Deposits land in checking. Preview first — nothing posts until you confirm.</p>
+            <div className="field"><label>Label</label><input value={payLabel} onChange={(e) => { setPayLabel(e.target.value); setPayPreview(null); }} placeholder="Weekly paycheck" /></div>
+            <div className="field" style={{ marginTop: 8 }}><label>Dollars per student</label><input value={payDollars} onChange={(e) => { setPayDollars(e.target.value); setPayPreview(null); }} placeholder="1500.00" inputMode="decimal" /></div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button disabled={!(Number(payDollars) > 0) || checked.size === 0 || busy} onClick={previewPay}>Preview ({checked.size})</button>
+            </div>
+            {payPreview && (
+              <div className="confirm">
+                <p><strong>Confirm:</strong> post <strong>{money(payPreview.totalCents)}</strong> total ({money(payPreview.perStudentCents)} × {payPreview.count} students) labeled “{payLabel}”?</p>
+                <p className="small">{payPreview.students.slice(0, 5).map((s: any) => s.name).join(", ")}{payPreview.count > 5 ? ` +${payPreview.count - 5} more` : ""}</p>
+                <div className="row"><button disabled={busy} onClick={issuePay}>Yes, post paychecks</button><button className="ghost" onClick={() => setPayPreview(null)}>Cancel</button></div>
+              </div>
+            )}
+          </div>
+
+          <div className="panel">
+            <h2>Send bills</h2>
+            <p className="hint">Bills arrive in each student's mailbox. Students pay from checking — nothing is taken automatically.</p>
+            <div className="field"><label>From template (optional)</label>
+              <select value={billTemplate} onChange={(e) => useTemplate(e.target.value)}>
+                <option value="">Custom bill…</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.title} — {money(t.amount_cents)}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ marginTop: 8 }}><label>Title</label><input value={billTitle} onChange={(e) => { setBillTitle(e.target.value); setBillPreview(null); }} placeholder="Electric bill" /></div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <div className="field grow"><label>Sender shown in mailbox</label><input value={billSender} onChange={(e) => { setBillSender(e.target.value); setBillPreview(null); }} placeholder="City Utilities" /></div>
+              <div className="field grow"><label>Letter heading</label><input value={billDocumentTitle} onChange={(e) => { setBillDocumentTitle(e.target.value); setBillPreview(null); }} placeholder="Your monthly utility statement" /></div>
+            </div>
+            <div className="field" style={{ marginTop: 8 }}><label>Letter or statement text</label><textarea rows={4} value={billDocumentBody} onChange={(e) => { setBillDocumentBody(e.target.value); setBillPreview(null); }} placeholder="Service period, charges, contract terms, or other correspondence students should review…" /></div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <div className="field"><label>Dollars</label><input value={billDollars} onChange={(e) => { setBillDollars(e.target.value); setBillPreview(null); }} placeholder="80.00" inputMode="decimal" /></div>
+              <div className="field"><label>Late fee ($)</label><input value={billFee} onChange={(e) => { setBillFee(e.target.value); setBillPreview(null); }} placeholder="15.00" inputMode="decimal" /></div>
+              <div className="field"><label>Due date</label><input type="date" value={billDue} onChange={(e) => { setBillDue(e.target.value); setBillPreview(null); }} /></div>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button disabled={!(Number(billDollars) > 0) || !billDue || checked.size === 0 || busy} onClick={previewBill}>Preview ({checked.size})</button>
+            </div>
+            {billPreview && (
+              <div className="confirm">
+                <p><strong>Confirm:</strong> issue “{billPreview.title}” ({money(billPreview.perStudentCents)} × {billPreview.count} students = {money(billPreview.totalCents)}), due {new Date(billPreview.dueAt).toLocaleDateString()}{billPreview.lateFeeCents > 0 ? `, ${money(billPreview.lateFeeCents)} late fee` : ""}?</p>
+                <div className="row"><button disabled={busy} onClick={issueBill}>Yes, issue bills</button><button className="ghost" onClick={() => setBillPreview(null)}>Cancel</button></div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="panel">
+        <h2>Bill templates</h2>
+        <p className="hint">Reusable bills (rent, utilities, insurance). Issue them from “Send bills”.</p>
+        <div className="row">
+          <div className="field grow"><label>Title</label><input value={tplTitle} onChange={(e) => setTplTitle(e.target.value)} placeholder="Monthly rent share" /></div>
+          <div className="field grow"><label>Sender</label><input value={tplSender} onChange={(e) => setTplSender(e.target.value)} placeholder="Oakwood Apartments" /></div>
+          <div className="field"><label>Dollars</label><input value={tplDollars} onChange={(e) => setTplDollars(e.target.value)} placeholder="600.00" inputMode="decimal" /></div>
+          <div className="field"><label>Late fee ($)</label><input value={tplFee} onChange={(e) => setTplFee(e.target.value)} placeholder="25.00" inputMode="decimal" /></div>
+        </div>
+        <div className="field" style={{ marginTop: 8 }}><label>Reusable letter text (optional)</label><textarea rows={3} value={tplDesc} onChange={(e) => setTplDesc(e.target.value)} placeholder="Describe the charge, billing period, and any information the student should review." /></div>
+        <div className="row" style={{ marginTop: 8 }}><button disabled={!(tplTitle.trim().length >= 2) || !(Number(tplDollars) > 0)} onClick={saveTemplate}>Save template</button></div>
+        {templates.length > 0 && (
+          <table style={{ marginTop: 8 }}><tbody>
+            {templates.map((t) => (
+              <tr key={t.id}><td><strong>{t.title}</strong></td><td>{money(t.amount_cents)}</td><td className="small">late fee {money(t.late_fee_cents)}</td></tr>
+            ))}
+          </tbody></table>
+        )}
+      </div>
     </>
   );
 }

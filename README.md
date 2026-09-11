@@ -46,6 +46,12 @@ secrets here. Key vars:
 - `SIMLIFE_SESSION_SECRET`
 - `SIMLIFE_DEMO_AUTH=true` (dev only; server refuses demo logins when `NODE_ENV=production`)
 - `SIMLIFE_QUOTE_PROVIDER=mock|stooq`
+- `SIMLIFE_SAVINGS_APY_BPS` — classroom savings APY in basis points (default
+  `340` = 3.40%); update the matching label and as-of date when the benchmark
+  changes. The current default follows the
+  [Marcus Online Savings published rate](https://www.marcus.com/us/en/savings/high-yield-savings)
+  as of September 7, 2026. It is a simulated variable classroom rate, not an
+  offer from a bank.
 
 ## Docs
 
