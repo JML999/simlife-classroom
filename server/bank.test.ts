@@ -365,3 +365,105 @@ test("opening balances: no account rows until first posting", async () => {
   const row = await one(`SELECT id FROM bank_accounts WHERE user_id = ?`, [s]);
   assert.equal(row, undefined);
 });
+
+async function openDispute(student: string, amount = 20000): Promise<{ billId: string; disputeId: string }> {
+  await postIncome({ userId: student, actorId: TEACHER, label: "Pay", amountCents: amount * 5, idempotencyKey: uid() });
+  const bill = await withTx(async (t) => issueBillInTx(t, {
+    userId: student, title: "Gym membership", amountCents: amount,
+    dueAt: new Date(Date.now() + 86400000).toISOString(), templateId: null, issuedBy: TEACHER, idempotencyKey: uid(),
+  }));
+  const opened = await disputeBill({ userId: student, billId: bill.id, reason: "I never signed up for this.", idempotencyKey: uid() });
+  return { billId: bill.id, disputeId: opened.dispute.id };
+}
+
+test("teacher resolves a dispute: audited transition, visible to student", async () => {
+  const { resolveDispute, listDisputes } = await import("./bank.js");
+  const s = await makeStudent();
+  const { disputeId } = await openDispute(s);
+  const r = await resolveDispute({ disputeId, actorId: TEACHER, resolution: "Verified with the gym: cancelled. Pay only if you rejoin.", idempotencyKey: uid() });
+  assert.equal(r.deduped, false);
+  assert.equal(r.dispute.status, "resolved");
+  assert.equal(r.dispute.resolved_by, TEACHER);
+  assert.ok(r.dispute.resolved_at);
+  // Student sees the reply in their own summary; bill itself unchanged.
+  const summary = await bankSummaryFor(s);
+  const d = summary.bills[0].disputes?.[0];
+  assert.equal(d?.resolution, "Verified with the gym: cancelled. Pay only if you rejoin.");
+  assert.equal(d?.status, "resolved");
+  // Teacher inbox carries student + bill + remaining context.
+  const inbox = await listDisputes();
+  const item = inbox.find((x) => x.id === disputeId)!;
+  assert.equal(item.student_name, "Stu");
+  assert.equal(item.bill_title, "Gym membership");
+  assert.ok(item.remaining_cents > 0);
+});
+
+test("resolve dedupes identical retries and conflicts on reused keys", async () => {
+  const { resolveDispute } = await import("./bank.js");
+  const s = await makeStudent();
+  const { disputeId } = await openDispute(s);
+  const key = uid();
+  const text = "Checked: the charge is correct.";
+  const a = await resolveDispute({ disputeId, actorId: TEACHER, resolution: text, idempotencyKey: key });
+  assert.equal(a.deduped, false);
+  const b = await resolveDispute({ disputeId, actorId: TEACHER, resolution: text, idempotencyKey: key });
+  assert.equal(b.deduped, true);
+  assert.equal(a.dispute.id, b.dispute.id);
+  await assert.rejects(
+    () => resolveDispute({ disputeId, actorId: TEACHER, resolution: "Different answer.", idempotencyKey: key }),
+    (e: any) => e instanceof BankError && e.code === "IDEMPOTENCY_CONFLICT",
+  );
+  await assert.rejects(
+    () => resolveDispute({ disputeId, actorId: TEACHER, resolution: "Yet another answer.", idempotencyKey: uid() }),
+    (e: any) => e instanceof BankError && e.code === "ALREADY_RESOLVED",
+  );
+  // Concurrent double-resolve: exactly one wins, the other gets a clean answer.
+  const s2 = await makeStudent();
+  const d2 = await openDispute(s2);
+  const [r1, r2] = await Promise.allSettled([
+    resolveDispute({ disputeId: d2.disputeId, actorId: TEACHER, resolution: "First.", idempotencyKey: uid() }),
+    resolveDispute({ disputeId: d2.disputeId, actorId: TEACHER, resolution: "Second.", idempotencyKey: uid() }),
+  ]);
+  const won = [r1, r2].filter((r) => r.status === "fulfilled");
+  const lost = [r1, r2].filter((r) => r.status === "rejected");
+  assert.equal(won.length, 1);
+  assert.equal(lost.length, 1);
+  assert.match(String((lost[0] as PromiseRejectedResult).reason?.message || ""), /already answered|just answered/i);
+});
+
+test("paying while a question is open stays allowed; inbox is class-scoped", async () => {
+  const { resolveDispute, listDisputes } = await import("./bank.js");
+  const clsA = await makeClass();
+  const clsB = await makeClass();
+  const a = await makeStudent(clsA);
+  const b = await makeStudent(clsB);
+  const da = await openDispute(a);
+  const db = await openDispute(b);
+  // Payment proceeds despite the open question.
+  const paid = await payBill({ userId: a, billId: da.billId, idempotencyKey: uid() });
+  assert.ok(paid.totalCents > 0);
+  // Class filter isolates each inbox.
+  const inboxA = await listDisputes(clsA);
+  const inboxB = await listDisputes(clsB);
+  assert.ok(inboxA.some((x) => x.id === da.disputeId));
+  assert.ok(!inboxA.some((x) => x.id === db.disputeId));
+  assert.ok(inboxB.some((x) => x.id === db.disputeId));
+  assert.ok(!inboxB.some((x) => x.id === da.disputeId));
+  // Open items sort before resolved ones (second open dispute in class A).
+  await resolveDispute({ disputeId: da.disputeId, actorId: TEACHER, resolution: "All set.", idempotencyKey: uid() });
+  const a2 = await makeStudent(clsA);
+  const da2 = await openDispute(a2);
+  const inboxA2 = await listDisputes(clsA);
+  assert.equal(inboxA2[0].status, "open");
+  assert.equal(inboxA2[0].id, da2.disputeId);
+  assert.ok(inboxA2.some((x) => x.id === da.disputeId && x.status === "resolved"));
+  void db;
+});
+
+test("resolving an unknown question reports not found", async () => {
+  const { resolveDispute } = await import("./bank.js");
+  await assert.rejects(
+    () => resolveDispute({ disputeId: "bd_missing", actorId: TEACHER, resolution: "Hi.", idempotencyKey: uid() }),
+    (e: any) => e instanceof BankError && e.code === "NOT_FOUND",
+  );
+});

@@ -533,6 +533,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
                 </div>
                 <div className="mail-facts"><span>Due {new Date(b.due_at).toLocaleDateString()}</span><strong>{money(b.remaining_cents)} remaining</strong>{b.paid_cents > 0 && <span>{money(b.paid_cents)} paid</span>}</div>
                 {b.disputes?.some((d: any) => d.status === "open") && <div className="question-sent">Question sent · awaiting teacher review</div>}
+                {(b.disputes || []).some((d: any) => d.status === "resolved") && <div className="question-answered">Teacher replied — open the letter to read the answer</div>}
                 <div className="mail-actions"><button className="ghost" onClick={() => openBill(b)}>Read</button><button disabled={busy} onClick={() => openBill(b, true)}>{payingId === b.id ? "Paying…" : "Pay bill"}</button></div>
                 </div>
               </article>
@@ -589,6 +590,16 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
             <p className="letter-body">{selectedBill.document_body || `This is your statement for ${selectedBill.title}. Review the amount and due date below. You may pay the full balance or make a partial payment from checking.`}</p>
             <div className="statement-box"><div><span>Original amount</span><strong>{money(selectedBill.amount_cents)}</strong></div><div><span>Already paid</span><strong>{money(selectedBill.paid_cents)}</strong></div><div><span>Due date</span><strong>{new Date(selectedBill.due_at).toLocaleDateString()}</strong></div><div className="statement-due"><span>Balance due</span><strong>{money(selectedBill.remaining_cents)}</strong></div></div>
             {selectedBill.status === "late" && selectedBill.late_fee_cents > 0 && <p className="late-note">This balance includes a {money(selectedBill.late_fee_cents)} late fee.</p>}
+            {(selectedBill.disputes || []).length > 0 && <div className="question-thread">
+              <h3>Questions about this bill</h3>
+              {selectedBill.disputes.map((d: any) => (
+                <div className="question-item" key={d.id}>
+                  <p className="question-q"><strong>You asked · {new Date(d.created_at).toLocaleDateString()}:</strong> {d.reason}</p>
+                  {d.status === "resolved" && d.resolution && <p className="question-a"><strong>Teacher replied{d.resolved_at ? ` · ${new Date(d.resolved_at).toLocaleDateString()}` : ""}:</strong> {d.resolution}</p>}
+                  {d.status !== "resolved" && <p className="small">Awaiting teacher review — the due date still applies.</p>}
+                </div>
+              ))}
+            </div>}
           </div>
           {!selectedBill.paid_at && <div className="letter-actions">
             {err && <div className="error" role="alert">{err}</div>}
@@ -966,16 +977,23 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
   const [tplFee, setTplFee] = useState("");
   const [tplDesc, setTplDesc] = useState("");
   const [tplSender, setTplSender] = useState("");
+  // Dispute inbox
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const resolveKeys = useRef<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
       const qs = classId ? `?classId=${classId}` : "";
-      const [s, t] = await Promise.all([
+      const [s, t, d] = await Promise.all([
         api<{ students: any[] }>(`/api/teacher/bank${qs}`),
         api<{ templates: any[] }>("/api/teacher/bills/templates"),
+        api<{ disputes: any[] }>(`/api/teacher/disputes${qs}`),
       ]);
       setSummary(s.students);
       setTemplates(t.templates);
+      setDisputes(d.disputes);
       setChecked((prev) => {
         if (prev.size > 0) return prev;
         return new Set(s.students.map((x: any) => x.id));
@@ -1086,6 +1104,22 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
 
   const dueCount = summary.reduce((s, x) => s + Number(x.bills_due || 0), 0);
   const lateCount = summary.reduce((s, x) => s + Number(x.bills_late || 0), 0);
+  const openDisputes = disputes.filter((d) => d.status === "open");
+
+  const resolve = async (d: any) => {
+    if (busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      if (!resolveKeys.current[d.id]) resolveKeys.current[d.id] = uid();
+      const r = await api<any>(`/api/teacher/disputes/${d.id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ resolution: replyText, idempotencyKey: resolveKeys.current[d.id] }),
+      });
+      setNotice(r.deduped ? "That answer was already recorded." : `Answered ${d.student_name}'s question about “${d.bill_title}.” The bill itself is unchanged.`);
+      setReplyingId(null); setReplyText("");
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
 
   return (
     <>
@@ -1123,6 +1157,32 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
           </tbody>
         </table></div>
         <p className="small">{checked.size} selected</p>
+      </div>
+
+      <div className="panel">
+        <div className="panel-heading"><div><h2>Student questions</h2><p className="hint">Bill questions from students{classId ? " in this class" : ""}. Answering never changes the bill — it only records your reply.</p></div><span className="portfolio-count">{openDisputes.length} open</span></div>
+        {disputes.length === 0 && <p className="small">No questions yet. When a student questions a bill, it appears here.</p>}
+        <div className="mailbox">
+          {disputes.map((d) => (
+            <div className="bill-card" key={d.id}>
+              <div className="bill-top">
+                <div><strong>{d.student_name}</strong> <span className="small">· {d.class_name || "no class"} · {d.bill_title} · {money(d.remaining_cents)} remaining · asked {new Date(d.created_at).toLocaleString()}</span></div>
+                <span className={d.status === "open" ? "badge-due" : "badge-paid"}>{d.status === "open" ? "Open" : "Answered"}</span>
+              </div>
+              <p className="question-q"><strong>Student:</strong> {d.reason}</p>
+              {d.status === "resolved" && <p className="question-a"><strong>Your answer{d.resolved_at ? ` · ${new Date(d.resolved_at).toLocaleDateString()}` : ""}:</strong> {d.resolution}</p>}
+              {d.status === "open" && replyingId !== d.id && (
+                <div className="row" style={{ marginTop: 8 }}><button className="ghost" onClick={() => { setReplyingId(d.id); setReplyText(""); }}>Reply and mark answered</button></div>
+              )}
+              {d.status === "open" && replyingId === d.id && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="field"><label htmlFor={`reply-${d.id}`}>Your answer (the student sees this in the same letter)</label><textarea id={`reply-${d.id}`} rows={3} value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Explain the charge…" autoFocus /></div>
+                  <div className="row" style={{ marginTop: 8 }}><button disabled={busy || replyText.trim().length < 2} onClick={() => resolve(d)}>Send answer</button><button className="ghost" onClick={() => { setReplyingId(null); setReplyText(""); }}>Leave open</button></div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {classId && (

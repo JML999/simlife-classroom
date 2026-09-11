@@ -166,3 +166,14 @@ deployment, live migrations, and merging remain explicitly out of scope.
   SQLite; reason about Postgres types — see §6.3).
 - Commands: `npm run dev` (3100+4101) · `npm test` · `npm run seed:third` /
   `seed:fourth` (idempotent) · `npm run build` + `npm start` (prod).
+
+## 10. Dispute-inbox follow-up (branch `experiment/simlife-banking`, unmerged)
+
+Teacher side of student bill questions is built: class-filtered inbox,
+reply-and-resolve with resolver/timestamp audit, no-overwrite semantics
+(dedupe / 409 conflict / 409 resolved), student-visible replies in the same
+mail document, pay-while-open preserved. 39/39 tests. Docs updated in
+`BANKING_REVIEW.md` (includes Postgres lock-order reasoning and an
+attachment-design note for later). Prod fail-closed gates re-verified.
+Nothing merged, nothing deployed, no live data touched. ChromeOS/browser
+pass still owed.

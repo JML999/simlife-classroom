@@ -17,7 +17,8 @@ import { withTx, newId, nowIso, type Tx } from "./db.js";
 export class BankError extends Error {
   code:
     | "INSUFFICIENT_FUNDS" | "NOT_FOUND" | "INVALID_AMOUNT" | "ALREADY_PAID"
-    | "NOT_YOUR_BILL" | "INVALID_INPUT" | "EMPTY_BATCH" | "IDEMPOTENCY_CONFLICT";
+    | "NOT_YOUR_BILL" | "INVALID_INPUT" | "EMPTY_BATCH" | "IDEMPOTENCY_CONFLICT"
+    | "ALREADY_RESOLVED";
   constructor(code: BankError["code"], msg: string) {
     super(msg);
     this.code = code;
@@ -72,7 +73,8 @@ export interface Bill {
 
 export interface BillDispute {
   id: string; bill_id: string; user_id: string; reason: string; status: string;
-  resolution: string | null; resolved_at: string | null; idempotency_key: string;
+  resolution: string | null; resolved_at: string | null; resolved_by: string | null;
+  idempotency_key: string; resolve_key: string | null;
   created_at: string;
 }
 
@@ -503,7 +505,8 @@ export async function disputeBill(opts: {
     if (bill.paid_at) throw new BankError("ALREADY_PAID", "This bill is already paid.");
     const dispute: BillDispute = {
       id: newId("bd"), bill_id: bill.id, user_id: opts.userId, reason, status: "open",
-      resolution: null, resolved_at: null, idempotency_key: key, created_at: nowIso(),
+      resolution: null, resolved_at: null, resolved_by: null,
+      idempotency_key: key, resolve_key: null, created_at: nowIso(),
     };
     await t.run(
       `INSERT INTO bill_disputes (id, bill_id, user_id, reason, status, resolution, resolved_at, idempotency_key, created_at) VALUES (?, ?, ?, ?, 'open', NULL, NULL, ?, ?)`,
@@ -513,8 +516,103 @@ export async function disputeBill(opts: {
   });
 }
 
-export async function accrueSavingsForUser(userId: string, now = new Date()): Promise<void> {
-  await withTx(async (t) => {
+/**
+ * Teacher resolves a student's bill question. Audited state transition, not
+ * deletion: sets reply + resolver + timestamp, flips open→resolved.
+ *
+ * - Same idempotency key + same reply text → deduped (safe retry).
+ * - Same key + different text → IDEMPOTENCY_CONFLICT.
+ * - Already resolved (any other key) → ALREADY_RESOLVED. Replies are never
+ *   silently overwritten; there is no edit path.
+ * - Resolution never changes the bill. Paying while open stays allowed.
+ */
+export async function resolveDispute(opts: {
+  disputeId: string; actorId: string; resolution: string; idempotencyKey: string;
+}): Promise<{ dispute: BillDispute; deduped: boolean }> {
+  const key = requireKey(opts.idempotencyKey);
+  const resolution = String(opts.resolution || "").trim();
+  if (resolution.length < 2 || resolution.length > 1000) {
+    throw new BankError("INVALID_INPUT", "Write a short reply to the student (2–1,000 characters).");
+  }
+  return withTx(async (t) => {
+    const fu = t.dialect === "pg" ? " FOR UPDATE" : "";
+    const dispute = await t.one<BillDispute & { owner_role: string }>(
+      `SELECT d.*, u.role AS owner_role FROM bill_disputes d JOIN users u ON u.id = d.user_id WHERE d.id = ?${fu}`,
+      [opts.disputeId],
+    );
+    if (!dispute) throw new BankError("NOT_FOUND", "Question not found.");
+    if (dispute.owner_role !== "student") throw new BankError("NOT_FOUND", "Question not found.");
+    if (dispute.status === "resolved") {
+      if (dispute.resolve_key === key) {
+        if (dispute.resolution === resolution) return { dispute: stripOwner(dispute), deduped: true };
+        throw new BankError("IDEMPOTENCY_CONFLICT", "That answer confirmation was already used for different details. Refresh to see the recorded answer.");
+      }
+      throw new BankError(
+        "ALREADY_RESOLVED",
+        `This question was already answered${dispute.resolved_at ? ` on ${new Date(dispute.resolved_at).toLocaleDateString()}` : ""}. Resolved answers cannot be overwritten.`,
+      );
+    }
+    const now = nowIso();
+    const n = await t.run(
+      `UPDATE bill_disputes SET status = 'resolved', resolution = ?, resolved_at = ?, resolved_by = ?, resolve_key = ?
+       WHERE id = ? AND status = 'open'`,
+      [resolution, now, opts.actorId, key, dispute.id],
+    );
+    if (n === 0) {
+      // Lost a concurrent race: re-read to answer precisely, never overwrite.
+      const current = (await t.one<BillDispute>(`SELECT * FROM bill_disputes WHERE id = ?`, [dispute.id]))!;
+      if (current.status === "resolved" && current.resolve_key === key && current.resolution === resolution) {
+        return { dispute: current, deduped: true };
+      }
+      throw new BankError("ALREADY_RESOLVED", "This question was just answered. Resolved answers cannot be overwritten.");
+    }
+    const done = (await t.one<BillDispute>(`SELECT * FROM bill_disputes WHERE id = ?`, [dispute.id]))!;
+    return { dispute: done, deduped: false };
+  });
+}
+
+function stripOwner(d: BillDispute & { owner_role?: string }): BillDispute {
+  const { owner_role, ...rest } = d;
+  void owner_role;
+  return rest;
+}
+
+export interface DisputeInboxItem extends BillDispute {
+  student_name: string;
+  class_id: string | null;
+  class_name: string | null;
+  bill_title: string;
+  remaining_cents: number;
+  bill_status: BillStatus;
+}
+
+/** Teacher inbox: open questions first, then newest. Optional class filter. */
+export async function listDisputes(classId?: string): Promise<DisputeInboxItem[]> {
+  const { q } = await import("./db.js");
+  const rows = await q<DisputeInboxItem & { amount_cents: number; late_fee_cents: number; paid_at: string | null; due_at: string; paid_cents: number }>(
+    `SELECT d.*, u.name AS student_name, u.class_id AS class_id, c.name AS class_name,
+            b.title AS bill_title, b.amount_cents AS amount_cents, b.late_fee_cents AS late_fee_cents,
+            b.paid_at AS paid_at, b.due_at AS due_at, b.paid_cents AS paid_cents
+     FROM bill_disputes d
+     JOIN users u ON u.id = d.user_id
+     JOIN bills b ON b.id = d.bill_id
+     LEFT JOIN classes c ON c.id = u.class_id
+     WHERE u.role = 'student' ${classId ? "AND u.class_id = ?" : ""}
+     ORDER BY CASE WHEN d.status = 'open' THEN 0 ELSE 1 END, d.created_at DESC`,
+    classId ? [classId] : [],
+  );
+  const now = new Date();
+  return rows.map((r) => ({
+    ...r,
+    bill_status: billStatus({ paid_at: r.paid_at, due_at: r.due_at }, now),
+    remaining_cents: billRemaining({
+      amount_cents: Number(r.amount_cents), late_fee_cents: Number(r.late_fee_cents),
+      paid_at: r.paid_at, due_at: r.due_at, paid_cents: Number(r.paid_cents || 0),
+    }, now),
+  }));
+}
+
+export async function accrueSavingsForUser(userId: string, now = new Date()): Promise<void> {  await withTx(async (t) => {
     const fu = t.dialect === "pg" ? " FOR UPDATE" : "";
     const row = await t.one<{ id: string; checking_cents: number; savings_cents: number; interest_residual_micros: number; interest_accrued_at: string | null }>(
       `SELECT id, checking_cents, savings_cents, interest_residual_micros, interest_accrued_at FROM bank_accounts WHERE user_id = ?${fu}`, [userId],
@@ -601,9 +699,13 @@ export async function issueIncomeBatch(opts: {
     if (seen.has(it.userId)) throw new BankError("INVALID_INPUT", "Duplicate student in batch — remove the duplicate row.");
     seen.add(it.userId);
   }
+  // Deterministic row-lock order: concurrent batches covering overlapping
+  // students must not lock bank_accounts rows in opposite orders (a classic
+  // Postgres deadlock). Sorting by userId makes every writer agree.
+  const ordered = [...opts.items].sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
   return withTx(async (t) => {
     let posted = 0;
-    for (const it of opts.items) {
+    for (const it of ordered) {
       const key = `${opts.batchId}:${it.userId}`;
       const acct = await getOrCreateBankAccount(t, it.userId);
       const existing = await findJournalByKey(t, key);

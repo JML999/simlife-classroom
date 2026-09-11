@@ -20,7 +20,7 @@ import {
   LedgerError, MICRO,
 } from "./ledger.js";
 import {
-  postIncome, transfer, payBill, disputeBill, createBillTemplate, issueIncomeBatch,
+  postIncome, transfer, payBill, disputeBill, resolveDispute, listDisputes, createBillTemplate, issueIncomeBatch,
   issueBillBatch, bankSummaryFor, checkBankInvariant, BankError,
 } from "./bank.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
@@ -506,7 +506,7 @@ function bankError(res: express.Response, err: unknown) {
       err.code === "INSUFFICIENT_FUNDS" ? 422
       : err.code === "NOT_FOUND" ? 404
       : err.code === "NOT_YOUR_BILL" ? 403
-      : err.code === "IDEMPOTENCY_CONFLICT" || err.code === "ALREADY_PAID" ? 409
+      : err.code === "IDEMPOTENCY_CONFLICT" || err.code === "ALREADY_PAID" || err.code === "ALREADY_RESOLVED" ? 409
       : 400;
     res.status(status).json({ error: err.message, code: err.code });
     return;
@@ -585,6 +585,28 @@ app.post("/api/bank/bills/:id/dispute", requireAuth, async (req, res) => {
 });
 
 // ---------- banking (teacher) ----------
+
+app.get("/api/teacher/disputes", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "") || undefined;
+  if (classId) {
+    const cls = await one(`SELECT id FROM classes WHERE id = ?`, [classId]);
+    if (!cls) { res.status(404).json({ error: "Class not found." }); return; }
+  }
+  res.json({ disputes: await listDisputes(classId) });
+});
+
+app.post("/api/teacher/disputes/:id/resolve", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try {
+    const r = await resolveDispute({
+      disputeId: String(req.params.id),
+      actorId: teacher.userId,
+      resolution: String(req.body?.resolution || ""),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    res.json({ ok: true, deduped: r.deduped, dispute: r.dispute });
+  } catch (err) { bankError(res, err); }
+});
 
 /** Resolve + validate the student set for a class-scoped batch. */
 async function batchStudents(classId: string, studentIds: unknown): Promise<{ id: string; name: string }[]> {
@@ -772,6 +794,8 @@ async function boot() {
   await ensureColumn("bills", "sender", "TEXT");
   await ensureColumn("bills", "document_title", "TEXT");
   await ensureColumn("bills", "document_body", "TEXT");
+  await ensureColumn("bill_disputes", "resolved_by", "TEXT");
+  await ensureColumn("bill_disputes", "resolve_key", "TEXT");
   if (demoEnabled()) await ensureDemoUsers();
   app.listen(PORT, "127.0.0.1", () => {
     console.log(`[simlife] api on http://127.0.0.1:${PORT} (quotes: ${quotes.providerName})`);

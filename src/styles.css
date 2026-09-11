@@ -333,3 +333,10 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
   .statement-box > div { border-right: 0; border-bottom: 1px solid #e1e3eb !important; }
   .statement-box > div:last-child { border-bottom: 0 !important; }
 }
+.question-thread { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.question-thread h3 { font-size: 13px; margin: 0 0 8px; }
+.question-item { margin-bottom: 10px; }
+.question-q, .question-a { font-size: 14px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; margin: 0 0 6px; }
+.question-q { background: #f4f6f4; border: 1px solid var(--line); }
+.question-a { background: #eef6f3; border: 1px solid #bcd8d0; }
+.question-answered { font-size: 12px; color: var(--pine-dark, #0a463f); margin-top: 4px; }

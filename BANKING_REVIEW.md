@@ -107,3 +107,65 @@ to brokerage still updates both accounting systems inside one transaction.
 - Audit/history pagination and `BASE_PATH` hosting remain general product work.
 
 See `OPENCODE_NEXT_DIRECTIVE.md` for the next bounded implementation task.
+
+## Follow-up: teacher dispute inbox (branch, unmerged)
+
+Implemented per `OPENCODE_NEXT_DIRECTIVE.md` (dispute follow-up):
+
+- `resolveDispute()` (`server/bank.ts`): audited open→resolved transition
+  recording reply + resolver + timestamp. Same key + same text dedupes;
+  same key + different text → 409 conflict; any other write to a resolved
+  dispute → 409 `ALREADY_RESOLVED`. Resolution never touches the bill;
+  paying while a question is open stays allowed. Concurrent double-resolve:
+  exactly one wins (`UPDATE ... WHERE status='open'` row-count check).
+- `listDisputes(classId?)`: open-first ordering with student/bill/remaining
+  context; class-filtered. New columns `resolved_by`, `resolve_key`
+  (additive `ensureColumn` migration + fresh-DB DDL).
+- Routes: `GET /api/teacher/disputes?classId=`,
+  `POST /api/teacher/disputes/:id/resolve` (both `requireCurrentTeacher`).
+- UI: teacher Banking "Student questions" panel (open count, reply + resolve,
+  leave-open path); student mail document renders the full thread
+  (question + teacher reply + resolved state).
+- Tests: 39/39 green (4 new: resolve visibility, dedupe/conflict/race,
+  pay-while-open + class scoping, unknown-id 404).
+- Live walkthrough (fresh SQLite, fictional accounts): dispute → inbox →
+  resolve → student-visible reply → overwrite rejected → isolation +
+  pay-while-open verified at route level.
+- Prod gates re-verified: unsafe config refused; full-shape config proceeds
+  to DB connect (bogus host → ECONNREFUSED, i.e. validation passed).
+
+### Postgres lock-order review (reasoning only — no live pg connected)
+
+Write-order per transaction, always parent→child, single direction:
+- `disputeBill`: `bills` row (`FOR UPDATE`) → `bill_disputes` INSERT.
+- `resolveDispute`: `bill_disputes` row (`FOR UPDATE`) → unlocked `bills`
+  read → conditional `UPDATE` on the already-locked row. No second lock taken.
+- `payBill`: `bank_accounts` → journal INSERT → `bills` UPDATE.
+- `transfer`/`postIncome`/batches: bank rows → journal → (brokerage rows).
+- Batches now sort items by `userId` so concurrent class-wide postings lock
+  `bank_accounts` rows in the same order (removes the one real deadlock vector:
+  overlapping batches locking rows in opposite orders).
+- SQLite mutex serializes everything, so tested concurrency semantics
+  (double-submit, races) hold there by construction; on Postgres they rest on
+  row locks + the `WHERE status='open'` guard + unique keys, as reasoned above.
+  A staging run against real Postgres is still recommended before merge.
+
+### Attachment/PDF design note (future, not built)
+
+If bill letters ever accept uploads: store bytes in private object storage
+(Supabase Storage, non-public bucket), never in Postgres; serve only through
+an authorized route that checks session + class membership and returns a
+short-lived signed URL with `Content-Disposition: attachment`. Allowlist MIME
+(`application/pdf`, `image/png`, `image/jpeg`), 5 MB cap, magic-byte check on
+the server (extension is not trust). No librarian-side rendering pipeline, so
+malware scanning means either a scanner service or classroom policy + teacher
+upload-only. Versioning: immutable `bill_documents(id, bill_id, sha256,
+mime, bytes, uploaded_by, created_at)` rows; `bills` points at the active
+document id; a new version is a new row + pointer update — history preserved,
+nothing mutated.
+
+### Honest limitations
+
+- No real-browser walkthrough available in this environment (same constraint
+  as prior passes); layouts follow existing responsive patterns and build clean.
+- ChromeOS/small-screen verification still owed before students use it.

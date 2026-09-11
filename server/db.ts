@@ -311,6 +311,8 @@ export async function initSchema(): Promise<void> {
       status TEXT NOT NULL DEFAULT 'open',
       resolution TEXT,
       resolved_at TEXT,
+      resolved_by TEXT,
+      resolve_key TEXT,
       idempotency_key TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL
     )`,
