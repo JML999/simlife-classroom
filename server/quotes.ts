@@ -183,6 +183,42 @@ export class StooqQuoteProvider implements QuoteProvider {
   }
 }
 
+/**
+ * Finnhub adapter (free tier, API key). 60 calls/min on the free plan, which
+ * covers a classroom behind the 60s server-side cache. Key stays server-side
+ * in SIMLIFE_MARKET_API_KEY. Always marked delayed.
+ */
+export class FinnhubQuoteProvider implements QuoteProvider {
+  readonly name = "finnhub";
+  private key: string;
+  constructor(key?: string) {
+    this.key = key ?? process.env["SIMLIFE_MARKET_API_KEY"] ?? "";
+  }
+  async search(q: string): Promise<SecurityInfo[]> {
+    return searchDirectory(q);
+  }
+  async getQuote(ticker: string): Promise<Quote> {
+    const t = normalizeTicker(ticker);
+    if (!this.key) throw new QuoteError("UNAVAILABLE", "Live quotes are not configured. Try again later.");
+    let body: any;
+    try {
+      const resp = await fetch(
+        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(t)}&token=${encodeURIComponent(this.key)}`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      if (!resp.ok) throw new Error(`http ${resp.status}`);
+      body = await resp.json();
+    } catch {
+      throw new QuoteError("UNAVAILABLE", "Live quotes are unavailable right now. Try again later.");
+    }
+    const price = Number(body?.c);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new QuoteError("NOT_FOUND", `No live quote for ${t}. Check the spelling.`);
+    }
+    const ts = Number(body?.t) > 0 ? new Date(Number(body.t) * 1000).toISOString() : new Date().toISOString();
+    return { ticker: t, priceCents: Math.round(price * 100), asOf: ts, source: "finnhub", delayed: true };
+  }
+}
 /** Server-side TTL cache in front of any provider. */
 export class CachedQuotes {
   private cache = new Map<string, { quote: Quote; expires: number }>();
@@ -203,6 +239,9 @@ export class CachedQuotes {
 
 export function makeQuoteProvider(): CachedQuotes {
   const which = (process.env["SIMLIFE_QUOTE_PROVIDER"] || "mock").toLowerCase();
-  const inner = which === "stooq" ? new StooqQuoteProvider() : new MockQuoteProvider();
+  const inner =
+    which === "finnhub" ? new FinnhubQuoteProvider()
+    : which === "stooq" ? new StooqQuoteProvider() // legacy; Stooq now bot-walls server fetches
+    : new MockQuoteProvider();
   return new CachedQuotes(inner);
 }

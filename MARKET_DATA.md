@@ -9,7 +9,8 @@ free or cheap, keyed server-side, and clearly labeled as delayed.
 | Stage | Provider | Why |
 |---|---|---|
 | Local dev + automated tests | **Mock** (built in) | Deterministic, offline, controllable prices for tests and demos |
-| Classroom pilot (no budget) | **Stooq free CSV** (built in, opt-in via `SIMLIFE_QUOTE_PROVIDER=stooq`) | No key, no subscription, delayed quotes, simple server-side fetch |
+| Classroom pilot (no budget) | **Finnhub free tier** (built in, needs free API key) | 60 calls/min free; covers a class behind our 60s server-side cache; proper timestamps |
+| ~~Stooq free CSV~~ | **Dead as of Sept 2026** — Stooq put its quote endpoints behind a browser proof-of-work challenge; server fetches get a 404/challenge page. The adapter remains in code as legacy but is not recommended. |
 | Funded / production | **Finnhub** (free tier) or **Alpha Vantage** (free tier), behind our `QuoteProvider` interface | Documented free tiers for development/small use; keys stay in env |
 
 To add a keyed vendor later: implement `QuoteProvider` in

@@ -45,3 +45,34 @@ test("mock quotes: fixed classroom prices, stable stand-ins elsewhere", async ()
   assert.equal(a.source, "mock");
   assert.equal(a.delayed, true);
 });
+
+test("finnhub adapter parses live quotes and handles gaps", async () => {
+  const { FinnhubQuoteProvider } = await import("./quotes.js");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ c: 232.5, t: 1757966400 }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+  try {
+    const quote = await new FinnhubQuoteProvider("test-key").getQuote("AAPL");
+    assert.equal(quote.priceCents, 23250);
+    assert.equal(quote.asOf, "2025-09-15T20:00:00.000Z");
+    assert.equal(quote.source, "finnhub");
+    assert.equal(quote.delayed, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  globalThis.fetch = async () => new Response(JSON.stringify({ c: 0, t: 0 }), { status: 200 });
+  try {
+    await assert.rejects(
+      new FinnhubQuoteProvider("test-key").getQuote("NOPE"),
+      (e: any) => e.code === "NOT_FOUND",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  await assert.rejects(
+    new FinnhubQuoteProvider("").getQuote("AAPL"),
+    (e: any) => e.code === "UNAVAILABLE",
+  );
+});
