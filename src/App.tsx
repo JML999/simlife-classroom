@@ -998,10 +998,6 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
       setSummary(s.students);
       setTemplates(t.templates);
       setDisputes(d.disputes);
-      setChecked((prev) => {
-        if (prev.size > 0) return prev;
-        return new Set(s.students.map((x: any) => x.id));
-      });
     } catch (e: any) { setErr(e.message); }
   }, [classId]);
   useEffect(() => { load(); }, [load]);
@@ -1016,6 +1012,9 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
     });
   };
   const ids = [...checked];
+  const allIds = summary.map((s: any) => s.id);
+  const allChecked = summary.length > 0 && summary.every((s: any) => checked.has(s.id));
+  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(allIds));
 
   const previewPay = async () => {
     setErr(""); setNotice("");
@@ -1145,7 +1144,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
         <h2>Class accounts</h2>
         <p className="hint">Check students to target paychecks and bills. Unchecked students are skipped.</p>
         <div className="table-wrap"><table>
-          <thead><tr><th></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
+          <thead><tr><th><input type="checkbox" aria-label="Check all students" checked={allChecked} onChange={toggleAll} /></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
           <tbody>
             {summary.map((s) => (
               <tr key={s.id}>
@@ -1160,7 +1159,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
             ))}
           </tbody>
         </table></div>
-        <p className="small">{checked.size} selected</p>
+        <p className="small">{checked.size} of {summary.length} selected</p>
       </div>
 
       <div className="panel">

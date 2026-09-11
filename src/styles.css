@@ -212,7 +212,7 @@ th.sortable:hover { color: var(--olive-dark); }
 .teacher-banking-experience .teacher-summary strong { font-family: var(--sans); font-weight: 800; }
 .teacher-banking-experience .panel { background: #fff; border-color: #e4e6f1; border-radius: 18px; box-shadow: 0 8px 22px rgba(51,52,72,.05); }
 .teacher-banking-experience .panel h2 { color: var(--bank-ink); font-family: var(--sans); font-weight: 800; }
-.teacher-banking-experience .pill { color: var(--bank-blue-dark); background: transparent; border-color: #cbd1f6; }
+.teacher-banking-experience .pill { color: #23243d; background: #fff; border: 1px solid #cbd1f6; }
 .teacher-banking-experience .pill.active { color: #fff; background: var(--bank-blue); border-color: var(--bank-blue); }
 .bank-kicker { color: var(--bank-blue); font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .bank-welcome { position: relative; min-height: 220px; display: flex; align-items: center; justify-content: space-between; gap: 28px; margin: 18px 0; padding: 34px 40px; overflow: hidden; background: var(--bank-cream); border: 1px solid #f1df7b; border-radius: 24px; }
