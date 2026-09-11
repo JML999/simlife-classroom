@@ -75,6 +75,10 @@ function Login({ config, onDone }: { config: any; onDone: () => void }) {
 
   useEffect(() => {
     if (!config?.googleClientId || !btnRef.current) return;
+    // StrictMode remounts effects in dev; initializing Google twice logs a
+    // warning and the second instance wins, so guard it.
+    if (btnRef.current.dataset.gsiInit) return;
+    btnRef.current.dataset.gsiInit = "1";
     const s = document.createElement("script");
     s.src = "https://accounts.google.com/gsi/client";
     s.onload = () => {

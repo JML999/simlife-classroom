@@ -50,6 +50,9 @@ async function makePg(url: string): Promise<Backend> {
     connectionString: url,
     ssl: /supabase\.(co|com)/.test(url) ? { rejectUnauthorized: false } : undefined,
     max: 5,
+    // Cycle idle clients quickly: Supabase's pooler kills idle connections, and
+    // handing a dead client to a classroom request means a failed load.
+    idleTimeoutMillis: 15_000,
     connectionTimeoutMillis: 5_000,
     statement_timeout: 10_000,
     query_timeout: 10_000,

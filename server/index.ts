@@ -781,8 +781,14 @@ if (fs.existsSync(path.join(dist, "index.html"))) {
 
 // ---------- boot ----------
 
-async function boot() {
-  validateProductionEnv();
+// Safety net: Express 4 does not catch async route rejections, and Node 24
+// crashes the process on unhandled rejections by default. A transient DB blip
+// must cost one failed request, not the whole classroom server.
+process.on("unhandledRejection", (err) => {
+  console.error("[simlife] unhandled rejection (server stays up):", err);
+});
+
+async function boot() {  validateProductionEnv();
   await initSchema();
   await ensureColumn("users", "last_active_at", "TEXT");
   await ensureColumn("bank_accounts", "interest_residual_micros", "INTEGER NOT NULL DEFAULT 0");
