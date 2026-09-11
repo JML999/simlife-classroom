@@ -26,7 +26,13 @@ import {
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 
-const PORT = Number(process.env["SIMLIFE_PORT"] || 4101);
+// Render and similar hosts supply PORT and reach the process over 0.0.0.0.
+// Local development stays loopback-only and keeps SimLife on its own port.
+const PORT = Number(process.env["PORT"] || process.env["SIMLIFE_PORT"] || 4101);
+const HOST = process.env["SIMLIFE_HOST"] || (process.env["NODE_ENV"] === "production" ? "0.0.0.0" : "127.0.0.1");
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error("PORT/SIMLIFE_PORT must be a valid TCP port.");
+}
 const app = express();
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
@@ -803,8 +809,8 @@ async function boot() {  validateProductionEnv();
   await ensureColumn("bill_disputes", "resolved_by", "TEXT");
   await ensureColumn("bill_disputes", "resolve_key", "TEXT");
   if (demoEnabled()) await ensureDemoUsers();
-  app.listen(PORT, "127.0.0.1", () => {
-    console.log(`[simlife] api on http://127.0.0.1:${PORT} (quotes: ${quotes.providerName})`);
+  app.listen(PORT, HOST, () => {
+    console.log(`[simlife] api on http://${HOST}:${PORT} (quotes: ${quotes.providerName})`);
   });
 }
 

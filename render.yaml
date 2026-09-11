@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# This creates a NEW SimLife service. It does not reference CodeWorld's service,
+# database, environment group, or repository.
+services:
+  - type: web
+    name: simlife-classroom
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SIMLIFE_DATABASE_URL
+        sync: false
+      - key: SIMLIFE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: SIMLIFE_ALLOWED_GOOGLE_DOMAIN
+        value: tcitys.org
+      - key: SIMLIFE_TEACHER_EMAILS
+        sync: false
+      - key: SIMLIFE_SESSION_SECRET
+        generateValue: true
+      - key: SIMLIFE_DEMO_AUTH
+        value: "false"
+      - key: SIMLIFE_QUOTE_PROVIDER
+        value: mock
+      - key: SIMLIFE_SAVINGS_APY_BPS
+        value: "340"
+      - key: SIMLIFE_SAVINGS_RATE_LABEL
+        value: High-yield classroom benchmark · Marcus Online Savings
+      - key: SIMLIFE_SAVINGS_RATE_AS_OF
+        value: "2026-09-07"

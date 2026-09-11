@@ -56,5 +56,6 @@ secrets here. Key vars:
 ## Docs
 
 - `ARCHITECTURE.md` — safety boundary, data model, routes, ledger rules
+- `DEPLOY_SIMLIFE.md` — isolated Render deployment and classroom pilot checklist
 - `MARKET_DATA.md` — provider recommendation
 - `SESSION_HANDOFF.md` — what works, what's mocked, risks, run commands
