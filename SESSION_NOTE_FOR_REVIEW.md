@@ -167,7 +167,7 @@ deployment, live migrations, and merging remain explicitly out of scope.
 - Commands: `npm run dev` (3100+4101) · `npm test` · `npm run seed:third` /
   `seed:fourth` (idempotent) · `npm run build` + `npm start` (prod).
 
-## 10. Dispute-inbox follow-up (branch `experiment/simlife-banking`, unmerged)
+## 10. Dispute-inbox follow-up (merged into `main`)
 
 Teacher side of student bill questions is built: class-filtered inbox,
 reply-and-resolve with resolver/timestamp audit, no-overwrite semantics
@@ -175,5 +175,24 @@ reply-and-resolve with resolver/timestamp audit, no-overwrite semantics
 mail document, pay-while-open preserved. 39/39 tests. Docs updated in
 `BANKING_REVIEW.md` (includes Postgres lock-order reasoning and an
 attachment-design note for later). Prod fail-closed gates re-verified.
-Nothing merged, nothing deployed, no live data touched. ChromeOS/browser
-pass still owed.
+Merged as part of `a8345a5`; nothing deployed and no live data was touched by
+the implementation pass. ChromeOS/browser pass still owed.
+
+## 11. Pilot deployment preparation (2026-09-11)
+
+Banking is now merged into this repository's `main`. Deployment preparation is
+committed separately: the server honors Render's `PORT`, binds to `0.0.0.0` in
+production, and stays loopback-only by default in development. `render.yaml`
+defines a new free `simlife-classroom` service with its own generated session
+secret, SimLife-only environment variables, and `/api/health`. See
+`DEPLOY_SIMLIFE.md` for the exact staged classroom pilot and rollback steps.
+
+Verification after this change: typecheck clean, 39/39 tests, build clean, and a
+local Render-style `0.0.0.0:$PORT` health/config smoke test passed against a
+temporary SQLite database. CodeWorld remained clean and was not changed.
+
+External deployment is not yet complete. The SimLife Git repository still has
+no remote; the saved GitHub CLI credential is expired, and browser/device auth
+was blocked by a connection reset in this environment. Create a separate private
+GitHub repository (recommended name `simlife-classroom`), add it as this repo's
+`origin`, push `main`, then create a new Render Blueprint from `render.yaml`.
