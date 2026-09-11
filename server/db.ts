@@ -201,6 +201,15 @@ export async function initSchema(): Promise<void> {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_users_email ON users(email) WHERE email IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS user_aliases (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      email TEXT,
+      google_sub TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_user_aliases_email ON user_aliases(email) WHERE email IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_user_aliases_google_sub ON user_aliases(google_sub) WHERE google_sub IS NOT NULL`,
     `CREATE TABLE IF NOT EXISTS classes (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -333,6 +342,17 @@ export async function initSchema(): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_income_user ON income_postings(user_id, posted_at)`,
     `CREATE INDEX IF NOT EXISTS idx_sl_income_idem ON income_postings(idempotency_key)`,
+    `CREATE TABLE IF NOT EXISTS student_account_merges (
+      id TEXT PRIMARY KEY,
+      target_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source_user_id TEXT NOT NULL,
+      source_email TEXT,
+      source_name TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_student_merges_target ON student_account_merges(target_user_id, created_at)`,
   ];
   for (const s of stmts) await b.run(s);
 }

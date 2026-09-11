@@ -22,7 +22,9 @@ import {
 import {
   postIncome, transfer, payBill, disputeBill, resolveDispute, listDisputes, createBillTemplate, issueIncomeBatch,
   issueBillBatch, bankSummaryFor, checkBankInvariant, BankError,
+  adjustBankBalance,
 } from "./bank.js";
+import { deletionStatus, deleteEmptyStudent, mergeStudents, StudentAdminError } from "./student-admin.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 
@@ -113,6 +115,13 @@ app.post("/api/auth/google", async (req, res) => {
   const role = isTeacherEmail(identity.email) ? "teacher" : "student";
   const now = nowIso();
   let user = await one<{ id: string; role: string }>(`SELECT id, role FROM users WHERE google_sub = ?`, [identity.sub]);
+  if (!user) {
+    user = await one<{ id: string; role: string }>(
+      `SELECT u.id, u.role FROM user_aliases a JOIN users u ON u.id = a.user_id
+       WHERE a.google_sub = ? OR (a.email IS NOT NULL AND a.email = ?) LIMIT 1`,
+      [identity.sub, identity.email],
+    );
+  }
   if (!user) {
     const byEmail = identity.email
       ? await one<{ id: string }>(`SELECT id FROM users WHERE email = ?`, [identity.email])
@@ -435,7 +444,7 @@ app.post("/api/teacher/cash", requireCurrentTeacher, async (req, res) => {
     }
     const amountCents = Math.round(dollars * 100);
     const r = await adjustCash({
-      userId: studentId, actorId: teacher.userId, amountCents,
+      userId: studentId, actorId: teacher.id, amountCents,
       reason: String(req.body?.reason || ""),
       idempotencyKey: String(req.body?.idempotencyKey || ""),
     });
@@ -448,7 +457,7 @@ app.post("/api/teacher/cash/reverse", requireCurrentTeacher, async (req, res) =>
   try {
     const r = await reverseCash({
       entryId: String(req.body?.entryId || ""),
-      actorId: teacher.userId,
+      actorId: teacher.id,
       reason: String(req.body?.reason || ""),
       idempotencyKey: String(req.body?.idempotencyKey || ""),
     });
@@ -486,7 +495,55 @@ app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
             COALESCE(SUM(CASE WHEN l.amount_cents < 0 AND l.kind IN ('cash_adjust','cash_reversal') THEN -l.amount_cents ELSE 0 END), 0) AS removed
      FROM ledger l JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ?`, [studentId],
   );
-  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId), bank: await bankSummaryFor(studentId), bankInvariant: await checkBankInvariant(studentId) });
+  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId), bank: await bankSummaryFor(studentId), bankInvariant: await checkBankInvariant(studentId), deletion: await deletionStatus(studentId) });
+});
+
+app.patch("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
+  const studentId = String(req.body?.studentId || "");
+  const name = String(req.body?.name || "").trim();
+  const classId = req.body?.classId == null ? null : String(req.body.classId);
+  if (name.length < 2 || name.length > 100) { res.status(400).json({ error: "Student name must be 2–100 characters." }); return; }
+  if (classId && !(await one(`SELECT id FROM classes WHERE id = ?`, [classId]))) { res.status(404).json({ error: "Class not found." }); return; }
+  const n = await run(`UPDATE users SET name = ?, class_id = ? WHERE id = ? AND role = 'student'`, [name, classId, studentId]);
+  if (!n) { res.status(404).json({ error: "Student not found." }); return; }
+  res.json({ ok: true });
+});
+
+app.post("/api/teacher/bank/adjust", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try {
+    const dollars = Number(req.body?.dollars);
+    if (!Number.isFinite(dollars) || dollars === 0 || Math.abs(dollars) > 100000) { res.status(400).json({ error: "Enter a non-zero dollar amount (max $100,000)." }); return; }
+    const result = await adjustBankBalance({
+      userId: String(req.body?.studentId || ""), actorId: teacher.id,
+      account: String(req.body?.account || "") as "checking" | "savings",
+      amountCents: Math.round(dollars * 100), reason: String(req.body?.reason || ""),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) { bankError(res, err); }
+});
+
+app.post("/api/teacher/students/merge", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try {
+    res.json(await mergeStudents({
+      targetUserId: String(req.body?.targetStudentId || ""), sourceUserId: String(req.body?.sourceStudentId || ""),
+      actorId: teacher.id, reason: String(req.body?.reason || ""), confirmation: String(req.body?.confirmation || ""),
+    }));
+  } catch (err) {
+    if (err instanceof StudentAdminError) { res.status(err.code === "NOT_FOUND" ? 404 : err.code === "CONFLICT" ? 409 : 400).json({ error: err.message, code: err.code }); return; }
+    throw err;
+  }
+});
+
+app.delete("/api/teacher/students/:id", requireCurrentTeacher, async (req, res) => {
+  try {
+    res.json(await deleteEmptyStudent({ userId: String(req.params.id || ""), confirmation: String(req.body?.confirmation || "") }));
+  } catch (err) {
+    if (err instanceof StudentAdminError) { res.status(err.code === "NOT_FOUND" ? 404 : err.code === "HAS_ACTIVITY" ? 409 : 400).json({ error: err.message, code: err.code }); return; }
+    throw err;
+  }
 });
 
 /** ClassBank reference snapshot (teacher-only): the pasted checking/savings

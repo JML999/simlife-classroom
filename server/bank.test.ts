@@ -17,7 +17,7 @@ const { initSchema, run, one } = await import("./db.js");
 const {
   postIncome, transfer, payBill, disputeBill, createBillTemplate, issueBillInTx,
   issueIncomeBatch, issueBillBatch, bankSummaryFor, checkBankInvariant,
-  billStatus, billTotal, BankError,
+  billStatus, billTotal, BankError, adjustBankBalance,
 } = await import("./bank.js");
 const { checkInvariant } = await import("./ledger.js");
 const { withTx } = await import("./db.js");
@@ -68,6 +68,20 @@ test("checking↔savings transfer conserves money", async () => {
   const sum2 = await bankSummaryFor(s);
   assert.equal(sum2.checkingCents, 80000);
   assert.equal(sum2.savingsCents, 20000);
+  assert.ok((await checkBankInvariant(s)).ok);
+});
+
+test("teacher bank adjustments are journal-backed, idempotent, and cannot overdraw", async () => {
+  const s = await makeStudent();
+  const key = uid();
+  await adjustBankBalance({ userId: s, actorId: TEACHER, account: "checking", amountCents: 25000, reason: "Starting balance correction", idempotencyKey: key });
+  const retry = await adjustBankBalance({ userId: s, actorId: TEACHER, account: "checking", amountCents: 25000, reason: "Starting balance correction", idempotencyKey: key });
+  assert.equal(retry.deduped, true);
+  assert.equal((await bankSummaryFor(s)).checkingCents, 25000);
+  await assert.rejects(
+    () => adjustBankBalance({ userId: s, actorId: TEACHER, account: "checking", amountCents: -25001, reason: "Bad removal", idempotencyKey: uid() }),
+    (e: any) => e instanceof BankError && e.code === "INSUFFICIENT_FUNDS",
+  );
   assert.ok((await checkBankInvariant(s)).ok);
 });
 

@@ -382,6 +382,7 @@ function describeBankEntry(e: any): string {
   if (e.kind === "transfer_to_brokerage") return "Moved to brokerage";
   if (e.kind === "bill_payment") return "Bill paid";
   if (e.kind === "savings_interest") return "Savings interest";
+  if (e.kind === "bank_adjustment") return "Balance adjusted by teacher";
   return e.kind;
 }
 
@@ -638,6 +639,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [classes, setClasses] = useState<any[]>([]);
   const [classId, setClassId] = useState("");
   const [roster, setRoster] = useState<any[]>([]);
+  const [allRoster, setAllRoster] = useState<any[]>([]);
   const [audit, setAudit] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
@@ -660,6 +662,17 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [auditOpen, setAuditOpen] = useState(false);
   const [tsection, setTsection] = useState<"brokerage" | "banking">("banking");
   const cashKey = useRef(uid());
+  const bankKey = useRef(uid());
+  const [bankAccount, setBankAccount] = useState<"checking" | "savings">("checking");
+  const [bankDirection, setBankDirection] = useState<"add" | "remove">("add");
+  const [bankDollars, setBankDollars] = useState("");
+  const [bankReason, setBankReason] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editClass, setEditClass] = useState("");
+  const [mergeSource, setMergeSource] = useState("");
+  const [mergeReason, setMergeReason] = useState("");
+  const [mergeConfirm, setMergeConfirm] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
   void me;
 
   useEffect(() => {
@@ -676,13 +689,14 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       const cid = classId || "";
       const qs = cid ? `?classId=${cid}` : "";
-      const [c, r, a, ref] = await Promise.all([
+      const [c, r, all, a, ref] = await Promise.all([
         api<{ classes: any[] }>("/api/teacher/classes"),
         api<{ students: any[] }>(`/api/teacher/roster${qs}`),
+        cid ? api<{ students: any[] }>("/api/teacher/roster") : Promise.resolve(null),
         api<{ entries: any[] }>(`/api/teacher/audit${qs}`),
         cid ? api<{ students: any[] }>(`/api/teacher/reference?classId=${cid}`).catch(() => ({ students: [] })) : Promise.resolve({ students: [] }),
       ]);
-      setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students);
+      setClasses(c.classes); setRoster(r.students); setAllRoster(all?.students ?? r.students); setAudit(a.entries); setReference(ref.students);
     } catch (e: any) { setErr(e.message); }
     finally { setUpdating(false); }
   }, [classId]);
@@ -692,7 +706,11 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     setProfileId(id); setProfile(null);
     setSelected(roster.find((s) => s.id === id) ?? null);
     setConfirming(false); setDollars(""); setReason(""); setDirection("add");
-    try { setProfile(await api(`/api/teacher/student?studentId=${id}`)); }
+    setBankDollars(""); setBankReason(""); setMergeSource(""); setMergeReason(""); setMergeConfirm(""); setDeleteConfirm("");
+    try {
+      const next: any = await api(`/api/teacher/student?studentId=${id}`);
+      setProfile(next); setEditName(next.student.name); setEditClass(next.student.class_id || "");
+    }
     catch (e: any) { setErr(e.message); }
   };
 
@@ -752,6 +770,55 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
+  const refreshOpenProfile = async (id = profileId) => {
+    if (!id) return;
+    const updated: any = await api(`/api/teacher/student?studentId=${id}`);
+    setProfile(updated);
+    setSelected((current: any) => current?.id === id ? { ...current, name: updated.student.name, class_id: updated.student.class_id, cash_cents: updated.portfolio.cashCents } : current);
+  };
+
+  const submitBankAdjustment = async () => {
+    if (!profileId || busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const signed = (bankDirection === "add" ? 1 : -1) * Math.abs(Number(bankDollars));
+      const r = await api<any>("/api/teacher/bank/adjust", { method: "POST", body: JSON.stringify({ studentId: profileId, account: bankAccount, dollars: signed, reason: bankReason, idempotencyKey: bankKey.current }) });
+      bankKey.current = uid(); setBankDollars(""); setBankReason("");
+      setNotice(r.deduped ? "Already processed — duplicate ignored." : `${profile.student.name}'s ${bankAccount} balance was updated.`);
+      await load(); await refreshOpenProfile();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const saveStudent = async () => {
+    if (!profileId || busy) return;
+    setBusy(true); setErr("");
+    try {
+      await api("/api/teacher/student", { method: "PATCH", body: JSON.stringify({ studentId: profileId, name: editName, classId: editClass || null }) });
+      setNotice("Student profile updated."); await load(); await refreshOpenProfile();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const submitMerge = async () => {
+    if (!profileId || !mergeSource || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const source = allRoster.find((s) => s.id === mergeSource);
+      await api("/api/teacher/students/merge", { method: "POST", body: JSON.stringify({ targetStudentId: profileId, sourceStudentId: mergeSource, reason: mergeReason, confirmation: mergeConfirm }) });
+      setNotice(`${source?.name || "Duplicate account"} was merged into ${profile.student.name}. All financial history was preserved.`);
+      setMergeSource(""); setMergeReason(""); setMergeConfirm(""); await load(); await refreshOpenProfile();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const submitDelete = async () => {
+    if (!profileId || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const name = profile.student.name;
+      await api(`/api/teacher/students/${profileId}`, { method: "DELETE", body: JSON.stringify({ confirmation: deleteConfirm }) });
+      setProfileId(null); setProfile(null); setSelected(null); setNotice(`${name}'s empty account was deleted.`); await load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
   const toggleFreeze = async (target: any) => {
     if (!target || busy) return;
     const frozen = !(target.trading_frozen === 1);
@@ -781,7 +848,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         {workspaceTabs}
         {err && <div className="error" role="alert">{err}</div>}
         {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
-        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} /></div>
+        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} onOpenStudent={(id) => { setTsection("brokerage"); void openProfile(id); }} /></div>
       </>
     );
   }
@@ -868,6 +935,11 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   {profile.student.email || "no email yet"} · {roster.find((s) => s.id === profileId)?.class_name || "no class"}<br />
                   joined {fmtWhen(profile.student.created_at)} · last active {fmtWhen(profile.student.last_active_at)}
                 </p>
+                <div className="panel">
+                  <h2>Student details</h2>
+                  <div className="row"><div className="field grow"><label>Name</label><input value={editName} onChange={(e) => setEditName(e.target.value)} /></div><div className="field grow"><label>Class</label><select value={editClass} onChange={(e) => setEditClass(e.target.value)}><option value="">No class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div><button disabled={busy || editName.trim().length < 2} onClick={saveStudent}>Save details</button></div>
+                  <p className="hint">Email is tied to Google sign-in and cannot be edited here.</p>
+                </div>
                 {(() => {
                   const ref = refById[profileId];
                   if (!ref) return null;
@@ -903,6 +975,12 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                 {profile.bank && <div className="panel">
                   <h2>Banking</h2>
                   <p className="hint">Checking {money(profile.bank.checkingCents)} · savings {money(profile.bank.savingsCents)} · {((profile.bank.savingsInterest?.apy || 0) * 100).toFixed(2)}% APY{profile.bankInvariant && !profile.bankInvariant.ok ? " · INVARIANT BROKEN" : ""}</p>
+                  <div className="cash-panel">
+                    <h3>Adjust bank balance</h3>
+                    <div className="row"><div className="field"><label>Account</label><select value={bankAccount} onChange={(e) => setBankAccount(e.target.value as any)}><option value="checking">Checking</option><option value="savings">Savings</option></select></div><div className="field"><label>Change</label><select value={bankDirection} onChange={(e) => setBankDirection(e.target.value as any)}><option value="add">Add money</option><option value="remove">Remove money</option></select></div><div className="field"><label>Dollars</label><input value={bankDollars} onChange={(e) => setBankDollars(e.target.value)} placeholder="50.00" inputMode="decimal" /></div></div>
+                    <div className="field" style={{ marginTop: 8 }}><label>Reason (required — student can see this)</label><input value={bankReason} onChange={(e) => setBankReason(e.target.value)} placeholder="Correct starting balance" /></div>
+                    <div className="row" style={{ marginTop: 8 }}><button disabled={busy || !(Number(bankDollars) > 0) || bankReason.trim().length < 3} onClick={submitBankAdjustment}>{bankDirection === "add" ? "Add to" : "Remove from"} {bankAccount}</button></div>
+                  </div>
                   {(profile.bank.bills || []).length > 0 && (
                     <table><thead><tr><th>Bill</th><th>Status</th><th>Paid</th><th>Remaining</th></tr></thead><tbody>
                       {profile.bank.bills.map((b: any) => (
@@ -940,6 +1018,18 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                     </tbody>
                   </table>
                 </div>
+                <div className="panel danger-zone">
+                  <h2>Duplicate or unused account</h2>
+                  <p className="hint"><strong>Keep this open profile as the primary account.</strong> To combine a duplicate, select the duplicate below. Its balances, investments, bills, and complete history move here.</p>
+                  <div className="field"><label>Duplicate account to merge into {profile.student.name}</label><select value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}><option value="">Choose duplicate…</option>{allRoster.filter((s) => s.id !== profileId).map((s) => <option key={s.id} value={s.id}>{s.name} — {s.email || "no email"} — {s.class_name || "no class"}</option>)}</select></div>
+                  <div className="field" style={{ marginTop: 8 }}><label>Reason</label><input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="Student signed up with a second email" /></div>
+                  <div className="field" style={{ marginTop: 8 }}><label>Type MERGE to confirm</label><input value={mergeConfirm} onChange={(e) => setMergeConfirm(e.target.value)} /></div>
+                  <div className="row" style={{ marginTop: 8 }}><button className="danger" disabled={busy || !mergeSource || mergeReason.trim().length < 3 || mergeConfirm !== "MERGE"} onClick={submitMerge}>Merge duplicate into this account</button></div>
+                  <hr />
+                  <p className="hint">Deletion is only available when there are no transactions, bills, payments, disputes, or paychecks. Active accounts must be merged so their audit trail is not lost.</p>
+                  <div className="field"><label>Type {profile.student.name} to delete this empty account</label><input value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} disabled={!profile.deletion?.canDelete} /></div>
+                  <div className="row" style={{ marginTop: 8 }}><button className="danger-solid" disabled={busy || !profile.deletion?.canDelete || deleteConfirm !== profile.student.name} onClick={submitDelete}>Delete empty account</button>{!profile.deletion?.canDelete && <span className="small">Protected: this account has financial history.</span>}</div>
+                </div>
               </>
             )}
           </div>
@@ -949,8 +1039,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   );
 }
 
-function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
-  classId: string; classes: any[]; onClassChange: (id: string) => void; onChanged: () => void;
+function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStudent }: {
+  classId: string; classes: any[]; onClassChange: (id: string) => void; onChanged: () => void; onOpenStudent: (id: string) => void;
 }) {
   const [summary, setSummary] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
@@ -1146,9 +1236,9 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
           <thead><tr><th><input type="checkbox" aria-label="Check all students" checked={allChecked} onChange={toggleAll} /></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
           <tbody>
             {summary.map((s) => (
-              <tr key={s.id}>
-                <td><input type="checkbox" aria-label={`Select ${s.name}`} checked={checked.has(s.id)} onChange={() => toggle(s.id)} /></td>
-                <td><strong>{s.name}</strong><br /><span className="small">{s.class_name || "—"}</span></td>
+              <tr key={s.id} className="clickable-row" onClick={() => onOpenStudent(s.id)}>
+                <td><input type="checkbox" aria-label={`Select ${s.name}`} checked={checked.has(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(s.id)} /></td>
+                <td><button className="name-button" onClick={(e) => { e.stopPropagation(); onOpenStudent(s.id); }}>{s.name}</button><br /><span className="small">{s.class_name || "—"}</span></td>
                 <td>{money(s.checking_cents)}</td>
                 <td>{money(s.savings_cents)}</td>
                 <td>{money(s.brokerage_cents)}</td>

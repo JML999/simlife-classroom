@@ -79,6 +79,8 @@ button.ghost { color: var(--olive-dark); background: transparent; border-color: 
 button.ghost:hover:not(:disabled) { color: var(--ink); background: var(--olive-pale); }
 button.danger { color: var(--down); background: transparent; border-color: #c79790; }
 button.danger-solid { color: #fff; background: var(--down); border-color: var(--down); }
+.danger-zone { border-color: #e2b9b2; background: #fffafa; }
+.danger-zone hr { border: 0; border-top: 1px solid #ead3cf; margin: 18px 0; }
 button.text-danger { color: var(--down); background: transparent; border-color: transparent; }
 button.text-danger:hover:not(:disabled) { color: #783b34; background: var(--rose-pale); border-color: transparent; }
 

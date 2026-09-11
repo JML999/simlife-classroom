@@ -256,6 +256,48 @@ export async function postIncome(opts: {
   });
 }
 
+/** Teacher correction to checking or savings. This is append-only and visible
+ * in the student's bank activity; a mistake is corrected with an opposite
+ * adjustment rather than rewriting history. */
+export async function adjustBankBalance(opts: {
+  userId: string; actorId: string; account: "checking" | "savings";
+  amountCents: number; reason: string; idempotencyKey: string;
+}): Promise<{ entry: JournalEntry; deduped: boolean }> {
+  const key = requireKey(opts.idempotencyKey);
+  if (!Number.isInteger(opts.amountCents) || opts.amountCents === 0) {
+    throw new BankError("INVALID_AMOUNT", "Adjustment must be a non-zero whole number of cents.");
+  }
+  requireSaneCents(Math.abs(opts.amountCents), "Adjustment");
+  if (opts.account !== "checking" && opts.account !== "savings") {
+    throw new BankError("INVALID_INPUT", "Choose checking or savings.");
+  }
+  const reason = String(opts.reason || "").trim();
+  if (reason.length < 3 || reason.length > 200) throw new BankError("INVALID_INPUT", "Give a reason (3–200 characters).");
+  const checkingLeg = opts.account === "checking" ? opts.amountCents : 0;
+  const savingsLeg = opts.account === "savings" ? opts.amountCents : 0;
+  return withTx(async (t) => {
+    let acct = await getOrCreateBankAccount(t, opts.userId);
+    const existing = await findJournalByKey(t, key);
+    if (existing) {
+      if (await journalOwner(t, existing) !== opts.userId || existing.kind !== "bank_adjustment" || existing.checking_leg !== checkingLeg || existing.savings_leg !== savingsLeg) {
+        throw new BankError("IDEMPOTENCY_CONFLICT", "That adjustment confirmation was already used for different details.");
+      }
+      return { entry: existing, deduped: true };
+    }
+    if (opts.account === "savings") acct = await settleSavingsInterest(t, acct);
+    const nextChecking = acct.checkingCents + checkingLeg;
+    const nextSavings = acct.savingsCents + savingsLeg;
+    if (nextChecking < 0 || nextSavings < 0) throw new BankError("INSUFFICIENT_FUNDS", `Only ${fmtCents(opts.account === "checking" ? acct.checkingCents : acct.savingsCents)} in ${opts.account}.`);
+    const entry = await insertJournal(t, {
+      id: newId("bj"), bank_account_id: acct.id, kind: "bank_adjustment",
+      checking_leg: checkingLeg, savings_leg: savingsLeg, memo: reason,
+      actor_id: opts.actorId, idempotency_key: key, related_id: null,
+    });
+    await t.run(`UPDATE bank_accounts SET checking_cents = ?, savings_cents = ? WHERE id = ?`, [nextChecking, nextSavings, acct.id]);
+    return { entry, deduped: false };
+  });
+}
+
 export type TransferTarget = "checking" | "savings" | "brokerage";
 
 /**

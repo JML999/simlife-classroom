@@ -196,3 +196,25 @@ no remote; the saved GitHub CLI credential is expired, and browser/device auth
 was blocked by a connection reset in this environment. Create a separate private
 GitHub repository (recommended name `simlife-classroom`), add it as this repo's
 `origin`, push `main`, then create a new Render Blueprint from `render.yaml`.
+
+## 12. Teacher student-account management (2026-09-11)
+
+The teacher can now click a student in either the Banking or Brokerage roster
+to open the same account profile. The profile supports name/class correction,
+append-only checking or savings adjustments, existing brokerage cash
+adjustments, and two guarded identity operations:
+
+- Delete is permitted only for an empty account with no financial history and
+  requires typing the student's exact name.
+- Merge keeps the open profile as the primary account and re-parents all bank
+  journal entries, brokerage ledger entries, bills, payments, disputes, and
+  income postings from the selected duplicate. It sums cached balances, records
+  an administrative merge audit, and saves the duplicate Google subject/email
+  as login aliases so that identity cannot recreate the duplicate later.
+
+New additive tables are `user_aliases` and `student_account_merges`. Google
+login resolves aliases before creating a user. New tests cover adjustments,
+guarded deletion, financial merge conservation, and alias preservation. Current
+verification: typecheck clean, 42/42 tests pass, production build clean, and a
+local `/api/health` boot smoke passed. No live student account was modified by
+these checks.
