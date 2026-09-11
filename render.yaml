@@ -18,7 +18,7 @@ services:
       - key: SIMLIFE_GOOGLE_CLIENT_ID
         sync: false
       - key: SIMLIFE_ALLOWED_GOOGLE_DOMAIN
-        value: tcitys.org
+        value: ""
       - key: SIMLIFE_TEACHER_EMAILS
         sync: false
       - key: SIMLIFE_SESSION_SECRET
