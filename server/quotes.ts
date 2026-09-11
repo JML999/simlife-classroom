@@ -37,6 +37,51 @@ export interface QuoteProvider {
   getQuote(ticker: string): Promise<Quote>;
 }
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+/**
+ * Full search directory (S&P 500 + major ETFs, built by
+ * scripts/build-ticker-directory.mjs). Loaded once, server-side only —
+ * never shipped to the browser. Falls back to the classroom list if the
+ * generated file is missing.
+ */
+interface DirectoryRow { ticker: string; name: string; kind: string }
+let directoryCache: DirectoryRow[] | null = null;
+export function loadDirectory(): DirectoryRow[] {
+  if (directoryCache) return directoryCache;
+  try {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, "ticker-directory.json"), "utf8"));
+    directoryCache = (raw.rows as string[][]).map(([ticker, name, kind]) => ({ ticker, name, kind }));
+  } catch {
+    directoryCache = SECURITY_DIRECTORY.map((s) => ({ ...s, kind: "STOCK" }));
+  }
+  return directoryCache;
+}
+
+/** Ranked search: classroom picks first, then ticker prefix, ticker substring, name. */
+export function searchDirectory(q: string, limit = 8): SecurityInfo[] {
+  const needle = q.trim().toUpperCase();
+  if (!needle) return [];
+  const dir = loadDirectory();
+  const pinned = new Set(SECURITY_DIRECTORY.map((s) => s.ticker));
+  const rank = (r: DirectoryRow): number => {
+    if (pinned.has(r.ticker) && (r.ticker.includes(needle) || r.name.toUpperCase().includes(needle))) return 0;
+    if (r.ticker.startsWith(needle)) return 1;
+    if (r.ticker.includes(needle)) return 2;
+    if (r.name.toUpperCase().includes(needle)) return 3;
+    return -1;
+  };
+  return dir
+    .map((r) => ({ r, k: rank(r) }))
+    .filter((x) => x.k >= 0)
+    .sort((a, b) => a.k - b.k || (a.r.ticker < b.r.ticker ? -1 : 1))
+    .slice(0, limit)
+    .map((x) => ({ ticker: x.r.ticker, name: x.r.name }));
+}
+
 /** Curated classroom directory: widely-held U.S. stocks + index ETFs. */
 export const SECURITY_DIRECTORY: SecurityInfo[] = [
   { ticker: "AAPL", name: "Apple Inc." },
@@ -71,19 +116,26 @@ export class MockQuoteProvider implements QuoteProvider {
   }
 
   async search(q: string): Promise<SecurityInfo[]> {
-    const needle = q.trim().toUpperCase();
-    if (!needle) return [];
-    return SECURITY_DIRECTORY.filter(
-      (s) => s.ticker.includes(needle) || s.name.toUpperCase().includes(needle),
-    ).slice(0, 8);
+    return searchDirectory(q);
   }
 
   async getQuote(ticker: string): Promise<Quote> {
     const t = normalizeTicker(ticker);
-    const price = this.prices.get(t);
-    if (price === undefined) throw new QuoteError("NOT_FOUND", `No quote for ${t}. Try a ticker from the classroom list.`);
+    const known = this.prices.get(t);
+    // Classroom tickers use fixed lesson prices. Anything else in mock mode
+    // gets a stable deterministic stand-in price (same ticker → same price,
+    // across restarts) so the full search library stays usable offline.
+    // Every mock quote is labeled source/mock + delayed in the UI.
+    const price = known ?? pseudoPriceCents(t);
     return { ticker: t, priceCents: price, asOf: new Date().toISOString(), source: "mock", delayed: true };
   }
+}
+
+/** Stable hash → $5.00–$600.00 stand-in price for mock mode. */
+export function pseudoPriceCents(ticker: string): number {
+  let h = 2166136261;
+  for (const c of ticker) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return 500 + Math.floor(((h >>> 0) / 4294967296) * 59500);
 }
 
 /**
@@ -94,11 +146,7 @@ export class MockQuoteProvider implements QuoteProvider {
 export class StooqQuoteProvider implements QuoteProvider {
   readonly name = "stooq";
   async search(q: string): Promise<SecurityInfo[]> {
-    const needle = q.trim().toUpperCase();
-    if (!needle) return [];
-    return SECURITY_DIRECTORY.filter(
-      (s) => s.ticker.includes(needle) || s.name.toUpperCase().includes(needle),
-    ).slice(0, 8);
+    return searchDirectory(q);
   }
   async getQuote(ticker: string): Promise<Quote> {
     const t = normalizeTicker(ticker);
