@@ -620,8 +620,8 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
 function describeEntry(e: any): string {
   if (e.kind === "buy") return `Bought ${e.ticker}`;
   if (e.kind === "sell") return `Sold ${e.ticker}`;
-  if (e.kind === "cash_adjust") return e.amount_cents >= 0 ? "Cash added by teacher" : "Cash removed by teacher";
-  if (e.kind === "cash_reversal") return "Cash adjustment reversed";
+  if (e.kind === "cash_adjust") return e.amount_cents >= 0 ? "Brokerage cash added by teacher" : "Brokerage cash removed by teacher";
+  if (e.kind === "cash_reversal") return "Brokerage cash adjustment reversed";
   return e.kind;
 }
 function entryDetail(e: any): string {
@@ -639,7 +639,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [classes, setClasses] = useState<any[]>([]);
   const [classId, setClassId] = useState("");
   const [roster, setRoster] = useState<any[]>([]);
-  const [allRoster, setAllRoster] = useState<any[]>([]);
   const [audit, setAudit] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
@@ -669,9 +668,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [bankReason, setBankReason] = useState("");
   const [editName, setEditName] = useState("");
   const [editClass, setEditClass] = useState("");
-  const [mergeSource, setMergeSource] = useState("");
-  const [mergeReason, setMergeReason] = useState("");
-  const [mergeConfirm, setMergeConfirm] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   void me;
 
@@ -689,14 +685,13 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       const cid = classId || "";
       const qs = cid ? `?classId=${cid}` : "";
-      const [c, r, all, a, ref] = await Promise.all([
+      const [c, r, a, ref] = await Promise.all([
         api<{ classes: any[] }>("/api/teacher/classes"),
         api<{ students: any[] }>(`/api/teacher/roster${qs}`),
-        cid ? api<{ students: any[] }>("/api/teacher/roster") : Promise.resolve(null),
         api<{ entries: any[] }>(`/api/teacher/audit${qs}`),
         cid ? api<{ students: any[] }>(`/api/teacher/reference?classId=${cid}`).catch(() => ({ students: [] })) : Promise.resolve({ students: [] }),
       ]);
-      setClasses(c.classes); setRoster(r.students); setAllRoster(all?.students ?? r.students); setAudit(a.entries); setReference(ref.students);
+      setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students);
     } catch (e: any) { setErr(e.message); }
     finally { setUpdating(false); }
   }, [classId]);
@@ -706,7 +701,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     setProfileId(id); setProfile(null);
     setSelected(roster.find((s) => s.id === id) ?? null);
     setConfirming(false); setDollars(""); setReason(""); setDirection("add");
-    setBankDollars(""); setBankReason(""); setMergeSource(""); setMergeReason(""); setMergeConfirm(""); setDeleteConfirm("");
+    setBankDollars(""); setBankReason(""); setDeleteConfirm("");
     try {
       const next: any = await api(`/api/teacher/student?studentId=${id}`);
       setProfile(next); setEditName(next.student.name); setEditClass(next.student.class_id || "");
@@ -743,7 +738,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         method: "POST",
         body: JSON.stringify({ studentId: selected.id, dollars: signed, reason, idempotencyKey: cashKey.current }),
       });
-      setNotice(r.deduped ? "Already processed — duplicate ignored." : `Done. ${selected.name}'s simulated cash updated.`);
+      setNotice(r.deduped ? "Already processed — duplicate ignored." : `Done. ${selected.name}'s brokerage cash was updated.`);
       cashKey.current = uid(); setConfirming(false); setDollars(""); setReason("");
       await load();
       if (profileId === selected.id) {
@@ -795,17 +790,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       await api("/api/teacher/student", { method: "PATCH", body: JSON.stringify({ studentId: profileId, name: editName, classId: editClass || null }) });
       setNotice("Student profile updated."); await load(); await refreshOpenProfile();
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
-  };
-
-  const submitMerge = async () => {
-    if (!profileId || !mergeSource || busy) return;
-    setBusy(true); setErr("");
-    try {
-      const source = allRoster.find((s) => s.id === mergeSource);
-      await api("/api/teacher/students/merge", { method: "POST", body: JSON.stringify({ targetStudentId: profileId, sourceStudentId: mergeSource, reason: mergeReason, confirmation: mergeConfirm }) });
-      setNotice(`${source?.name || "Duplicate account"} was merged into ${profile.student.name}. All financial history was preserved.`);
-      setMergeSource(""); setMergeReason(""); setMergeConfirm(""); await load(); await refreshOpenProfile();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
@@ -879,17 +863,17 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
 
       <div className="panel">
         <h2>Roster — simulated brokerage accounts</h2>
-        <p className="hint">Click a student to open their account profile, review activity, and adjust simulated cash.</p>
+        <p className="hint">Click a student to open their account profile, review activity, and adjust banking or brokerage balances.</p>
         <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
         <div className="table-wrap"><table>
-          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
+          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Brokerage cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
           <tbody>
             {sorted.map((s) => {
               const ref = refById[s.id];
               const funded = ref && (ref.checking != null || ref.savings != null);
               return (
                 <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
-                  <td><button className="name-button" onClick={(e) => { e.stopPropagation(); openProfile(s.id); }}>{s.name}</button><br /><span className="small">{s.email || "no email yet"}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
+                  <td><strong>{s.name}</strong><br /><span className="small">{s.email || "no email yet"}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
                   <td className="small">{s.class_name || "—"}</td>
                   <td>{money(s.cash_cents)}</td>
                   <td>{money(s.investedCents)}</td>
@@ -955,21 +939,21 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   );
                 })()}
                 <div className="stat-grid">
-                  <div className="stat"><div className="label">Cash</div><div className="value">{money(profile.portfolio.cashCents)}</div></div>
+                  <div className="stat"><div className="label">Brokerage cash</div><div className="value">{money(profile.portfolio.cashCents)}</div></div>
                   <div className="stat"><div className="label">Portfolio</div><div className="value">{money(profile.portfolio.portfolioCents)}</div></div>
-                  <div className="stat"><div className="label">Cash added</div><div className="value">{money(profile.totals?.added ?? 0)}</div></div>
-                  <div className="stat"><div className="label">Cash removed</div><div className="value">{money(profile.totals?.removed ?? 0)}</div></div>
+                  <div className="stat"><div className="label">Brokerage cash added</div><div className="value">{money(profile.totals?.added ?? 0)}</div></div>
+                  <div className="stat"><div className="label">Brokerage cash removed</div><div className="value">{money(profile.totals?.removed ?? 0)}</div></div>
                 </div>
                 {selected && <div className="panel cash-panel">
-                  <h2>Adjust simulated cash</h2>
-                  <p className="hint">Current cash: {money(profile.portfolio.cashCents)}. Removing cash never sells shares; if cash is short, the student must sell first.</p>
+                  <h2>Adjust brokerage cash</h2>
+                  <p className="hint">Current brokerage cash: {money(profile.portfolio.cashCents)}. This is uninvested money inside the student's brokerage account—not checking or savings. Removing it never sells shares; if brokerage cash is short, the student must sell first.</p>
                   <div className="row">
-                    <div className="field"><label>Add or remove</label><select value={direction} onChange={(e) => { setDirection(e.target.value as any); setConfirming(false); }}><option value="add">Add cash</option><option value="remove">Remove cash</option></select></div>
+                    <div className="field"><label>Brokerage action</label><select value={direction} onChange={(e) => { setDirection(e.target.value as any); setConfirming(false); }}><option value="add">Add brokerage cash</option><option value="remove">Remove brokerage cash</option></select></div>
                     <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirming(false); }} placeholder="50.00" inputMode="decimal" /></div>
                   </div>
                   <div className="field" style={{ marginTop: 9 }}><label>Reason (required — student can see this)</label><textarea value={reason} onChange={(e) => { setReason(e.target.value); setConfirming(false); }} rows={2} placeholder="e.g. Transferred from ClassBank per student's signed slip." /></div>
                   {!confirming
-                    ? <div className="row" style={{ marginTop: 9 }}><button disabled={!(Number(dollars) > 0) || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review {direction === "add" ? "deposit" : "withdrawal"}</button></div>
+                    ? <div className="row" style={{ marginTop: 9 }}><button disabled={!(Number(dollars) > 0) || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review brokerage {direction === "add" ? "deposit" : "withdrawal"}</button></div>
                     : <div className="confirm"><p><strong>Confirm:</strong> {direction === "add" ? "add" : "remove"} <strong>{money(Math.round(Number(dollars) * 100))}</strong> {direction === "add" ? "to" : "from"} <strong>{selected.name}</strong>?</p><p className="small">Reason: {reason}</p><div className="row"><button disabled={busy} onClick={submitCash}>Yes, record it</button><button className="ghost" onClick={() => setConfirming(false)}>Cancel</button></div></div>}
                 </div>}
                 {profile.bank && <div className="panel">
@@ -1019,14 +1003,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   </table>
                 </div>
                 <div className="panel danger-zone">
-                  <h2>Duplicate or unused account</h2>
-                  <p className="hint"><strong>Keep this open profile as the primary account.</strong> To combine a duplicate, select the duplicate below. Its balances, investments, bills, and complete history move here.</p>
-                  <div className="field"><label>Duplicate account to merge into {profile.student.name}</label><select value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}><option value="">Choose duplicate…</option>{allRoster.filter((s) => s.id !== profileId).map((s) => <option key={s.id} value={s.id}>{s.name} — {s.email || "no email"} — {s.class_name || "no class"}</option>)}</select></div>
-                  <div className="field" style={{ marginTop: 8 }}><label>Reason</label><input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="Student signed up with a second email" /></div>
-                  <div className="field" style={{ marginTop: 8 }}><label>Type MERGE to confirm</label><input value={mergeConfirm} onChange={(e) => setMergeConfirm(e.target.value)} /></div>
-                  <div className="row" style={{ marginTop: 8 }}><button className="danger" disabled={busy || !mergeSource || mergeReason.trim().length < 3 || mergeConfirm !== "MERGE"} onClick={submitMerge}>Merge duplicate into this account</button></div>
-                  <hr />
-                  <p className="hint">Deletion is only available when there are no transactions, bills, payments, disputes, or paychecks. Active accounts must be merged so their audit trail is not lost.</p>
+                  <h2>Delete unused account</h2>
+                  <p className="hint">Deletion is only available when there are no transactions, bills, payments, disputes, or paychecks. This prevents accidental loss of financial history.</p>
                   <div className="field"><label>Type {profile.student.name} to delete this empty account</label><input value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} disabled={!profile.deletion?.canDelete} /></div>
                   <div className="row" style={{ marginTop: 8 }}><button className="danger-solid" disabled={busy || !profile.deletion?.canDelete || deleteConfirm !== profile.student.name} onClick={submitDelete}>Delete empty account</button>{!profile.deletion?.canDelete && <span className="small">Protected: this account has financial history.</span>}</div>
                 </div>
@@ -1238,7 +1216,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
             {summary.map((s) => (
               <tr key={s.id} className="clickable-row" onClick={() => onOpenStudent(s.id)}>
                 <td><input type="checkbox" aria-label={`Select ${s.name}`} checked={checked.has(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(s.id)} /></td>
-                <td><button className="name-button" onClick={(e) => { e.stopPropagation(); onOpenStudent(s.id); }}>{s.name}</button><br /><span className="small">{s.class_name || "—"}</span></td>
+                <td><strong>{s.name}</strong><br /><span className="small">{s.class_name || "—"}</span></td>
                 <td>{money(s.checking_cents)}</td>
                 <td>{money(s.savings_cents)}</td>
                 <td>{money(s.brokerage_cents)}</td>

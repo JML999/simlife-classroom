@@ -24,7 +24,7 @@ import {
   issueBillBatch, bankSummaryFor, checkBankInvariant, BankError,
   adjustBankBalance,
 } from "./bank.js";
-import { deletionStatus, deleteEmptyStudent, mergeStudents, StudentAdminError } from "./student-admin.js";
+import { deletionStatus, deleteEmptyStudent, StudentAdminError } from "./student-admin.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 
@@ -522,19 +522,6 @@ app.post("/api/teacher/bank/adjust", requireCurrentTeacher, async (req, res) => 
     });
     res.json({ ok: true, ...result });
   } catch (err) { bankError(res, err); }
-});
-
-app.post("/api/teacher/students/merge", requireCurrentTeacher, async (req, res) => {
-  const teacher = (req as any).currentUser;
-  try {
-    res.json(await mergeStudents({
-      targetUserId: String(req.body?.targetStudentId || ""), sourceUserId: String(req.body?.sourceStudentId || ""),
-      actorId: teacher.id, reason: String(req.body?.reason || ""), confirmation: String(req.body?.confirmation || ""),
-    }));
-  } catch (err) {
-    if (err instanceof StudentAdminError) { res.status(err.code === "NOT_FOUND" ? 404 : err.code === "CONFLICT" ? 409 : 400).json({ error: err.message, code: err.code }); return; }
-    throw err;
-  }
 });
 
 app.delete("/api/teacher/students/:id", requireCurrentTeacher, async (req, res) => {

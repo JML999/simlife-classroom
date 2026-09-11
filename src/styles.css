@@ -97,8 +97,6 @@ td { font-variant-numeric: tabular-nums; }
 tbody tr:hover { background: rgba(238,239,229,.55); }
 .clickable-row { cursor: pointer; }
 .selected-row { cursor: pointer; background: var(--olive-pale); }
-.name-button { padding: 0; color: var(--ink); background: transparent; border: 0; border-radius: 2px; font-family: var(--sans); font-size: 12px; font-weight: 700; text-align: left; }
-.name-button:hover:not(:disabled) { color: var(--olive); background: transparent; border-color: transparent; transform: none; text-decoration: underline; text-underline-offset: 3px; }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--olive-dark); }
 

@@ -202,19 +202,13 @@ GitHub repository (recommended name `simlife-classroom`), add it as this repo's
 The teacher can now click a student in either the Banking or Brokerage roster
 to open the same account profile. The profile supports name/class correction,
 append-only checking or savings adjustments, existing brokerage cash
-adjustments, and two guarded identity operations:
+adjustments, and guarded deletion of unused accounts:
 
 - Delete is permitted only for an empty account with no financial history and
   requires typing the student's exact name.
-- Merge keeps the open profile as the primary account and re-parents all bank
-  journal entries, brokerage ledger entries, bills, payments, disputes, and
-  income postings from the selected duplicate. It sums cached balances, records
-  an administrative merge audit, and saves the duplicate Google subject/email
-  as login aliases so that identity cannot recreate the duplicate later.
-
-New additive tables are `user_aliases` and `student_account_merges`. Google
-login resolves aliases before creating a user. New tests cover adjustments,
-guarded deletion, financial merge conservation, and alias preservation. Current
-verification: typecheck clean, 42/42 tests pass, production build clean, and a
-local `/api/health` boot smoke passed. No live student account was modified by
-these checks.
+The briefly introduced merge control and API were removed at the owner's
+request. Additive compatibility tables and alias lookup remain inert so any
+account merged during the short deployed window would not lose login access.
+Tests cover adjustments and guarded deletion. Current verification: typecheck,
+tests, production build, and local `/api/health` smoke. No live student account
+was modified by these checks.
