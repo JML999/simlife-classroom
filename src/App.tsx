@@ -33,7 +33,6 @@ export default function App() {
 
   return (
     <>
-      <div className="banner">SIMULATED MONEY — FOR CLASS ONLY. Not real banking or investing. No financial advice.</div>
       <div className="wrap">
         <div className="topbar">
           <div className="brand">
