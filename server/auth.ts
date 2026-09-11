@@ -23,7 +23,11 @@ export function googleClientId(): string {
   return process.env["SIMLIFE_GOOGLE_CLIENT_ID"] || "";
 }
 export function allowedDomain(): string {
-  return (process.env["SIMLIFE_ALLOWED_GOOGLE_DOMAIN"] || "").toLowerCase();
+  const raw = (process.env["SIMLIFE_ALLOWED_GOOGLE_DOMAIN"] || "").trim().toLowerCase();
+  // Literal "open" means deliberately unrestricted (any Google account may
+  // sign in as a student; teacher role stays email-gated). Anything else is
+  // the required Workspace domain.
+  return raw === "open" ? "" : raw;
 }
 const teacherEmails = (): Set<string> =>
   new Set(

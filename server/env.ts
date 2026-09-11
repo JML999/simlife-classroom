@@ -36,7 +36,10 @@ export function validateProductionEnv(): void {
   const secret = process.env["SIMLIFE_SESSION_SECRET"] || "";
   if (secret.length < 32) missing.push("SIMLIFE_SESSION_SECRET (at least 32 characters)");
   if (!(process.env["SIMLIFE_DATABASE_URL"] || "").trim()) missing.push("SIMLIFE_DATABASE_URL");
-  if (!(process.env["SIMLIFE_ALLOWED_GOOGLE_DOMAIN"] || "").trim()) missing.push("SIMLIFE_ALLOWED_GOOGLE_DOMAIN");
+  // The domain may be a real domain (locked) or the literal "open"
+  // (deliberately unrestricted). Empty/missing is always a misconfiguration.
+  const domain = (process.env["SIMLIFE_ALLOWED_GOOGLE_DOMAIN"] || "").trim();
+  if (!domain) missing.push('SIMLIFE_ALLOWED_GOOGLE_DOMAIN (a domain, or "open")');
   if (!(process.env["SIMLIFE_TEACHER_EMAILS"] || "").trim()) missing.push("SIMLIFE_TEACHER_EMAILS");
   if (missing.length) {
     throw new Error(`Unsafe production configuration. Set: ${missing.join(", ")}.`);
