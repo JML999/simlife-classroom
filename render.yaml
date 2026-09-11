@@ -26,7 +26,9 @@ services:
       - key: SIMLIFE_DEMO_AUTH
         value: "false"
       - key: SIMLIFE_QUOTE_PROVIDER
-        value: mock
+        value: finnhub
+      - key: SIMLIFE_MARKET_API_KEY
+        sync: false
       - key: SIMLIFE_SAVINGS_APY_BPS
         value: "340"
       - key: SIMLIFE_SAVINGS_RATE_LABEL
