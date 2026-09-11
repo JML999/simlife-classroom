@@ -239,6 +239,8 @@ export async function initSchema(): Promise<void> {
       user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
       checking_cents INTEGER NOT NULL DEFAULT 0,
       savings_cents INTEGER NOT NULL DEFAULT 0,
+      interest_residual_micros INTEGER NOT NULL DEFAULT 0,
+      interest_accrued_at TEXT,
       created_at TEXT NOT NULL
     )`,
     // Append-only bank journal. Each row carries signed checking + savings
@@ -265,6 +267,9 @@ export async function initSchema(): Promise<void> {
       amount_cents INTEGER NOT NULL,
       late_fee_cents INTEGER NOT NULL DEFAULT 0,
       description TEXT,
+      sender TEXT,
+      document_title TEXT,
+      document_body TEXT,
       created_at TEXT NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS bills (
@@ -278,12 +283,38 @@ export async function initSchema(): Promise<void> {
       due_at TEXT NOT NULL,
       paid_at TEXT,
       payment_journal_id TEXT,
+      paid_cents INTEGER NOT NULL DEFAULT 0,
+      sender TEXT,
+      document_title TEXT,
+      document_body TEXT,
       idempotency_key TEXT UNIQUE,
       issued_by TEXT,
       created_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_bills_user ON bills(user_id, due_at)`,
     `CREATE INDEX IF NOT EXISTS idx_sl_bills_idem ON bills(idempotency_key)`,
+    `CREATE TABLE IF NOT EXISTS bill_payments (
+      id TEXT PRIMARY KEY,
+      bill_id TEXT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      amount_cents INTEGER NOT NULL,
+      journal_id TEXT NOT NULL UNIQUE,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_bill_payments_bill ON bill_payments(bill_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS bill_disputes (
+      id TEXT PRIMARY KEY,
+      bill_id TEXT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      resolution TEXT,
+      resolved_at TEXT,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_bill_disputes_bill ON bill_disputes(bill_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS income_postings (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

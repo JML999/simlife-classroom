@@ -1,86 +1,109 @@
-# Banking Experiment — Review Note (branch `experiment/simlife-banking`)
+# Banking Experiment — Second-Pass Review
+
+Branch: `experiment/simlife-banking`
 
 Worktree: `/Users/justinlee/Desktop/_Active/ths_textbook/simlife-banking`
-Base: `main` @ `dda4cc5` (clean, untouched since). No merge performed.
 
-## Commits on this branch
+Known-good base: `main` at `dda4cc5`
 
-- `946148b` Banking ledger: journal, transfers, bills, income batches + 12 tests
-- `1de16ad` Banking API: student bank routes, class-scoped teacher issuance
-- `9fe025c` Banking UI: student section, teacher issuance, bill mailbox, profiles
+The main investing worktree and `codeworld/` remain untouched. This branch has
+not been merged or deployed, and no live database was used during this review.
 
-## Schema (additive, SQLite + Postgres compatible, in `server/db.ts`)
+## Product result
 
-- `bank_accounts(user_id UNIQUE, checking_cents, savings_cents)` — cached
-  balances, updated only inside journal transactions (same pattern as brokerage).
-- `bank_journal(bank_account_id, kind, checking_leg, savings_leg, memo,
-  actor_id, idempotency_key UNIQUE, related_id)` — append-only. One transfer =
-  one row with two signed legs. Invariant: checking/savings equal their leg sums.
-- `bill_templates(teacher_id, title, amount_cents, late_fee_cents, description)`.
-- `bills(user_id, template_id, title, amount_cents, late_fee_cents, issued_at,
-  due_at, paid_at, payment_journal_id, idempotency_key UNIQUE, issued_by)` —
-  status (`due`/`late`/`paid`) derived on read; no scheduler.
-- `income_postings(user_id, label, amount_cents, posted_at, posted_by,
-  batch_id, idempotency_key UNIQUE)`.
-- Brokerage side untouched except one new ledger kind: `transfer_in`
-  (transfer record, not a trade; keeps brokerage invariant intact).
+The student Banking area now uses the same mental model students already know:
+a bright welcome dashboard, three obvious account cards, a mailbox, bills that
+the student pays, and a simple transfer area. The visual treatment is original
+SimLife work rather than copied ClassBank assets, but it is deliberately more
+playful and immediately legible than the earlier warm/serious banking screen.
+The established Brokerage/Portfolio presentation was not redesigned.
 
-## Routes
+Student flow:
 
-- Student: `GET /api/bank` (balances + bills w/ status + recent journal +
-  brokerage snapshot), `POST /api/bank/transfer` (checking↔savings,
-  checking→brokerage one-way), `POST /api/bank/bills/:id/pay`.
-- Teacher (`requireCurrentTeacher`, class-scoped): `GET /api/teacher/bank`,
-  `POST /api/teacher/income/preview|issue`, bill template CRUD-lite,
-  `POST /api/teacher/bills/preview|issue`. Batch keys `${batchId}:${userId}`;
-  whole batch in one tx; retry resumes; cross-class ids rejected.
-- `GET /api/teacher/student` extended with `bank` + `bankInvariant`.
+1. Paychecks arrive in checking.
+2. Bills arrive as mail with sender, document heading, correspondence, amount,
+   due date, and status.
+3. **Read** opens a statement-style letter. **Pay** asks how much to pay.
+4. Full payment closes the bill; partial payment leaves the exact remainder in
+   the mailbox. Overpayment and insufficient checking are rejected atomically.
+5. **Question or dispute** records a message for later teacher resolution; it
+   explicitly does not pause the due date.
+6. Checking can move to savings or brokerage; savings can move back to checking.
 
-## UI
+The dashboard continuously reinforces the course idea that a checking balance
+is not the same as money available to invest when bills remain due.
 
-- Shared nav evolved to **SimLife** with Banking | Investing pills (student)
-  and Brokerage | Banking workspace (teacher). Investing styling untouched.
-- Banking borrows ClassBank's mental model (sidebar-free: prominent balances,
-  mailbox, transfer flows, checkbox class table with SEND-style preview bars)
-  with original SimLife components — no ClassBank assets/text copied.
-- Student sees an "unpaid bills are spoken for" banner: checking is not
-  automatically available to invest while bills are due (the central lesson).
-- Teacher profile drawer gained a Banking panel (balances, bills, journal).
+## Savings model
 
-## Tests (30/30 green: 15 brokerage + 3 quotes + 12 bank)
+- Default classroom rate: **3.40% APY**, configurable with
+  `SIMLIFE_SAVINGS_APY_BPS` plus label/as-of environment values.
+- The default is a current high-yield benchmark, not a promise that every bank
+  pays this rate. Source and as-of date are visible in the UI and documented in
+  `README.md`.
+- Interest is settled lazily when the student loads Banking or moves savings.
+  Whole cents become append-only `savings_interest` journal entries; residual
+  micro-cents are retained so frequent logins do not lose fractional earnings.
+- The student sees interest earned plus 1-, 5-, and 10-year projections. The
+  graph states its assumption: current balance remains deposited with no later
+  deposits or withdrawals.
 
-`server/bank.test.ts` covers: opening balances, transfer conservation,
-cross-ledger conservation, insufficient-funds with no partial writes,
-duplicate/concurrent execution-once, full bill lifecycle incl. late fee,
-cross-student bill rejection, batch atomicity + retry-resume + rollback,
-batch scoping + intra-batch duplicates, invalid directions, reconciliation.
-Fixtures only, temp SQLite, `SIMLIFE_DATABASE_URL` deleted in-process.
+## Engineering corrections in this pass
 
-## Live walkthrough (fresh SQLite, fictional demo accounts, ports 4103/3200)
+- Added `bill_payments` as immutable payment records and `paid_cents` on bills,
+  enabling audited partial payments instead of overwriting history.
+- Added `bill_disputes`, with ownership checks and idempotent student submission.
+- Preserved bill sender/document content from templates through class issuance.
+- Fixed mailbox delivery for a student who has a bill but no bank account yet.
+- Fixed checking↔savings activity amounts displaying `$0.00` because the two
+  balanced legs had previously been summed.
+- Added exact-request checks for reused idempotency keys. A key reused for a
+  different student, amount, direction, bill, or message returns a conflict.
+- Strengthened Postgres concurrency: banking mutations lock the per-student
+  boundary before checking idempotency, and payments lock the bill row before
+  calculating remaining balance. SQLite keeps its `BEGIN IMMEDIATE` writer lock.
+- Preserved old fully paid bills in the new UI even though historical rows did
+  not have `paid_cents`.
+- Added visible errors inside the payment/dispute modal instead of hiding an
+  unsuccessful action behind the overlay.
 
-Paycheck $1,200 × 4 → bill $600+$50 fee × 4 → student sees both → pays bill
-($600 on-time) → $100 savings → $300 checking→brokerage → buys $100 VOO →
-duplicate-pay retry deduped → teacher sees paid bill, both invariants true.
-Authz spot-checks: student→teacher routes 403, teacher→student-money 403,
-cross-class batch rejected. Prod boot refuses unsafe config (fail-closed gate
-verified); with valid config it proceeds to DB connect (proven with bogus
-host → ECONNREFUSED, i.e. validation passed).
+## Schema additions
 
-## Compromises / honesty notes
+- `bank_accounts.interest_residual_micros`, `interest_accrued_at`
+- `bill_templates.sender`, `document_title`, `document_body`
+- `bills.paid_cents`, `sender`, `document_title`, `document_body`
+- new `bill_payments` and `bill_disputes` tables
 
-- Narrow/mobile layouts checked at code level only (grid collapse, wrapping
-  rows, card-based actions; no browser available here). Needs a Chromebook pass.
-- `transfer()` rejects savings→brokerage directly (must go via checking) to
-  keep every transfer one debit + one credit. One-way into brokerage only.
-- Late fees apply when a bill is paid late, set per-bill at issuance; no
-  scheduler, no compounding, no fee-waiver flow yet.
-- Live state: none touched. financeWRLD never connected from this worktree
-  (no `.env` here). `main` worktree and `codeworld/` verified unmodified.
+All changes are additive and use the project's shared SQLite/Postgres SQL
+subset. Money remains integer cents, the bank journal remains append-only, and
+checking/savings cached balances must equal their journal-leg sums. A transfer
+to brokerage still updates both accounting systems inside one transaction.
 
-## Decisions still with the owner
+## Verification
 
-- Real starting amounts + roster identity resolutions (unchanged).
-- Quote provider approval; deployment URL/service (firewall question stands:
-  independent service = new URL = likely school-filter block; same-host mount
-  remains the fallback and would need a narrow exception to no-codeworld-edits).
-- Whether to merge this branch after review.
+- `npm run typecheck`: passed
+- `npm test`: **35/35 passed** (17 banking, 18 existing brokerage/auth/quotes)
+- `npm run build`: passed
+- local API boot + `/api/health`: passed on port 4110 against a temporary SQLite
+  file with `SIMLIFE_DATABASE_URL` explicitly blank
+- `git diff --check`: passed
+- Browser walkthrough used fictional users and a temporary SQLite database:
+  paycheck, issued utility correspondence, partial payment, remaining bill,
+  savings transfer, interest projection, and checking-to-brokerage transfer.
+- Wide and narrow layouts were visually inspected. Primary student controls do
+  not require horizontal scrolling.
+
+## Deliberately remaining before merge/deployment
+
+- Teacher handling for open questions/disputes (reply, resolve, or explicitly
+  adjust/waive through compensating records) is not built yet.
+- Mail is structured text correspondence, not uploaded PDF files. A safe
+  attachment system needs explicit file storage, type/size rules, and access
+  control; it should not be improvised into the database.
+- A real Postgres staging smoke test is still required before merge. This pass
+  reasoned about and hardened row locking but intentionally did not connect to
+  financeWRLD.
+- Restore the `tcitys.org` domain lock, disable demo auth, remove demo accounts,
+  resolve roster identities, and choose deployment routing before student use.
+- Audit/history pagination and `BASE_PATH` hosting remain general product work.
+
+See `OPENCODE_NEXT_DIRECTIVE.md` for the next bounded implementation task.

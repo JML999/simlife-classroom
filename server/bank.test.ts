@@ -15,7 +15,7 @@ delete process.env["SIMLIFE_DATABASE_URL"];
 
 const { initSchema, run, one } = await import("./db.js");
 const {
-  postIncome, transfer, payBill, createBillTemplate, issueBillInTx,
+  postIncome, transfer, payBill, disputeBill, createBillTemplate, issueBillInTx,
   issueIncomeBatch, issueBillBatch, bankSummaryFor, checkBankInvariant,
   billStatus, billTotal, BankError,
 } = await import("./bank.js");
@@ -112,6 +112,26 @@ test("duplicate transfer/payment/paycheck requests execute once", async () => {
   assert.ok((await checkBankInvariant(s)).ok);
 });
 
+test("deposit and transfer keys cannot be reused for different instructions", async () => {
+  const s = await makeStudent();
+  const incomeKey = uid();
+  await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 50000, idempotencyKey: incomeKey });
+  await assert.rejects(
+    () => postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 60000, idempotencyKey: incomeKey }),
+    (e: any) => e instanceof BankError && e.code === "IDEMPOTENCY_CONFLICT",
+  );
+  const transferKey = uid();
+  await transfer({ userId: s, from: "checking", to: "savings", amountCents: 10000, idempotencyKey: transferKey });
+  await assert.rejects(
+    () => transfer({ userId: s, from: "checking", to: "savings", amountCents: 12000, idempotencyKey: transferKey }),
+    (e: any) => e instanceof BankError && e.code === "IDEMPOTENCY_CONFLICT",
+  );
+  const summary = await bankSummaryFor(s);
+  assert.equal(summary.checkingCents, 40000);
+  assert.equal(summary.savingsCents, 10000);
+  assert.ok((await checkBankInvariant(s)).ok);
+});
+
 test("bill lifecycle: issue → due → pay → paid persists; late derived + fee", async () => {
   const s = await makeStudent();
   await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 100000, idempotencyKey: uid() });
@@ -151,6 +171,83 @@ test("late bill charges amount + fee atomically", async () => {
   assert.equal(issued.status, "late");
   const paid = await payBill({ userId: s, billId: issued.id, idempotencyKey: uid() });
   assert.equal(paid.totalCents, 3500);
+  assert.ok((await checkBankInvariant(s)).ok);
+});
+
+test("partial bill payments preserve the remaining balance and prevent overpayment", async () => {
+  const s = await makeStudent();
+  await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 100000, idempotencyKey: uid() });
+  const issued = await withTx(async (t) => issueBillInTx(t, {
+    userId: s, title: "Car payment", amountCents: 40000,
+    dueAt: new Date(Date.now() + 86400000).toISOString(), issuedBy: TEACHER, idempotencyKey: uid(),
+  }));
+  const first = await payBill({ userId: s, billId: issued.id, amountCents: 15000, idempotencyKey: uid() });
+  assert.equal(first.paidCents, 15000);
+  assert.equal(first.remainingCents, 25000);
+  let summary = await bankSummaryFor(s);
+  assert.equal(summary.bills[0].status, "due");
+  assert.equal(summary.bills[0].paid_cents, 15000);
+  assert.equal(summary.bills[0].remaining_cents, 25000);
+  await assert.rejects(
+    () => payBill({ userId: s, billId: issued.id, amountCents: 25001, idempotencyKey: uid() }),
+    (e: any) => e instanceof BankError && e.code === "INVALID_AMOUNT",
+  );
+  const final = await payBill({ userId: s, billId: issued.id, amountCents: 25000, idempotencyKey: uid() });
+  assert.equal(final.remainingCents, 0);
+  summary = await bankSummaryFor(s);
+  assert.equal(summary.bills[0].status, "paid");
+  assert.equal(summary.checkingCents, 60000);
+  assert.ok((await checkBankInvariant(s)).ok);
+});
+
+test("bill payment idempotency cannot be reused for different payment details", async () => {
+  const s = await makeStudent();
+  await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 100000, idempotencyKey: uid() });
+  const bill = await withTx(async (t) => issueBillInTx(t, {
+    userId: s, title: "Phone", amountCents: 20000,
+    dueAt: new Date(Date.now() + 86400000).toISOString(), issuedBy: TEACHER, idempotencyKey: uid(),
+  }));
+  const key = uid();
+  const first = await payBill({ userId: s, billId: bill.id, amountCents: 5000, idempotencyKey: key });
+  const retry = await payBill({ userId: s, billId: bill.id, amountCents: 5000, idempotencyKey: key });
+  assert.equal(retry.entry.id, first.entry.id);
+  await assert.rejects(
+    () => payBill({ userId: s, billId: bill.id, amountCents: 6000, idempotencyKey: key }),
+    (e: any) => e instanceof BankError && e.code === "IDEMPOTENCY_CONFLICT",
+  );
+  assert.equal((await bankSummaryFor(s)).bills[0].remaining_cents, 15000);
+});
+
+test("student can dispute their own unpaid bill and cannot dispute another student's", async () => {
+  const a = await makeStudent(), b = await makeStudent();
+  const bill = await withTx(async (t) => issueBillInTx(t, {
+    userId: a, title: "Utility statement", amountCents: 9000,
+    dueAt: new Date(Date.now() + 86400000).toISOString(), issuedBy: TEACHER, idempotencyKey: uid(),
+    sender: "City Utilities", documentTitle: "Monthly statement", documentBody: "Review the usage period and charges.",
+  }));
+  const key = uid();
+  const opened = await disputeBill({ userId: a, billId: bill.id, reason: "The service dates look incorrect.", idempotencyKey: key });
+  assert.equal(opened.dispute.status, "open");
+  assert.equal((await disputeBill({ userId: a, billId: bill.id, reason: "The service dates look incorrect.", idempotencyKey: key })).deduped, true);
+  await assert.rejects(
+    () => disputeBill({ userId: b, billId: bill.id, reason: "This is not mine.", idempotencyKey: uid() }),
+    (e: any) => e instanceof BankError && e.code === "NOT_YOUR_BILL",
+  );
+  const summary = await bankSummaryFor(a);
+  assert.equal(summary.bills[0].document_body, "Review the usage period and charges.");
+  assert.equal(summary.bills[0].disputes?.length, 1);
+});
+
+test("savings earns the configured APY as ledger-backed interest", async () => {
+  const s = await makeStudent();
+  await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 100000, idempotencyKey: uid() });
+  await transfer({ userId: s, from: "checking", to: "savings", amountCents: 100000, idempotencyKey: uid() });
+  const oneYearAgo = new Date(Date.now() - 365.2425 * 86400000).toISOString();
+  await run(`UPDATE bank_accounts SET interest_accrued_at = ?, interest_residual_micros = 0 WHERE user_id = ?`, [oneYearAgo, s]);
+  const summary = await bankSummaryFor(s);
+  assert.ok(summary.savingsCents >= 103399 && summary.savingsCents <= 103401, `unexpected ${summary.savingsCents}`);
+  assert.ok(summary.savingsInterest.earnedCents >= 3399);
+  assert.equal(summary.savingsInterest.projection.length, 3);
   assert.ok((await checkBankInvariant(s)).ok);
 });
 

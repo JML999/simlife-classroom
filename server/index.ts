@@ -20,7 +20,7 @@ import {
   LedgerError, MICRO,
 } from "./ledger.js";
 import {
-  postIncome, transfer, payBill, createBillTemplate, issueIncomeBatch,
+  postIncome, transfer, payBill, disputeBill, createBillTemplate, issueIncomeBatch,
   issueBillBatch, bankSummaryFor, checkBankInvariant, BankError,
 } from "./bank.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
@@ -506,6 +506,7 @@ function bankError(res: express.Response, err: unknown) {
       err.code === "INSUFFICIENT_FUNDS" ? 422
       : err.code === "NOT_FOUND" ? 404
       : err.code === "NOT_YOUR_BILL" ? 403
+      : err.code === "IDEMPOTENCY_CONFLICT" || err.code === "ALREADY_PAID" ? 409
       : 400;
     res.status(status).json({ error: err.message, code: err.code });
     return;
@@ -521,6 +522,7 @@ app.get("/api/bank", requireAuth, async (req, res) => {
   res.json({
     checkingCents: bank.checkingCents,
     savingsCents: bank.savingsCents,
+    savingsInterest: bank.savingsInterest,
     bills: bank.bills,
     recent: bank.recent,
     brokerage: { cashCents: pf.cashCents, portfolioCents: pf.portfolioCents },
@@ -555,12 +557,30 @@ app.post("/api/bank/bills/:id/pay", requireAuth, async (req, res) => {
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
   if (user.role !== "student") { res.status(403).json({ error: "Teachers cannot pay student bills." }); return; }
   try {
+    const dollars = req.body?.dollars === undefined || req.body?.dollars === "" ? undefined : Number(req.body.dollars);
+    if (dollars !== undefined && (!Number.isFinite(dollars) || dollars <= 0)) {
+      res.status(400).json({ error: "Enter a positive payment amount." }); return;
+    }
     const r = await payBill({
       userId: user.id, billId: String(req.params.id),
+      amountCents: dollars === undefined ? undefined : Math.round(dollars * 100),
       idempotencyKey: String(req.body?.idempotencyKey || ""),
     });
     const bank = await bankSummaryFor(user.id);
-    res.json({ ok: true, deduped: r.deduped, totalCents: r.totalCents, bank });
+    res.json({ ok: true, deduped: r.deduped, paidCents: r.paidCents, remainingCents: r.remainingCents, bank });
+  } catch (err) { bankError(res, err); }
+});
+
+app.post("/api/bank/bills/:id/dispute", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers cannot dispute student bills." }); return; }
+  try {
+    const r = await disputeBill({
+      userId: user.id, billId: String(req.params.id), reason: String(req.body?.reason || ""),
+      idempotencyKey: String(req.body?.idempotencyKey || ""),
+    });
+    res.json({ ok: true, deduped: r.deduped, dispute: r.dispute, bank: await bankSummaryFor(user.id) });
   } catch (err) { bankError(res, err); }
 });
 
@@ -668,6 +688,9 @@ app.post("/api/teacher/bills/templates", requireCurrentTeacher, async (req, res)
       amountCents: Math.round(dollars * 100),
       lateFeeCents: Math.round(feeDollars * 100),
       description: String(req.body?.description || ""),
+      sender: String(req.body?.sender || ""),
+      documentTitle: String(req.body?.documentTitle || ""),
+      documentBody: String(req.body?.documentBody || req.body?.description || ""),
     });
     res.json({ ok: true, id: r.id });
   } catch (err) { bankError(res, err); }
@@ -686,7 +709,12 @@ function parseBillForm(body: any) {
   if (title.length < 2) throw new BankError("INVALID_INPUT", "Give the bill a short title.");
   const dueAt = String(body?.dueAt || "");
   if (!dueAt || isNaN(new Date(dueAt).getTime())) throw new BankError("INVALID_INPUT", "Pick a valid due date.");
-  return { title, cents: Math.round(dollars * 100), feeCents: Math.round(feeDollars * 100), dueAt };
+  return {
+    title, cents: Math.round(dollars * 100), feeCents: Math.round(feeDollars * 100), dueAt,
+    sender: String(body?.sender || "").trim().slice(0, 120),
+    documentTitle: String(body?.documentTitle || "").trim().slice(0, 160),
+    documentBody: String(body?.documentBody || body?.description || "").trim().slice(0, 8000),
+  };
 }
 
 app.post("/api/teacher/bills/preview", requireCurrentTeacher, async (req, res) => {
@@ -696,6 +724,7 @@ app.post("/api/teacher/bills/preview", requireCurrentTeacher, async (req, res) =
     res.json({
       students, perStudentCents: form.cents, totalCents: form.cents * students.length,
       count: students.length, title: form.title, dueAt: form.dueAt, lateFeeCents: form.feeCents,
+      sender: form.sender, documentTitle: form.documentTitle, documentBody: form.documentBody,
     });
   } catch (err) { bankError(res, err); }
 });
@@ -713,6 +742,7 @@ app.post("/api/teacher/bills/issue", requireCurrentTeacher, async (req, res) => 
       items: students.map((s) => ({
         userId: s.id, title: form.title, amountCents: form.cents,
         lateFeeCents: form.feeCents, dueAt: form.dueAt, templateId,
+        sender: form.sender, documentTitle: form.documentTitle, documentBody: form.documentBody,
       })),
     });
     res.json({ ok: true, issued: r.issued, batchId: r.batchId, totalCents: form.cents * r.issued });
@@ -733,6 +763,15 @@ async function boot() {
   validateProductionEnv();
   await initSchema();
   await ensureColumn("users", "last_active_at", "TEXT");
+  await ensureColumn("bank_accounts", "interest_residual_micros", "INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn("bank_accounts", "interest_accrued_at", "TEXT");
+  await ensureColumn("bill_templates", "sender", "TEXT");
+  await ensureColumn("bill_templates", "document_title", "TEXT");
+  await ensureColumn("bill_templates", "document_body", "TEXT");
+  await ensureColumn("bills", "paid_cents", "INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn("bills", "sender", "TEXT");
+  await ensureColumn("bills", "document_title", "TEXT");
+  await ensureColumn("bills", "document_body", "TEXT");
   if (demoEnabled()) await ensureDemoUsers();
   app.listen(PORT, "127.0.0.1", () => {
     console.log(`[simlife] api on http://127.0.0.1:${PORT} (quotes: ${quotes.providerName})`);

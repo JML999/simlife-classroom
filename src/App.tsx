@@ -242,7 +242,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
         <button role="tab" aria-selected={section === "banking"} className={`pill${section === "banking" ? " active" : ""}`} onClick={() => setSection("banking")}>Banking</button>
         <button role="tab" aria-selected={section === "investing"} className={`pill${section === "investing" ? " active" : ""}`} onClick={() => setSection("investing")}>Investing</button>
       </div>
-      {section === "banking" && <StudentBanking me={me} onChanged={load} />}
+      {section === "banking" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
@@ -378,25 +378,62 @@ function describeBankEntry(e: any): string {
   if (e.kind === "transfer") return "Transfer";
   if (e.kind === "transfer_to_brokerage") return "Moved to brokerage";
   if (e.kind === "bill_payment") return "Bill paid";
+  if (e.kind === "savings_interest") return "Savings interest";
   return e.kind;
+}
+
+function bankEntryAmount(e: any): number {
+  if (e.kind === "transfer") return Math.max(Math.abs(e.checking_leg), Math.abs(e.savings_leg));
+  return e.checking_leg + e.savings_leg;
 }
 
 function billBadge(status: string): string {
   return status === "paid" ? "badge-paid" : status === "late" ? "badge-late" : "badge-due";
 }
 
-function StudentBanking({ me, onChanged }: { me: Me; onChanged: () => void }) {
+function SavingsProjection({ interest }: { interest: any }) {
+  const points = [{ years: 0, balanceCents: 0 }, ...(interest?.projection || [])];
+  const current = points.length > 1 ? Math.max(0, points[1].balanceCents - points[1].interestCents) : 0;
+  points[0].balanceCents = current;
+  const max = Math.max(1, ...points.map((p) => p.balanceCents));
+  const svgPoints = points.map((p) => `${8 + (p.years / 10) * 284},${112 - (p.balanceCents / max) * 94}`).join(" ");
+  return <div className="savings-growth">
+    <div className="growth-heading">
+      <div><span className="bank-kicker">Savings growth</span><h2>Your money earns money</h2></div>
+      <div className="apy-bubble"><strong>{((interest?.apy || 0) * 100).toFixed(2)}%</strong><span>APY</span></div>
+    </div>
+    <p>Projection assumes your current balance stays deposited with no additional contributions or withdrawals.</p>
+    <svg className="growth-chart" viewBox="0 0 300 120" role="img" aria-label="Projected savings balance over ten years">
+      <defs><linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#47c978" stopOpacity=".34" /><stop offset="100%" stopColor="#47c978" stopOpacity=".03" /></linearGradient></defs>
+      <path d={`M ${svgPoints.replaceAll(" ", " L ")} L 292 116 L 8 116 Z`} fill="url(#growthFill)" />
+      <polyline points={svgPoints} fill="none" stroke="#269c58" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((p) => <circle key={p.years} cx={8 + (p.years / 10) * 284} cy={112 - (p.balanceCents / max) * 94} r="4" fill="#fff" stroke="#269c58" strokeWidth="3" />)}
+    </svg>
+    <div className="growth-milestones">
+      {(interest?.projection || []).map((p: any) => <div key={p.years}><span>{p.years} year{p.years === 1 ? "" : "s"}</span><strong>{money(p.balanceCents)}</strong><small>+{money(p.interestCents)} interest</small></div>)}
+    </div>
+    <div className="growth-foot"><span>{interest?.label}</span><span>Rate as of {interest?.asOf ? new Date(`${interest.asOf}T12:00:00`).toLocaleDateString() : "—"} · variable classroom rate</span></div>
+  </div>;
+}
+
+function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged: () => void; onOpenInvesting: () => void }) {
   const [bank, setBank] = useState<any>(null);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [payDollars, setPayDollars] = useState("");
+  const [showPayment, setShowPayment] = useState(false);
+  const [showDispute, setShowDispute] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
   const [from, setFrom] = useState("checking");
   const [to, setTo] = useState("savings");
   const [dollars, setDollars] = useState("");
   const [confirmX, setConfirmX] = useState(false);
   const xKey = useRef(uid());
-  void me;
+  const payKey = useRef(uid());
+  const disputeKey = useRef(uid());
 
   const load = useCallback(async () => {
     try { setBank(await api("/api/bank")); }
@@ -407,7 +444,12 @@ function StudentBanking({ me, onChanged }: { me: Me; onChanged: () => void }) {
   const bills: any[] = bank?.bills || [];
   const unpaid = bills.filter((b) => !b.paid_at);
   const paid = bills.filter((b) => b.paid_at);
-  const unpaidTotal = unpaid.reduce((s: number, b: any) => s + b.total_due_cents, 0);
+  const unpaidTotal = unpaid.reduce((s: number, b: any) => s + b.remaining_cents, 0);
+
+  const openBill = (bill: any, payment = false) => {
+    setSelectedBill(bill); setShowPayment(payment); setShowDispute(false); setDisputeReason("");
+    setPayDollars((bill.remaining_cents / 100).toFixed(2)); setErr("");
+  };
 
   const submitTransfer = async () => {
     if (busy || !dollars) return;
@@ -432,60 +474,75 @@ function StudentBanking({ me, onChanged }: { me: Me; onChanged: () => void }) {
     setBusy(true); setPayingId(bill.id); setErr(""); setNotice("");
     try {
       const r = await api<any>(`/api/bank/bills/${bill.id}/pay`, {
-        method: "POST", body: JSON.stringify({ idempotencyKey: uid() }),
+        method: "POST", body: JSON.stringify({ dollars: Number(payDollars), idempotencyKey: payKey.current }),
       });
-      setNotice(r.deduped ? "Already processed — duplicate ignored." : `Paid “${bill.title}” (${money(r.totalCents)}).`);
+      setNotice(r.deduped ? "Already processed — duplicate ignored." : r.remainingCents === 0 ? `Paid “${bill.title}” in full.` : `Payment sent. ${money(r.remainingCents)} remains on “${bill.title}.”`);
+      payKey.current = uid(); setSelectedBill(null); setShowPayment(false);
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); setPayingId(null); }
   };
 
+  const dispute = async (bill: any) => {
+    if (busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await api<any>(`/api/bank/bills/${bill.id}/dispute`, {
+        method: "POST", body: JSON.stringify({ reason: disputeReason, idempotencyKey: disputeKey.current }),
+      });
+      setNotice(r.deduped ? "That question was already submitted." : "Your question was sent to your teacher. The bill remains due while it is reviewed.");
+      disputeKey.current = uid(); setSelectedBill(null); setDisputeReason(""); setShowDispute(false);
+      await load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
   return (
-    <>
-      <div className="page-intro">
+    <div className="banking-experience">
+      <div className="bank-welcome">
         <div>
-          <div className="eyebrow">{me.class?.name || "Personal Finance"}</div>
-          <h2>Your bank accounts</h2>
-          <p>Paychecks land in checking. Bills are paid by you, from checking. Only genuinely free money should move to investing.</p>
+          <div className="bank-kicker">{me.class?.name || "Personal Finance"}</div>
+          <h2>Welcome back, {me.user.name.split(" ")[0]}!</h2>
+          <p>Check your mail, pay what is due, then decide what to save or invest.</p>
         </div>
+        <div className="wallet-art" aria-hidden="true"><span>💵</span><strong>👛</strong><i>★</i></div>
       </div>
       {unpaidTotal > 0 && (
-        <div className="frozen" role="note">You owe {money(unpaidTotal)} in unpaid bill{unpaid.length === 1 ? "" : "s"}. That money is spoken for — it is not available to invest.</div>
+        <div className="money-reminder" role="note"><span>🔔</span><div><strong>{money(unpaidTotal)} is still spoken for</strong><p>You have {unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}. Your checking balance is not the same as money available to invest.</p></div></div>
       )}
-      <div className="cards">
-        <div className="card"><div className="label">Checking (simulated)</div><div className="value">{bank ? money(bank.checkingCents) : "…"}</div><div className="sub">Paychecks in · bills out</div></div>
-        <div className="card"><div className="label">Savings (simulated)</div><div className="value">{bank ? money(bank.savingsCents) : "…"}</div><div className="sub">Set aside, not for bills</div></div>
-        <div className="card"><div className="label">Brokerage cash (simulated)</div><div className="value">{bank ? money(bank.brokerage.cashCents) : "…"}</div><div className="sub">Ready to invest · {bank ? money(bank.brokerage.portfolioCents) : "…"} total portfolio</div></div>
-        <div className="card"><div className="label">Bills unpaid (simulated)</div><div className="value">{bank ? money(unpaidTotal) : "…"}</div><div className="sub">{unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}</div></div>
+      <div className="bank-section-heading"><div><span className="bank-kicker">My money</span><h2>Your accounts</h2></div><span className="sim-chip">Simulated funds</span></div>
+      <div className="bank-account-grid">
+        <article className="account-tile checking-tile"><div className="account-icon">💳</div><span>Checking</span><strong>{bank ? money(bank.checkingCents) : "…"}</strong><p>Paychecks arrive here. Bills leave from here.</p></article>
+        <article className="account-tile savings-tile"><div className="account-icon">🌱</div><span>High-yield savings</span><strong>{bank ? money(bank.savingsCents) : "…"}</strong><p>{bank ? `${(bank.savingsInterest.apy * 100).toFixed(2)}% APY · ${money(bank.savingsInterest.earnedCents)} earned` : "Interest is loading…"}</p></article>
+        <article className="account-tile investing-tile"><div className="account-icon">📈</div><span>Brokerage</span><strong>{bank ? money(bank.brokerage.portfolioCents) : "…"}</strong><p>{bank ? `${money(bank.brokerage.cashCents)} ready to invest` : "Portfolio is loading…"}</p><button className="tile-link" onClick={onOpenInvesting}>Open investing →</button></article>
       </div>
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
-      <div className="grid2">
-        <div className="panel">
-          <h2>Bills / Mailbox</h2>
-          <p className="hint">Bills from your teacher arrive here. You pay them — nothing is taken automatically.</p>
+      <div className="bank-dashboard-grid">
+        <section className="bank-panel mailbox-panel">
+          <div className="bank-panel-title"><div className="mail-icon">✉️</div><div><span className="bank-kicker">Bills & notices</span><h2>Mailbox</h2></div><span className="mail-count">{unpaid.length} to do</span></div>
+          <p className="bank-hint">Open each letter to review the details. Nothing is taken from checking until you choose to pay.</p>
           {bills.length === 0 && <p className="small">No bills yet. When your teacher sends one, it will appear here.</p>}
           <div className="mailbox">
-            {bills.map((b) => (
-              <div className="bill-card" key={b.id}>
+            {unpaid.map((b) => (
+              <article className="mail-item" key={b.id}>
+                <div className="envelope-mark" aria-hidden="true">✉</div>
+                <div className="mail-copy">
                 <div className="bill-top">
-                  <strong>{b.title}</strong>
+                  <div><span>{b.sender || "SimLife Mail"}</span><strong>{b.title}</strong></div>
                   <span className={billBadge(b.status)}>{b.status === "paid" ? "Paid" : b.status === "late" ? "Late" : "Due"}</span>
                 </div>
-                <div className="small">Due {new Date(b.due_at).toLocaleDateString()} · {money(b.amount_cents)}{b.status === "late" && b.late_fee_cents > 0 ? ` + ${money(b.late_fee_cents)} late fee = ${money(b.total_due_cents)}` : ""}{b.status === "paid" ? ` · paid ${new Date(b.paid_at).toLocaleDateString()}` : ""}</div>
-                {!b.paid_at && (
-                  <div className="row" style={{ marginTop: 8 }}>
-                    <button disabled={busy} onClick={() => pay(b)}>{payingId === b.id ? "Paying…" : `Pay ${money(b.total_due_cents)} from checking`}</button>
-                  </div>
-                )}
-              </div>
+                <div className="mail-facts"><span>Due {new Date(b.due_at).toLocaleDateString()}</span><strong>{money(b.remaining_cents)} remaining</strong>{b.paid_cents > 0 && <span>{money(b.paid_cents)} paid</span>}</div>
+                {b.disputes?.some((d: any) => d.status === "open") && <div className="question-sent">Question sent · awaiting teacher review</div>}
+                <div className="mail-actions"><button className="ghost" onClick={() => openBill(b)}>Read</button><button disabled={busy} onClick={() => openBill(b, true)}>{payingId === b.id ? "Paying…" : "Pay bill"}</button></div>
+                </div>
+              </article>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="panel">
-          <h2>Move money</h2>
-          <p className="hint">Between your own accounts, or into brokerage for investing. One-way into brokerage — it cannot come back.</p>
+        <section className="bank-panel transfer-panel">
+          <div className="bank-panel-title"><div className="transfer-icon">↔</div><div><span className="bank-kicker">Quick action</span><h2>Move money</h2></div></div>
+          <p className="bank-hint">Move money between checking and savings, or send it to brokerage when it is truly available to invest.</p>
           <div className="row">
             <div className="field"><label>From</label>
               <select value={from} onChange={(e) => { setFrom(e.target.value); setConfirmX(false); }}>
@@ -505,32 +562,43 @@ function StudentBanking({ me, onChanged }: { me: Me; onChanged: () => void }) {
           {!confirmX
             ? <div className="row" style={{ marginTop: 8 }}><button disabled={!(Number(dollars) > 0) || busy} onClick={() => setConfirmX(true)}>Review transfer</button></div>
             : <div className="confirm"><p><strong>Confirm:</strong> move <strong>{money(Math.round(Number(dollars) * 100))}</strong> from {from} to {to === "brokerage" ? "brokerage (for investing)" : to}?</p><div className="row"><button disabled={busy} onClick={submitTransfer}>Yes, move it</button><button className="ghost" onClick={() => setConfirmX(false)}>Cancel</button></div></div>}
-          <h2 style={{ marginTop: 20 }}>Recent bank activity</h2>
+          <h3 className="activity-title">Recent activity</h3>
           {!bank?.recent.length && <p className="small">No bank activity yet.</p>}
-          <table>
-            <tbody>
-              {(bank?.recent || []).slice(0, 10).map((e: any) => (
-                <tr key={e.id}>
-                  <td className="small">{new Date(e.created_at).toLocaleString()}</td>
-                  <td>{describeBankEntry(e)}<br /><span className="small">{e.memo || ""}</span></td>
-                  <td className={e.checking_leg + e.savings_leg >= 0 ? "up" : "down"}>{money(e.checking_leg + e.savings_leg)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <div className="activity-list">{(bank?.recent || []).slice(0, 6).map((e: any) => <div className="activity-row" key={e.id}><span>{e.kind === "income" ? "💵" : e.kind === "bill_payment" ? "🧾" : e.kind === "savings_interest" ? "✨" : "↔"}</span><div><strong>{describeBankEntry(e)}</strong><small>{e.memo || new Date(e.created_at).toLocaleDateString()}</small></div><b className={e.kind === "transfer" ? "" : bankEntryAmount(e) >= 0 ? "up" : "down"}>{money(bankEntryAmount(e))}</b></div>)}</div>
+        </section>
       </div>
+      {bank && <SavingsProjection interest={bank.savingsInterest} />}
       {paid.length > 0 && (
-        <div className="panel">
-          <h2>Paid bills</h2>
+        <div className="bank-panel paid-mail">
+          <h2>Paid mail</h2>
           <table><tbody>
             {paid.map((b) => (
-              <tr key={b.id}><td><strong>{b.title}</strong></td><td className="small">paid {new Date(b.paid_at).toLocaleDateString()}</td><td>{money(b.amount_cents + (new Date(b.due_at) < new Date(b.paid_at) ? b.late_fee_cents : 0))}</td></tr>
+              <tr key={b.id}><td><strong>{b.title}</strong></td><td className="small">paid {new Date(b.paid_at).toLocaleDateString()}</td><td>{money(b.paid_cents)}</td><td><button className="ghost" onClick={() => openBill(b)}>Receipt</button></td></tr>
             ))}
           </tbody></table>
         </div>
       )}
-    </>
+
+      {selectedBill && <div className="bank-modal-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedBill(null); }}>
+        <div className="bank-modal" role="dialog" aria-modal="true" aria-labelledby="mail-title">
+          <div className="letter-toolbar"><span>Received {new Date(selectedBill.issued_at).toLocaleDateString()}</span><button className="ghost" onClick={() => setSelectedBill(null)}>Close</button></div>
+          <div className="letter-paper">
+            <div className="letter-mark">{selectedBill.sender?.slice(0, 1).toUpperCase() || "$"}</div>
+            <div className="letter-from">{selectedBill.sender || "SimLife Billing Center"}</div>
+            <h2 id="mail-title">{selectedBill.document_title || selectedBill.title}</h2>
+            <p className="letter-body">{selectedBill.document_body || `This is your statement for ${selectedBill.title}. Review the amount and due date below. You may pay the full balance or make a partial payment from checking.`}</p>
+            <div className="statement-box"><div><span>Original amount</span><strong>{money(selectedBill.amount_cents)}</strong></div><div><span>Already paid</span><strong>{money(selectedBill.paid_cents)}</strong></div><div><span>Due date</span><strong>{new Date(selectedBill.due_at).toLocaleDateString()}</strong></div><div className="statement-due"><span>Balance due</span><strong>{money(selectedBill.remaining_cents)}</strong></div></div>
+            {selectedBill.status === "late" && selectedBill.late_fee_cents > 0 && <p className="late-note">This balance includes a {money(selectedBill.late_fee_cents)} late fee.</p>}
+          </div>
+          {!selectedBill.paid_at && <div className="letter-actions">
+            {err && <div className="error" role="alert">{err}</div>}
+            {!showPayment && !showDispute && <><button onClick={() => { setShowPayment(true); setPayDollars((selectedBill.remaining_cents / 100).toFixed(2)); }}>Pay this bill</button><button className="ghost" onClick={() => setShowDispute(true)}>Question or dispute</button></>}
+            {showPayment && <div className="modal-action-box"><h3>How much do you want to pay?</h3><p>The payment comes from checking. Any unpaid amount stays in your mailbox.</p><div className="row"><div className="field grow"><label htmlFor="bill-payment">Payment amount</label><input id="bill-payment" value={payDollars} onChange={(e) => setPayDollars(e.target.value)} inputMode="decimal" autoFocus /></div><button disabled={busy || !(Number(payDollars) > 0) || Math.round(Number(payDollars) * 100) > selectedBill.remaining_cents} onClick={() => pay(selectedBill)}>{busy ? "Paying…" : "Send payment"}</button></div><button className="text-danger" onClick={() => setShowPayment(false)}>Cancel</button></div>}
+            {showDispute && <div className="modal-action-box"><h3>Ask about this bill</h3><p>Explain what looks wrong. Sending a question does not pause the due date or remove the balance.</p><div className="field"><label htmlFor="bill-dispute">Your message</label><textarea id="bill-dispute" rows={4} value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="The service dates or amount do not match…" autoFocus /></div><div className="row"><button disabled={busy || disputeReason.trim().length < 5} onClick={() => dispute(selectedBill)}>Send to teacher</button><button className="ghost" onClick={() => setShowDispute(false)}>Cancel</button></div></div>}
+          </div>}
+        </div>
+      </div>}
+    </div>
   );
 }
 
@@ -699,7 +767,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         {workspaceTabs}
         {err && <div className="error" role="alert">{err}</div>}
         {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
-        <TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} />
+        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} /></div>
       </>
     );
   }
@@ -820,18 +888,18 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                 </div>}
                 {profile.bank && <div className="panel">
                   <h2>Banking</h2>
-                  <p className="hint">Checking {money(profile.bank.checkingCents)} · savings {money(profile.bank.savingsCents)}{profile.bankInvariant && !profile.bankInvariant.ok ? " · INVARIANT BROKEN" : ""}</p>
+                  <p className="hint">Checking {money(profile.bank.checkingCents)} · savings {money(profile.bank.savingsCents)} · {((profile.bank.savingsInterest?.apy || 0) * 100).toFixed(2)}% APY{profile.bankInvariant && !profile.bankInvariant.ok ? " · INVARIANT BROKEN" : ""}</p>
                   {(profile.bank.bills || []).length > 0 && (
-                    <table><thead><tr><th>Bill</th><th>Status</th><th>Amount</th></tr></thead><tbody>
+                    <table><thead><tr><th>Bill</th><th>Status</th><th>Paid</th><th>Remaining</th></tr></thead><tbody>
                       {profile.bank.bills.map((b: any) => (
-                        <tr key={b.id}><td><strong>{b.title}</strong><br /><span className="small">due {new Date(b.due_at).toLocaleDateString()}</span></td><td><span className={billBadge(b.status)}>{b.status}</span></td><td>{money(b.total_due_cents)}</td></tr>
+                        <tr key={b.id}><td><strong>{b.title}</strong><br /><span className="small">due {new Date(b.due_at).toLocaleDateString()}{b.disputes?.some((d: any) => d.status === "open") ? " · QUESTION OPEN" : ""}</span></td><td><span className={billBadge(b.status)}>{b.status}</span></td><td>{money(b.paid_cents)}</td><td>{money(b.remaining_cents)}</td></tr>
                       ))}
                     </tbody></table>
                   )}
                   {(profile.bank.recent || []).length > 0 && (
                     <table style={{ marginTop: 8 }}><thead><tr><th>When</th><th>Bank activity</th><th>Net</th></tr></thead><tbody>
                       {profile.bank.recent.slice(0, 10).map((e: any) => (
-                        <tr key={e.id}><td className="small">{new Date(e.created_at).toLocaleString()}</td><td>{describeBankEntry(e)}<br /><span className="small">{e.memo || ""}</span></td><td className={e.checking_leg + e.savings_leg >= 0 ? "up" : "down"}>{money(e.checking_leg + e.savings_leg)}</td></tr>
+                        <tr key={e.id}><td className="small">{new Date(e.created_at).toLocaleString()}</td><td>{describeBankEntry(e)}<br /><span className="small">{e.memo || ""}</span></td><td>{money(bankEntryAmount(e))}</td></tr>
                       ))}
                     </tbody></table>
                   )}
@@ -887,6 +955,9 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
   const [billDollars, setBillDollars] = useState("");
   const [billFee, setBillFee] = useState("");
   const [billDue, setBillDue] = useState("");
+  const [billSender, setBillSender] = useState("");
+  const [billDocumentTitle, setBillDocumentTitle] = useState("");
+  const [billDocumentBody, setBillDocumentBody] = useState("");
   const [billPreview, setBillPreview] = useState<any>(null);
   const billBatch = useRef("");
   // Template form
@@ -894,6 +965,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
   const [tplDollars, setTplDollars] = useState("");
   const [tplFee, setTplFee] = useState("");
   const [tplDesc, setTplDesc] = useState("");
+  const [tplSender, setTplSender] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -955,6 +1027,9 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
       setBillTitle(t.title);
       setBillDollars((t.amount_cents / 100).toFixed(2));
       setBillFee((t.late_fee_cents / 100).toFixed(2));
+      setBillSender(t.sender || "");
+      setBillDocumentTitle(t.document_title || t.title);
+      setBillDocumentBody(t.document_body || t.description || "");
     }
   };
 
@@ -968,6 +1043,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
           title: billTitle, dollars: Number(billDollars),
           lateFeeDollars: billFee === "" ? 0 : Number(billFee),
           dueAt: billDue ? `${billDue}T12:00:00Z` : "",
+          sender: billSender, documentTitle: billDocumentTitle, documentBody: billDocumentBody,
         }),
       });
       billBatch.current = uid();
@@ -985,10 +1061,11 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
           title: billTitle, dollars: Number(billDollars),
           lateFeeDollars: billFee === "" ? 0 : Number(billFee),
           dueAt: billDue ? `${billDue}T12:00:00Z` : "", batchId: billBatch.current,
+          sender: billSender, documentTitle: billDocumentTitle, documentBody: billDocumentBody,
         }),
       });
       setNotice(`Issued “${billTitle}” to ${r.issued} student${r.issued === 1 ? "" : "s"} (${money(r.totalCents)} total). Students must pay from checking.`);
-      setBillPreview(null); setBillTitle(""); setBillDollars(""); setBillFee(""); setBillDue(""); setBillTemplate("");
+      setBillPreview(null); setBillTitle(""); setBillDollars(""); setBillFee(""); setBillDue(""); setBillTemplate(""); setBillSender(""); setBillDocumentTitle(""); setBillDocumentBody("");
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
@@ -998,10 +1075,10 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
     try {
       await api("/api/teacher/bills/templates", {
         method: "POST",
-        body: JSON.stringify({ title: tplTitle, dollars: Number(tplDollars), lateFeeDollars: tplFee === "" ? 0 : Number(tplFee), description: tplDesc }),
+        body: JSON.stringify({ title: tplTitle, dollars: Number(tplDollars), lateFeeDollars: tplFee === "" ? 0 : Number(tplFee), description: tplDesc, sender: tplSender, documentTitle: tplTitle, documentBody: tplDesc }),
       });
       setNotice(`Template “${tplTitle}” saved.`);
-      setTplTitle(""); setTplDollars(""); setTplFee(""); setTplDesc("");
+      setTplTitle(""); setTplDollars(""); setTplFee(""); setTplDesc(""); setTplSender("");
       const t = await api<{ templates: any[] }>("/api/teacher/bills/templates");
       setTemplates(t.templates);
     } catch (e: any) { setErr(e.message); }
@@ -1078,6 +1155,11 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
             </div>
             <div className="field" style={{ marginTop: 8 }}><label>Title</label><input value={billTitle} onChange={(e) => { setBillTitle(e.target.value); setBillPreview(null); }} placeholder="Electric bill" /></div>
             <div className="row" style={{ marginTop: 8 }}>
+              <div className="field grow"><label>Sender shown in mailbox</label><input value={billSender} onChange={(e) => { setBillSender(e.target.value); setBillPreview(null); }} placeholder="City Utilities" /></div>
+              <div className="field grow"><label>Letter heading</label><input value={billDocumentTitle} onChange={(e) => { setBillDocumentTitle(e.target.value); setBillPreview(null); }} placeholder="Your monthly utility statement" /></div>
+            </div>
+            <div className="field" style={{ marginTop: 8 }}><label>Letter or statement text</label><textarea rows={4} value={billDocumentBody} onChange={(e) => { setBillDocumentBody(e.target.value); setBillPreview(null); }} placeholder="Service period, charges, contract terms, or other correspondence students should review…" /></div>
+            <div className="row" style={{ marginTop: 8 }}>
               <div className="field"><label>Dollars</label><input value={billDollars} onChange={(e) => { setBillDollars(e.target.value); setBillPreview(null); }} placeholder="80.00" inputMode="decimal" /></div>
               <div className="field"><label>Late fee ($)</label><input value={billFee} onChange={(e) => { setBillFee(e.target.value); setBillPreview(null); }} placeholder="15.00" inputMode="decimal" /></div>
               <div className="field"><label>Due date</label><input type="date" value={billDue} onChange={(e) => { setBillDue(e.target.value); setBillPreview(null); }} /></div>
@@ -1100,10 +1182,11 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged }: {
         <p className="hint">Reusable bills (rent, utilities, insurance). Issue them from “Send bills”.</p>
         <div className="row">
           <div className="field grow"><label>Title</label><input value={tplTitle} onChange={(e) => setTplTitle(e.target.value)} placeholder="Monthly rent share" /></div>
+          <div className="field grow"><label>Sender</label><input value={tplSender} onChange={(e) => setTplSender(e.target.value)} placeholder="Oakwood Apartments" /></div>
           <div className="field"><label>Dollars</label><input value={tplDollars} onChange={(e) => setTplDollars(e.target.value)} placeholder="600.00" inputMode="decimal" /></div>
           <div className="field"><label>Late fee ($)</label><input value={tplFee} onChange={(e) => setTplFee(e.target.value)} placeholder="25.00" inputMode="decimal" /></div>
         </div>
-        <div className="field" style={{ marginTop: 8 }}><label>Description (optional)</label><input value={tplDesc} onChange={(e) => setTplDesc(e.target.value)} placeholder="Due on the 1st." /></div>
+        <div className="field" style={{ marginTop: 8 }}><label>Reusable letter text (optional)</label><textarea rows={3} value={tplDesc} onChange={(e) => setTplDesc(e.target.value)} placeholder="Describe the charge, billing period, and any information the student should review." /></div>
         <div className="row" style={{ marginTop: 8 }}><button disabled={!(tplTitle.trim().length >= 2) || !(Number(tplDollars) > 0)} onClick={saveTemplate}>Save template</button></div>
         {templates.length > 0 && (
           <table style={{ marginTop: 8 }}><tbody>

@@ -99,10 +99,20 @@ a `node:sqlite` file fallback for offline dev. No ORM.
    are now a compact, responsive Portfolio with ticker search, sorting,
    expandable detail/sell controls, and 15-item pagination. It avoids
    horizontal scrolling and remains usable with large holding counts.
+7. **Banking second pass on `experiment/simlife-banking`**: replaced the first
+   serious-looking banking screen with a playful, ClassBank-familiar SimLife
+   dashboard while leaving Brokerage styling alone. Students now have checking,
+   interest-bearing savings with a projection graph, brokerage transfer,
+   document-style mail, full/partial bill payments, and question/dispute
+   submission. Engineering additions include immutable payment/dispute rows,
+   preserved correspondence, idempotency-detail conflicts, legacy paid-bill
+   compatibility, and stronger per-student/bill locking order for Postgres.
+   Full review and remaining scope: `BANKING_REVIEW.md`.
 
 ## 7. Verification status (all green as of this note)
 
-- `npm run typecheck` clean (client + server). `npm test` 18/18 pass.
+- `npm run typecheck` clean (client + server). On the banking branch,
+  `npm test` is **35/35** (17 banking plus 18 existing tests).
 - `npm run build` succeeds; prod boot serves `dist/` with `demoEnabled:false`
   and demo login 404 (verified on port 4102).
 - Live Postgres round-trips verified: fund → buy → roster math → sell-all →
@@ -131,6 +141,19 @@ the known-good fallback. Banking work must be developed on
 `experiment/simlife-banking` in a separate `simlife-banking/` Git worktree and
 must not be merged until separately reviewed. See
 `OPENCODE_NEXT_DIRECTIVE.md`.
+
+## 8b. Banking branch state after owner-requested review
+
+The banking worktree now implements the intended first-version student model:
+checking pays mail-delivered bills, savings accrues a configurable classroom
+APY, and checking can fund the existing brokerage. Partial bill balances remain
+visible. The default APY is 3.40% as of 2026-09-07 and is configurable through
+`SIMLIFE_SAVINGS_*`; it is presented as a variable high-yield benchmark, not a
+universal bank rate. This pass used only a temporary SQLite database.
+
+The next agent directive has been narrowed to the teacher dispute inbox and
+resolution workflow plus Postgres-compatible review. PDF/file uploads,
+deployment, live migrations, and merging remain explicitly out of scope.
 
 ## 9. Guidance for the reviewing agent
 

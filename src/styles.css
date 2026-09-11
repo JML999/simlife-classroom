@@ -185,15 +185,151 @@ th.sortable:hover { color: var(--olive-dark); }
 }
 @media (max-width: 400px) { .cards, .stat-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
-.section-tabs { margin-bottom: 4px; }
+.section-tabs { margin: 18px 0 4px; }
 .investing-section { display: contents; }
-.mailbox { display: flex; flex-direction: column; gap: 10px; }
-.bill-card { background: var(--panel-strong, #fff); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-.bill-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.badge-due, .badge-late, .badge-paid {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  padding: 3px 10px; border-radius: 999px; border: 1px solid; white-space: nowrap;
+
+/* Banking deliberately carries a brighter, more playful classroom-bank mood
+   while Investing keeps the restrained portfolio design above. */
+.banking-experience {
+  --bank-blue: #4e63e7;
+  --bank-blue-dark: #3547bb;
+  --bank-yellow: #ffe34f;
+  --bank-cream: #fff8cf;
+  --bank-green: #48c979;
+  --bank-purple: #8f73e9;
+  --bank-ink: #303148;
+  --bank-muted: #77798e;
+  color: var(--bank-ink);
+  font-family: var(--sans);
 }
-.badge-due { color: #6d5210; border-color: #e3cf8a; background: #fdf3d7; }
-.badge-late { color: #7c2d22; border-color: #e5b3ab; background: #fbeae7; }
-.badge-paid { color: var(--pine-dark, #0a463f); border-color: #bcd8d0; background: #e3f2ee; }
+.banking-experience button:not(.ghost):not(.text-danger):not(.tile-link) { background: var(--bank-blue); border-color: var(--bank-blue); }
+.banking-experience button:not(.ghost):not(.text-danger):not(.tile-link):hover:not(:disabled) { background: var(--bank-blue-dark); border-color: var(--bank-blue-dark); }
+.banking-experience input:focus, .banking-experience select:focus, .banking-experience textarea:focus { border-color: var(--bank-blue); box-shadow: 0 0 0 3px rgba(78,99,231,.14); }
+.teacher-banking-experience .page-intro { margin: 18px 0 14px; padding: 28px 32px; background: var(--bank-cream); border: 1px solid #f1df7b; border-radius: 22px; }
+.teacher-banking-experience .page-intro h2 { color: var(--bank-ink); font-family: var(--sans); font-size: clamp(30px, 4vw, 43px); font-weight: 800; }
+.teacher-banking-experience .page-intro::after { content: "🏦  💵  ✨"; flex: none; font-size: 35px; letter-spacing: 8px; }
+.teacher-banking-experience .teacher-summary { min-width: 175px; border-left-color: #e3c94c; }
+.teacher-banking-experience .teacher-summary strong { font-family: var(--sans); font-weight: 800; }
+.teacher-banking-experience .panel { background: #fff; border-color: #e4e6f1; border-radius: 18px; box-shadow: 0 8px 22px rgba(51,52,72,.05); }
+.teacher-banking-experience .panel h2 { color: var(--bank-ink); font-family: var(--sans); font-weight: 800; }
+.teacher-banking-experience .pill { color: var(--bank-blue-dark); background: transparent; border-color: #cbd1f6; }
+.teacher-banking-experience .pill.active { color: #fff; background: var(--bank-blue); border-color: var(--bank-blue); }
+.bank-kicker { color: var(--bank-blue); font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.bank-welcome { position: relative; min-height: 220px; display: flex; align-items: center; justify-content: space-between; gap: 28px; margin: 18px 0; padding: 34px 40px; overflow: hidden; background: var(--bank-cream); border: 1px solid #f1df7b; border-radius: 24px; }
+.bank-welcome::before, .bank-welcome::after { content: ""; position: absolute; width: 165px; height: 165px; border-radius: 50%; background: var(--bank-yellow); }
+.bank-welcome::before { left: -72px; top: -68px; }
+.bank-welcome::after { right: -65px; bottom: -90px; }
+.bank-welcome > div:first-child { position: relative; z-index: 1; }
+.bank-welcome h2 { margin: 7px 0 7px; color: var(--bank-ink); font-family: var(--sans); font-size: clamp(32px, 4vw, 48px); font-weight: 800; letter-spacing: -.035em; }
+.bank-welcome p { max-width: 550px; margin: 0; color: #616277; font-size: 14px; line-height: 1.55; }
+.wallet-art { position: relative; z-index: 1; width: 245px; height: 145px; flex: none; }
+.wallet-art strong { position: absolute; right: 16px; bottom: 0; display: grid; width: 170px; height: 110px; place-items: center; background: #d79b68; border: 6px solid #c08250; border-radius: 20px; box-shadow: 0 15px 25px rgba(104,69,36,.16); font-size: 68px; }
+.wallet-art span { position: absolute; z-index: -1; left: 12px; top: 0; font-size: 95px; transform: rotate(-10deg); }
+.wallet-art i { position: absolute; z-index: 2; right: 7px; top: 45px; display: grid; width: 45px; height: 45px; place-items: center; color: #b16c25; background: var(--bank-yellow); border-radius: 12px; font-style: normal; box-shadow: 0 5px 10px rgba(104,69,36,.18); }
+.money-reminder { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; padding: 14px 18px; background: #fff; border: 2px solid #f0c94a; border-radius: 16px; box-shadow: 0 5px 16px rgba(73,69,40,.06); }
+.money-reminder > span { font-size: 24px; }
+.money-reminder strong { font-size: 14px; }
+.money-reminder p { margin: 3px 0 0; color: var(--bank-muted); font-size: 11px; }
+.bank-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 24px 0 10px; }
+.bank-section-heading h2, .bank-panel h2, .savings-growth h2 { margin: 3px 0 0; font-family: var(--sans); font-size: 23px; font-weight: 800; letter-spacing: -.025em; }
+.sim-chip { padding: 6px 10px; color: var(--bank-blue-dark); background: #eef0ff; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.bank-account-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+.account-tile { position: relative; min-height: 178px; padding: 20px; overflow: hidden; border: 0; border-radius: 20px; box-shadow: 0 10px 23px rgba(51,52,72,.08); }
+.account-tile::after { content: ""; position: absolute; right: -28px; bottom: -35px; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,.3); }
+.checking-tile { background: #e8ecff; }
+.savings-tile { background: #e3f7e8; }
+.investing-tile { background: #eee8ff; }
+.account-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 14px; background: rgba(255,255,255,.8); border-radius: 13px; font-size: 21px; }
+.account-tile > span { display: block; color: var(--bank-muted); font-size: 11px; font-weight: 700; }
+.account-tile > strong { display: block; margin-top: 4px; color: var(--bank-ink); font-size: 29px; font-weight: 800; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.account-tile p { margin: 7px 0 0; color: var(--bank-muted); font-size: 10px; line-height: 1.4; }
+button.tile-link { position: relative; z-index: 2; margin-top: 9px; padding: 0; color: var(--bank-blue-dark); background: transparent; border: 0; font-family: var(--sans); font-size: 10px; font-weight: 800; }
+button.tile-link:hover:not(:disabled) { color: #263792; background: transparent; border: 0; transform: translateX(2px); }
+.bank-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); gap: 14px; margin-top: 18px; }
+.bank-panel, .savings-growth { margin-top: 0; padding: 22px; background: #fff; border: 1px solid #e4e6f1; border-radius: 20px; box-shadow: 0 9px 24px rgba(51,52,72,.06); }
+.bank-panel-title, .growth-heading { display: flex; align-items: center; gap: 12px; }
+.mail-icon, .transfer-icon { width: 44px; height: 44px; display: grid; flex: none; place-items: center; background: #fff2a6; border-radius: 13px; font-size: 20px; }
+.transfer-icon { color: var(--bank-blue); background: #e8ecff; font-size: 24px; font-weight: 800; }
+.mail-count { margin-left: auto; padding: 6px 10px; color: #9b6913; background: #fff5bd; border-radius: 999px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.bank-hint, .savings-growth > p { margin: 10px 0 16px; color: var(--bank-muted); font-size: 11px; line-height: 1.5; }
+.mailbox { display: flex; flex-direction: column; gap: 9px; }
+.mail-item { display: flex; gap: 12px; padding: 14px; background: #f8f9ff; border: 1px solid #e2e5f3; border-radius: 15px; }
+.envelope-mark { width: 39px; height: 39px; display: grid; flex: none; place-items: center; color: #9e7812; background: var(--bank-yellow); border-radius: 12px; font-size: 18px; }
+.mail-copy { min-width: 0; flex: 1; }
+.bill-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.bill-top > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.bill-top > div > span { color: var(--bank-muted); font-size: 9px; }
+.bill-top strong { overflow-wrap: anywhere; font-size: 13px; }
+.mail-facts { display: flex; flex-wrap: wrap; gap: 5px 11px; margin-top: 7px; color: var(--bank-muted); font-size: 9px; }
+.mail-facts strong { color: var(--bank-ink); }
+.mail-actions { display: flex; gap: 7px; margin-top: 10px; }
+.mail-actions button { padding: 7px 11px; font-size: 9px; }
+.question-sent { margin-top: 7px; color: #6950b8; font-size: 9px; font-weight: 700; }
+.badge-due, .badge-late, .badge-paid { padding: 4px 8px; border: 1px solid; border-radius: 999px; font-size: 8px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.badge-due { color: #80600b; border-color: #ead06c; background: #fff7c9; }
+.badge-late { color: #8d3127; border-color: #e3a8a1; background: #fde8e5; }
+.badge-paid { color: #217143; border-color: #a9d8bb; background: #e5f7eb; }
+.activity-title { margin: 22px 0 8px; padding-top: 18px; border-top: 1px solid #e6e7ef; font-size: 14px; }
+.activity-list { display: flex; flex-direction: column; }
+.activity-row { display: grid; grid-template-columns: 29px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #ececf2; }
+.activity-row > span { font-size: 17px; }
+.activity-row > div { display: flex; min-width: 0; flex-direction: column; }
+.activity-row strong { font-size: 10px; }
+.activity-row small { overflow: hidden; color: var(--bank-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.activity-row b { font-size: 10px; font-variant-numeric: tabular-nums; }
+.savings-growth { margin-top: 14px; background: linear-gradient(135deg, #f1fff4, #fff 70%); }
+.growth-heading { justify-content: space-between; }
+.apy-bubble { width: 76px; height: 76px; display: grid; flex: none; place-content: center; text-align: center; color: #176e3a; background: #d9f5e2; border: 2px solid #a9e2bc; border-radius: 50%; }
+.apy-bubble strong { display: block; font-size: 18px; }
+.apy-bubble span { font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+.growth-chart { width: 100%; height: 190px; overflow: visible; }
+.growth-milestones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.growth-milestones > div { display: flex; flex-direction: column; padding: 11px; background: #f4fbf6; border: 1px solid #d7ecdd; border-radius: 12px; }
+.growth-milestones span, .growth-milestones small { color: #66816d; font-size: 8px; }
+.growth-milestones strong { margin: 2px 0; font-size: 14px; }
+.growth-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--bank-muted); font-size: 8px; }
+.paid-mail { margin-top: 14px; }
+.bank-modal-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(31,33,67,.55); backdrop-filter: blur(4px); }
+.bank-modal { width: min(660px, 100%); max-height: calc(100vh - 36px); overflow-y: auto; background: #f5f6fb; border-radius: 22px; box-shadow: 0 28px 80px rgba(16,18,50,.28); }
+.letter-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; color: var(--bank-muted); font-size: 9px; }
+.letter-paper { margin: 0 16px; padding: 28px; background: #fff; border: 1px solid #e3e4ea; border-radius: 8px; box-shadow: 0 6px 18px rgba(42,43,66,.08); }
+.letter-mark { width: 45px; height: 45px; display: grid; place-items: center; color: #fff; background: var(--bank-blue); border-radius: 50%; font-size: 20px; font-weight: 800; }
+.letter-from { margin-top: 12px; color: var(--bank-blue); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.letter-paper h2 { margin: 7px 0 12px; font-family: var(--sans); font-size: 26px; font-weight: 800; }
+.letter-body { min-height: 70px; color: #55576b; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+.statement-box { display: grid; grid-template-columns: repeat(2, 1fr); margin-top: 20px; overflow: hidden; border: 1px solid #e1e3eb; border-radius: 12px; }
+.statement-box > div { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-right: 1px solid #e1e3eb; border-bottom: 1px solid #e1e3eb; }
+.statement-box > div:nth-child(even) { border-right: 0; }
+.statement-box > div:nth-last-child(-n+2) { border-bottom: 0; }
+.statement-box span { color: var(--bank-muted); font-size: 8px; text-transform: uppercase; }
+.statement-box strong { font-size: 14px; }
+.statement-due { color: var(--bank-blue-dark); background: #f0f2ff; }
+.late-note { color: #8d3127; font-size: 10px; font-weight: 700; }
+.letter-actions { padding: 16px; }
+.modal-action-box { padding: 16px; background: #fff; border: 1px solid #e3e4ea; border-radius: 14px; }
+.modal-action-box h3 { margin: 0 0 5px; font-size: 16px; }
+.modal-action-box p { margin: 0 0 12px; color: var(--bank-muted); font-size: 10px; }
+
+@media (max-width: 920px) {
+  .bank-dashboard-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .bank-welcome { min-height: 190px; padding: 26px; }
+  .wallet-art { width: 155px; transform: scale(.8); transform-origin: right center; }
+  .bank-account-grid { grid-template-columns: 1fr; }
+  .teacher-banking-experience .page-intro::after { display: none; }
+}
+@media (max-width: 520px) {
+  .bank-welcome { padding: 24px 20px; }
+  .wallet-art { display: none; }
+  .bank-welcome h2 { font-size: 31px; }
+  .mail-item { padding: 11px; }
+  .envelope-mark { display: none; }
+  .growth-milestones { grid-template-columns: 1fr; }
+  .growth-chart { height: 145px; }
+  .growth-foot { flex-direction: column; }
+  .letter-paper { margin: 0 8px; padding: 20px; }
+  .statement-box { grid-template-columns: 1fr; }
+  .statement-box > div { border-right: 0; border-bottom: 1px solid #e1e3eb !important; }
+  .statement-box > div:last-child { border-bottom: 0 !important; }
+}
