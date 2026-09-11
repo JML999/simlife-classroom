@@ -202,8 +202,8 @@ th.sortable:hover { color: var(--olive-dark); }
   color: var(--bank-ink);
   font-family: var(--sans);
 }
-.banking-experience button:not(.ghost):not(.text-danger):not(.tile-link) { background: var(--bank-blue); border-color: var(--bank-blue); }
-.banking-experience button:not(.ghost):not(.text-danger):not(.tile-link):hover:not(:disabled) { background: var(--bank-blue-dark); border-color: var(--bank-blue-dark); }
+.banking-experience button:not(.ghost):not(.text-danger):not(.tile-link):not(.pill) { background: var(--bank-blue); border-color: var(--bank-blue); }
+.banking-experience button:not(.ghost):not(.text-danger):not(.tile-link):not(.pill):hover:not(:disabled) { background: var(--bank-blue-dark); border-color: var(--bank-blue-dark); }
 .banking-experience input:focus, .banking-experience select:focus, .banking-experience textarea:focus { border-color: var(--bank-blue); box-shadow: 0 0 0 3px rgba(78,99,231,.14); }
 .teacher-banking-experience .page-intro { margin: 18px 0 14px; padding: 28px 32px; background: var(--bank-cream); border: 1px solid #f1df7b; border-radius: 22px; }
 .teacher-banking-experience .page-intro h2 { color: var(--bank-ink); font-family: var(--sans); font-size: clamp(30px, 4vw, 43px); font-weight: 800; }
