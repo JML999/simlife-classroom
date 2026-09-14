@@ -138,6 +138,11 @@ async function applyProfile(t: Tx, profile: any, userId: string, actorId: string
   await t.run(`UPDATE roster_profiles SET status = 'claimed', claimed_by = ?, claimed_at = ?, reviewed_by = ?, reviewed_at = ?, proposed_json = NULL WHERE id = ?`, [userId, now, actorId, now, profile.id]);
 }
 
+async function markMatched(t: Tx, profileId: string, userId: string, actorId: string) {
+  const now = nowIso();
+  await t.run(`UPDATE roster_profiles SET status = 'matched', claimed_by = ?, claimed_at = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?`, [userId, now, actorId, now, profileId]);
+}
+
 export async function claimRosterProfile(opts: { userId: string; profileId: string; proposed?: any }) {
   return withTx(async (t) => {
     const fu = t.dialect === "pg" ? " FOR UPDATE" : "";
@@ -146,15 +151,15 @@ export async function claimRosterProfile(opts: { userId: string; profileId: stri
     if (!user || !profile) throw new OnboardingError("NOT_FOUND", "Preloaded profile not found.");
     if (profile.class_id !== user.class_id || normalizeStudentName(user.name) !== profile.normalized_name) throw new OnboardingError("FORBIDDEN", "That profile does not match your signed-in name and class.");
     if (profile.claimed_by && profile.claimed_by !== user.id) throw new OnboardingError("CONFLICT", "That profile has already been claimed.");
-    if (profile.status === "claimed") return { state: "claimed", deduped: true };
+    if (profile.status === "matched" || profile.status === "claimed") return { state: profile.status, deduped: true };
     const base = valuesFromProfile(profile);
     if (opts.proposed) {
       const proposed = valuesFromProfile(profile, opts.proposed);
       await t.run(`UPDATE roster_profiles SET status = 'pending', claimed_by = ?, proposed_json = ?, claimed_at = ? WHERE id = ?`, [user.id, JSON.stringify(proposed), nowIso(), profile.id]);
       return { state: "pending", deduped: false };
     }
-    await applyProfile(t, profile, user.id, user.id, base);
-    return { state: "claimed", deduped: false };
+    await markMatched(t, profile.id, user.id, user.id);
+    return { state: "matched", deduped: false };
   });
 }
 
@@ -168,9 +173,11 @@ export async function approveRosterProfile(opts: { profileId: string; actorId: s
     const profile = await t.one<any>(`SELECT * FROM roster_profiles WHERE id = ?${fu}`, [opts.profileId]);
     if (!profile) throw new OnboardingError("NOT_FOUND", "Preloaded profile not found.");
     if (!profile.claimed_by || profile.status !== "pending") throw new OnboardingError("CONFLICT", "This profile is not awaiting review.");
-    const proposed = profile.proposed_json ? JSON.parse(profile.proposed_json) : undefined;
-    await applyProfile(t, profile, profile.claimed_by, opts.actorId, valuesFromProfile(profile, proposed));
-    return { state: "claimed" };
+    const proposed = profile.proposed_json ? valuesFromProfile(profile, JSON.parse(profile.proposed_json)) : valuesFromProfile(profile);
+    await t.run(`UPDATE roster_profiles SET full_name = ?, normalized_name = ?, job_title = ?, job_pay_cents = ?, checking_cents = ?, savings_cents = ?, brokerage_cents = ?, car_payment_cents = ?, proposed_json = NULL WHERE id = ?`,
+      [proposed.fullName, normalizeStudentName(proposed.fullName), proposed.jobTitle ?? null, proposed.jobPayCents ?? null, proposed.checkingCents ?? null, proposed.savingsCents ?? null, proposed.brokerageCents ?? null, proposed.carPaymentCents ?? null, profile.id]);
+    await markMatched(t, profile.id, profile.claimed_by, opts.actorId);
+    return { state: "matched" };
   });
 }
 
@@ -182,7 +189,18 @@ export async function assignRosterProfile(opts: { profileId: string; userId: str
     if (!profile || !user) throw new OnboardingError("NOT_FOUND", "Profile or student account not found.");
     if (profile.class_id !== user.class_id) throw new OnboardingError("FORBIDDEN", "The profile and signed-in student must be in the same class.");
     if (profile.status !== "unclaimed" || profile.claimed_by) throw new OnboardingError("CONFLICT", "That profile is no longer unclaimed.");
-    await applyProfile(t, profile, user.id, opts.actorId, valuesFromProfile(profile));
+    await markMatched(t, profile.id, user.id, opts.actorId);
+    return { state: "matched" };
+  });
+}
+
+export async function applyRosterProfile(opts: { profileId: string; actorId: string }) {
+  return withTx(async (t) => {
+    const fu = t.dialect === "pg" ? " FOR UPDATE" : "";
+    const profile = await t.one<any>(`SELECT * FROM roster_profiles WHERE id = ?${fu}`, [opts.profileId]);
+    if (!profile) throw new OnboardingError("NOT_FOUND", "Preloaded profile not found.");
+    if (!profile.claimed_by || profile.status !== "matched") throw new OnboardingError("CONFLICT", "Match this profile to a student before posting data.");
+    await applyProfile(t, profile, profile.claimed_by, opts.actorId, valuesFromProfile(profile));
     return { state: "claimed" };
   });
 }

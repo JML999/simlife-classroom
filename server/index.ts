@@ -26,7 +26,7 @@ import {
 } from "./bank.js";
 import { deletionStatus, deleteEmptyStudent, StudentAdminError } from "./student-admin.js";
 import {
-  importRosterProfiles, onboardingStatus, claimRosterProfile, listRosterProfiles, approveRosterProfile, assignRosterProfile, OnboardingError,
+  importRosterProfiles, onboardingStatus, claimRosterProfile, listRosterProfiles, approveRosterProfile, assignRosterProfile, applyRosterProfile, OnboardingError,
 } from "./onboarding.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
@@ -457,6 +457,12 @@ app.post("/api/teacher/onboarding/:id/approve", requireCurrentTeacher, async (re
 app.post("/api/teacher/onboarding/:id/assign", requireCurrentTeacher, async (req, res) => {
   const teacher = (req as any).currentUser;
   try { res.json(await assignRosterProfile({ profileId: String(req.params.id || ""), userId: String(req.body?.studentId || ""), actorId: teacher.id })); }
+  catch (err) { onboardingError(res, err); }
+});
+
+app.post("/api/teacher/onboarding/:id/apply", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try { res.json(await applyRosterProfile({ profileId: String(req.params.id || ""), actorId: teacher.id })); }
   catch (err) { onboardingError(res, err); }
 });
 

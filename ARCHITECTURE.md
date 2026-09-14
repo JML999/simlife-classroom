@@ -81,6 +81,7 @@ Teacher (auth+role):
                    POST /api/teacher/onboarding/import
                    POST /api/teacher/onboarding/:id/approve
                    POST /api/teacher/onboarding/:id/assign
+                   POST /api/teacher/onboarding/:id/apply
                    GET  /api/teacher/roster?classId=
                    POST /api/teacher/cash         { studentId, amountCents, reason, idempotencyKey }
                    POST /api/teacher/cash/reverse { entryId, reason, idempotencyKey }
@@ -106,11 +107,13 @@ ledger(id PK, account_id FK, kind, amount_cents, ticker NULL, qty_micro NULL,
 
 First-login imports are staged separately from authenticated users:
 `roster_imports` identifies an idempotent teacher import and `roster_profiles`
-stores its unclaimed/pending/claimed rows. A profile can be offered only after
+stores its unclaimed/pending/matched/claimed rows (`claimed` is displayed as
+`funded`). A profile can be offered only after
 the student joins its class and only when the normalized name match is unique.
-Confirmed checking/savings values create one `opening_balance` bank-journal
-entry; confirmed brokerage cash creates a normal ledger cash adjustment. The
-cached balances are updated inside the same transaction.
+Confirmation only creates the identity match and never changes money. A
+separate teacher apply action creates one `opening_balance` bank-journal entry
+for checking/savings and a normal ledger cash adjustment for brokerage cash.
+The cached balances are updated inside the same transaction.
 
 - **Money**: integer cents (`cash_cents`, `amount_cents`, `price_cents`).
 - **Shares**: integer micro-shares (`qty_micro`, 1 share = 1,000,000 units)

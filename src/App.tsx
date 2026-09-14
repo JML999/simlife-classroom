@@ -250,7 +250,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
         <button aria-current={section === "investing" ? "page" : undefined} className={section === "investing" ? "active" : ""} onClick={() => setSection("investing")}><span>↗</span>Investing</button>
       </nav>
       <main className="student-content">
-      {onboarding && ["match", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
+      {onboarding && ["match", "matched", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
       {section === "dashboard" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} />}
       {section === "banking" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "investing" && <div className="investing-section">
@@ -397,6 +397,7 @@ function OnboardingCard({ state, onDone }: { state: any; onDone: () => void }) {
   } : {});
   if (state.state === "ambiguous") return <div className="notice onboarding-card"><strong>We found more than one roster match.</strong><br />Your teacher needs to connect the correct profile before opening balances are added.</div>;
   if (state.state === "pending") return <div className="notice onboarding-card"><strong>Your profile corrections are waiting for teacher review.</strong><br />You can use SimLife now; approved opening balances will appear in your activity history.</div>;
+  if (state.state === "matched") return <div className="notice onboarding-card"><strong>Your SimLife profile is matched.</strong><br />No money moved when you confirmed it. Your teacher will post the approved migration data separately.</div>;
   if (!profile) return null;
   const submit = async (proposed?: any) => {
     setBusy(true); setErr("");
@@ -407,7 +408,7 @@ function OnboardingCard({ state, onDone }: { state: any; onDone: () => void }) {
   };
   const toCents = (v: string) => v.trim() === "" ? null : Math.round(Number(v) * 100);
   return <section className="panel onboarding-card">
-    <div className="panel-heading"><div><div className="eyebrow">First-time setup</div><h2>Is this your SimLife profile?</h2><p className="hint">Confirming adds these simulated opening amounts with a visible audit entry.</p></div><span className="sim-chip">Preloaded</span></div>
+    <div className="panel-heading"><div><div className="eyebrow">First-time setup</div><h2>Is this your SimLife profile?</h2><p className="hint">Confirming only matches your identity. Your teacher posts approved money separately.</p></div><span className="sim-chip">Preloaded</span></div>
     <div className="onboarding-summary">
       <div><span>Name</span><strong>{profile.full_name}</strong></div><div><span>Job</span><strong>{profile.job_title || "Not set"}</strong></div>
       <div><span>Paycheck</span><strong>{profile.job_pay_cents == null ? "Not set" : money(profile.job_pay_cents)}</strong></div>
@@ -1386,7 +1387,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
 
   const approveProfile = async (id: string) => {
     setBusy(true); setErr("");
-    try { await api(`/api/teacher/onboarding/${id}/approve`, { method: "POST" }); setNotice("Profile correction approved and opening entries posted."); await load(); onChanged(); }
+    try { await api(`/api/teacher/onboarding/${id}/approve`, { method: "POST" }); setNotice("Profile correction approved and matched. No money was moved."); await load(); onChanged(); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
@@ -1394,7 +1395,14 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
     const studentId = profileAssignments[id];
     if (!studentId || busy) return;
     setBusy(true); setErr("");
-    try { await api(`/api/teacher/onboarding/${id}/assign`, { method: "POST", body: JSON.stringify({ studentId }) }); setNotice("Profile connected to the signed-in student and opening entries posted."); await load(); onChanged(); }
+    try { await api(`/api/teacher/onboarding/${id}/assign`, { method: "POST", body: JSON.stringify({ studentId }) }); setNotice("Profile matched to the signed-in student. No money was moved."); await load(); onChanged(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const applyProfile = async (id: string) => {
+    if (busy) return;
+    setBusy(true); setErr("");
+    try { await api(`/api/teacher/onboarding/${id}/apply`, { method: "POST" }); setNotice("Approved job and opening balances posted with audit entries."); await load(); onChanged(); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
@@ -1452,7 +1460,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
       </div>
 
       <div className="panel onboarding-admin">
-        <div className="panel-heading"><div><h2>First-login profiles</h2><p className="hint">Preload class information, then track who has confirmed it. Money is posted only after a successful claim.</p></div><span className="portfolio-count">{pendingProfiles.length} need review</span></div>
+        <div className="panel-heading"><div><h2>First-login profiles</h2><p className="hint">Match identities first. Matching never moves money; use Post opening data only after you approve the migration amounts.</p></div><span className="portfolio-count">{pendingProfiles.length} need review</span></div>
         {classId ? <>
           <details>
             <summary>Import or paste a class CSV</summary>
@@ -1468,8 +1476,8 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
               <td>{proposed?.jobTitle ?? p.job_title ?? "—"}<br /><span className="small">{(proposed?.jobPayCents ?? p.job_pay_cents) == null ? "pay blank" : money(proposed?.jobPayCents ?? p.job_pay_cents)}</span></td>
               <td className="small">C {((proposed?.checkingCents ?? p.checking_cents) == null) ? "—" : money(proposed?.checkingCents ?? p.checking_cents)} · S {((proposed?.savingsCents ?? p.savings_cents) == null) ? "—" : money(proposed?.savingsCents ?? p.savings_cents)} · I {((proposed?.brokerageCents ?? p.brokerage_cents) == null) ? "—" : money(proposed?.brokerageCents ?? p.brokerage_cents)}</td>
               <td>{(proposed?.carPaymentCents ?? p.car_payment_cents) == null ? "—" : money(proposed?.carPaymentCents ?? p.car_payment_cents)}</td>
-              <td><span className={p.status === "claimed" ? "badge-paid" : p.status === "pending" ? "badge-late" : "badge-due"}>{p.status}</span></td>
-              <td>{p.status === "pending" && <button disabled={busy} onClick={() => approveProfile(p.id)}>Approve changes</button>}{p.status === "unclaimed" && <div className="row"><select aria-label={`Connect ${p.full_name} to signed-in student`} value={profileAssignments[p.id] || ""} onChange={(e) => setProfileAssignments({ ...profileAssignments, [p.id]: e.target.value })}><option value="">Connect…</option>{summary.filter((s) => s.email).map((s) => <option value={s.id} key={s.id}>{s.name} · {s.email}</option>)}</select><button disabled={busy || !profileAssignments[p.id]} onClick={() => assignProfile(p.id)}>Apply</button></div>}</td>
+              <td><span className={p.status === "claimed" || p.status === "matched" ? "badge-paid" : p.status === "pending" ? "badge-late" : "badge-due"}>{p.status === "claimed" ? "funded" : p.status}</span></td>
+              <td>{p.status === "pending" && <button disabled={busy} onClick={() => approveProfile(p.id)}>Approve match</button>}{p.status === "matched" && <button disabled={busy} onClick={() => applyProfile(p.id)}>Post opening data</button>}{p.status === "unclaimed" && <div className="row"><select aria-label={`Connect ${p.full_name} to signed-in student`} value={profileAssignments[p.id] || ""} onChange={(e) => setProfileAssignments({ ...profileAssignments, [p.id]: e.target.value })}><option value="">Connect…</option>{summary.filter((s) => s.email).map((s) => <option value={s.id} key={s.id}>{s.name} · {s.email}</option>)}</select><button disabled={busy || !profileAssignments[p.id]} onClick={() => assignProfile(p.id)}>Match</button></div>}</td>
             </tr>; })}</tbody>
           </table></div>}
         </> : <p className="hint">Choose a class to import or review first-login profiles.</p>}

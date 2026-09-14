@@ -49,9 +49,11 @@ profiles**. Paste CSV with a `Name` column and any of: `Job`, `Pay`, `Checking`,
 converted to integer cents by the client and validated again by the server.
 
 A unique normalized name match is offered only within the class the student
-joined. Duplicate matches are never guessed. Exact confirmations post opening
-balances immediately; student corrections remain pending until the teacher
-approves them. Reusing the same import or claim cannot duplicate money.
+joined. Duplicate matches are never guessed. Confirmation only links the
+profile to the signed-in student; it never moves money. Student corrections
+remain pending until teacher approval, and the teacher separately posts the
+approved job and opening balances. Reusing an import or post cannot duplicate
+money.
 
 ## Configuration
 
