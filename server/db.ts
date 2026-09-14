@@ -197,6 +197,9 @@ export async function initSchema(): Promise<void> {
       role TEXT NOT NULL DEFAULT 'student',
       google_sub TEXT,
       class_id TEXT,
+      job_title TEXT,
+      job_pay_cents INTEGER,
+      job_updated_at TEXT,
       created_at TEXT NOT NULL
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_users_email ON users(email) WHERE email IS NOT NULL`,

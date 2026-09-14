@@ -46,8 +46,8 @@ const quotes = makeQuoteProvider();
 async function currentUser(req: express.Request) {
   const s = readSession(req);
   if (!s) return null;
-  const user = await one<{ id: string; email: string | null; name: string; role: string; class_id: string | null }>(
-    `SELECT id, email, name, role, class_id FROM users WHERE id = ?`, [s.userId],
+  const user = await one<{ id: string; email: string | null; name: string; role: string; class_id: string | null; job_title: string | null; job_pay_cents: number | null }>(
+    `SELECT id, email, name, role, class_id, job_title, job_pay_cents FROM users WHERE id = ?`, [s.userId],
   );
   if (!user) return null;
   // Heartbeat: every authenticated request marks the account seen.
@@ -204,7 +204,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
   const cls = user.class_id
     ? await one(`SELECT id, name, join_code, trading_frozen FROM classes WHERE id = ?`, [user.class_id])
     : null;
-  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, class: cls });
+  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, job_title: (user as any).job_title ?? null, job_pay_cents: (user as any).job_pay_cents ?? null }, class: cls });
 });
 
 app.post("/api/classes/join", requireAuth, async (req, res) => {
@@ -335,6 +335,7 @@ app.get("/api/teacher/roster", requireCurrentTeacher, async (req, res) => {
   const classId = String(req.query["classId"] || "");
   const students = await q(
     `SELECT u.id, u.name, u.email, u.class_id, u.created_at, u.last_active_at,
+            u.job_title, u.job_pay_cents,
             c.name AS class_name, c.trading_frozen,
             ac.id AS account_id, COALESCE(ac.cash_cents, 0) AS cash_cents
      FROM users u LEFT JOIN classes c ON c.id = u.class_id
@@ -484,7 +485,7 @@ app.get("/api/teacher/audit", requireCurrentTeacher, async (req, res) => {
 
 app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
   const studentId = String(req.query["studentId"] || "");
-  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
+  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at, job_title, job_pay_cents, job_updated_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
   if (!student) { res.status(404).json({ error: "Student not found." }); return; }
   const counts = await q<{ kind: string; n: number }>(
     `SELECT l.kind AS kind, COUNT(*) AS n FROM ledger l
@@ -507,6 +508,100 @@ app.patch("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
   const n = await run(`UPDATE users SET name = ?, class_id = ? WHERE id = ? AND role = 'student'`, [name, classId, studentId]);
   if (!n) { res.status(404).json({ error: "Student not found." }); return; }
   res.json({ ok: true });
+});
+
+function parseJobPay(raw: unknown): number | null | undefined {
+  // undefined = not supplied (leave unchanged); null = clear; number = set (cents).
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === "") return null;
+  const dollars = typeof raw === "number" ? raw : Number(String(raw).replace(/[$,]/g, ""));
+  if (!Number.isFinite(dollars) || dollars < 0 || dollars > 100000) return undefined;
+  return Math.round(dollars * 100);
+}
+
+/** Teacher sets/clears a student's job + per-paycheck pay. */
+app.post("/api/teacher/student/job", requireCurrentTeacher, async (req, res) => {
+  const studentId = String(req.body?.studentId || "");
+  const rawTitle = req.body?.jobTitle;
+  const jobTitle = rawTitle == null ? null : String(rawTitle).trim();
+  if (jobTitle !== null && (jobTitle.length < 2 || jobTitle.length > 80)) {
+    res.status(400).json({ error: "Job title must be 2–80 characters (or empty to clear)." });
+    return;
+  }
+  // Accept pay as dollars (jobPayDollars / jobPay) or integer cents (jobPayCents).
+  let pay: number | null | undefined;
+  if (req.body?.jobPayCents !== undefined) {
+    const c = req.body.jobPayCents;
+    if (c === null || c === "") pay = null;
+    else if (!Number.isInteger(c) || c < 0 || c > 10000000) {
+      res.status(400).json({ error: "Pay must be between $0 and $100,000 per paycheck (or empty to clear)." });
+      return;
+    } else pay = c;
+  } else if (req.body?.jobPayDollars !== undefined || req.body?.jobPay !== undefined) {
+    pay = parseJobPay(req.body?.jobPayDollars ?? req.body?.jobPay);
+    if (pay === undefined) {
+      res.status(400).json({ error: "Pay must be between $0 and $100,000 per paycheck (or empty to clear)." });
+      return;
+    }
+  }
+  const student = await one<{ id: string }>(`SELECT id FROM users WHERE id = ? AND role = 'student'`, [studentId]);
+  if (!student) { res.status(404).json({ error: "Student not found." }); return; }
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (rawTitle !== undefined) {
+    sets.push(`job_title = ?`);
+    params.push(jobTitle && jobTitle.length ? jobTitle : null);
+  }
+  if (pay !== undefined) {
+    sets.push(`job_pay_cents = ?`);
+    params.push(pay);
+  }
+  if (!sets.length) { res.status(400).json({ error: "No job changes supplied." }); return; }
+  sets.push(`job_updated_at = ?`);
+  params.push(nowIso());
+  params.push(studentId);
+  await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ? AND role = 'student'`, params);
+  const updated = await one(`SELECT id, name, job_title, job_pay_cents, job_updated_at FROM users WHERE id = ?`, [studentId]);
+  res.json({ ok: true, student: updated });
+});
+
+/** Prepopulated job titles for a period: ClassBank snapshot + any teacher-set custom titles. */
+app.get("/api/teacher/job-catalog", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "");
+  const file = classId === "class-p3-2026" ? "third-period.json" : classId === "class-p4-2026" ? "fourth-period.json" : null;
+  const titles = new Map<string, { title: string; source: string }>();
+  if (file) {
+    try {
+      const raw = fs.readFileSync(path.join(ROOT, "server", "seed-data", file), "utf8");
+      const data = JSON.parse(raw);
+      for (const s of data.students || []) {
+        const t = String(s.job || "").trim();
+        if (t && t.length >= 2 && !titles.has(t.toLowerCase())) titles.set(t.toLowerCase(), { title: t, source: "period" });
+      }
+    } catch { /* fall through to DB titles */ }
+  } else {
+    // No class filter: merge both periods so "All students" still offers every title.
+    for (const f of ["third-period.json", "fourth-period.json"]) {
+      try {
+        const raw = fs.readFileSync(path.join(ROOT, "server", "seed-data", f), "utf8");
+        const data = JSON.parse(raw);
+        for (const s of data.students || []) {
+          const t = String(s.job || "").trim();
+          if (t && t.length >= 2 && !titles.has(t.toLowerCase())) titles.set(t.toLowerCase(), { title: t, source: "period" });
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  try {
+    const rows = classId
+      ? await q<{ job_title: string }>(`SELECT DISTINCT job_title FROM users WHERE role = 'student' AND class_id = ? AND job_title IS NOT NULL`, [classId])
+      : await q<{ job_title: string }>(`SELECT DISTINCT job_title FROM users WHERE role = 'student' AND job_title IS NOT NULL`);
+    for (const r of rows) {
+      const t = String(r.job_title || "").trim();
+      if (t && !titles.has(t.toLowerCase())) titles.set(t.toLowerCase(), { title: t, source: "custom" });
+    }
+  } catch { /* job columns may predate migration on a stale boot; snapshot titles still work */ }
+  res.json({ jobs: [...titles.values()].sort((a, b) => a.title.localeCompare(b.title)) });
 });
 
 app.post("/api/teacher/bank/adjust", requireCurrentTeacher, async (req, res) => {
@@ -576,6 +671,7 @@ app.get("/api/bank", requireAuth, async (req, res) => {
     bills: bank.bills,
     recent: bank.recent,
     brokerage: { cashCents: pf.cashCents, portfolioCents: pf.portfolioCents },
+    job: { title: (user as any).job_title ?? null, payCents: (user as any).job_pay_cents ?? null },
   });
 });
 
@@ -841,6 +937,9 @@ process.on("unhandledRejection", (err) => {
 async function boot() {  validateProductionEnv();
   await initSchema();
   await ensureColumn("users", "last_active_at", "TEXT");
+  await ensureColumn("users", "job_title", "TEXT");
+  await ensureColumn("users", "job_pay_cents", "INTEGER");
+  await ensureColumn("users", "job_updated_at", "TEXT");
   await ensureColumn("bank_accounts", "interest_residual_micros", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("bank_accounts", "interest_accrued_at", "TEXT");
   await ensureColumn("bill_templates", "sender", "TEXT");

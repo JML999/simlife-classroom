@@ -3,7 +3,7 @@ import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
 declare global { interface Window { google?: any } }
 
-interface Me { user: { id: string; email: string | null; name: string; role: string }; class: any }
+interface Me { user: { id: string; email: string | null; name: string; role: string; job_title?: string | null; job_pay_cents?: number | null }; class: any }
 interface Portfolio {
   cashCents: number; investedCents: number; portfolioCents: number; gainLossCents: number;
   unrealizedGainLossCents: number; realizedGainLossCents: number;
@@ -252,6 +252,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
           <div className="eyebrow">{me.class?.name || "Personal Finance"}</div>
           <h2>Your investing account</h2>
           <p>Use your available simulated cash to practice building and tracking a portfolio.</p>
+          {me.user.job_title && <p className="small">💼 {me.user.job_title}{me.user.job_pay_cents != null ? <> · {money(me.user.job_pay_cents)} per paycheck</> : ""}</p>}
         </div>
         <div className={`market-status ${frozen ? "closed" : "open"}`}>
           <span className="status-dot" /> Trading {frozen ? "closed" : "open"}
@@ -506,6 +507,11 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
           <div className="bank-kicker">{me.class?.name || "Personal Finance"}</div>
           <h2>Welcome back, {me.user.name.split(" ")[0]}!</h2>
           <p>Check your mail, pay what is due, then decide what to save or invest.</p>
+          <p className="small">
+            {(bank?.job?.title || me.user.job_title)
+              ? <>💼 {bank?.job?.title || me.user.job_title}{((bank?.job?.payCents ?? me.user.job_pay_cents) != null) ? <> · {money(bank?.job?.payCents ?? me.user.job_pay_cents ?? 0)} per paycheck</> : " · pay not set yet"}</>
+              : "💼 No job assigned yet — see your teacher."}
+          </p>
         </div>
         <div className="wallet-art" aria-hidden="true"><span>💵</span><strong>👛</strong><i>★</i></div>
       </div>
@@ -669,6 +675,9 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [editName, setEditName] = useState("");
   const [editClass, setEditClass] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [jobCatalog, setJobCatalog] = useState<any[]>([]);
+  const [jobTitle, setJobTitle] = useState("");
+  const [jobPay, setJobPay] = useState("");
   void me;
 
   useEffect(() => {
@@ -702,9 +711,17 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     setSelected(roster.find((s) => s.id === id) ?? null);
     setConfirming(false); setDollars(""); setReason(""); setDirection("add");
     setBankDollars(""); setBankReason(""); setDeleteConfirm("");
+    setJobCatalog([]); setJobTitle(""); setJobPay("");
     try {
       const next: any = await api(`/api/teacher/student?studentId=${id}`);
       setProfile(next); setEditName(next.student.name); setEditClass(next.student.class_id || "");
+      setJobTitle(next.student.job_title || "");
+      setJobPay(next.student.job_pay_cents == null ? "" : String(Number(next.student.job_pay_cents) / 100));
+      const cid = next.student.class_id || "";
+      try {
+        const cat: any = await api(`/api/teacher/job-catalog${cid ? `?classId=${cid}` : ""}`);
+        setJobCatalog(cat.jobs || []);
+      } catch { /* catalog is a convenience; profile still works without it */ }
     }
     catch (e: any) { setErr(e.message); }
   };
@@ -769,7 +786,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     if (!id) return;
     const updated: any = await api(`/api/teacher/student?studentId=${id}`);
     setProfile(updated);
-    setSelected((current: any) => current?.id === id ? { ...current, name: updated.student.name, class_id: updated.student.class_id, cash_cents: updated.portfolio.cashCents } : current);
+    setSelected((current: any) => current?.id === id ? { ...current, name: updated.student.name, class_id: updated.student.class_id, cash_cents: updated.portfolio.cashCents, job_title: updated.student.job_title, job_pay_cents: updated.student.job_pay_cents } : current);
   };
 
   const submitBankAdjustment = async () => {
@@ -790,6 +807,27 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       await api("/api/teacher/student", { method: "PATCH", body: JSON.stringify({ studentId: profileId, name: editName, classId: editClass || null }) });
       setNotice("Student profile updated."); await load(); await refreshOpenProfile();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const saveJob = async () => {
+    if (!profileId || busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await api<any>("/api/teacher/student/job", {
+        method: "POST",
+        body: JSON.stringify({ studentId: profileId, jobTitle: jobTitle.trim(), jobPayDollars: jobPay.trim() === "" ? null : Number(jobPay) }),
+      });
+      setNotice(r.student?.job_title ? `Job set to ${r.student.job_title}.` : "Job cleared.");
+      setJobTitle(r.student?.job_title || "");
+      setJobPay(r.student?.job_pay_cents == null ? "" : String(Number(r.student.job_pay_cents) / 100));
+      await load(); await refreshOpenProfile();
+      // Refresh catalog so a new custom title appears for classmates too.
+      try {
+        const cid = profile?.student?.class_id || editClass || "";
+        const cat: any = await api(`/api/teacher/job-catalog${cid ? `?classId=${cid}` : ""}`);
+        setJobCatalog(cat.jobs || []);
+      } catch { /* ignore */ }
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
@@ -871,9 +909,10 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
             {sorted.map((s) => {
               const ref = refById[s.id];
               const funded = ref && (ref.checking != null || ref.savings != null);
+              const jobLabel = s.job_title || ref?.job;
               return (
                 <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
-                  <td><strong>{s.name}</strong><br /><span className="small">{s.email || "no email yet"}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
+                  <td><strong>{s.name}</strong><br /><span className="small">{jobLabel || s.email || "no email yet"}{jobLabel && s.email ? ` · ${s.email}` : ""}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
                   <td className="small">{s.class_name || "—"}</td>
                   <td>{money(s.cash_cents)}</td>
                   <td>{money(s.investedCents)}</td>
@@ -923,6 +962,48 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <h2>Student details</h2>
                   <div className="row"><div className="field grow"><label>Name</label><input value={editName} onChange={(e) => setEditName(e.target.value)} /></div><div className="field grow"><label>Class</label><select value={editClass} onChange={(e) => setEditClass(e.target.value)}><option value="">No class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div><button disabled={busy || editName.trim().length < 2} onClick={saveStudent}>Save details</button></div>
                   <p className="hint">Email is tied to Google sign-in and cannot be edited here.</p>
+                </div>
+                <div className="panel">
+                  <h2>Job assignment</h2>
+                  <p className="hint">
+                    {profile.student.job_title
+                      ? <>Current: <strong>{profile.student.job_title}</strong>{profile.student.job_pay_cents != null ? <> · {money(profile.student.job_pay_cents)} per paycheck</> : " · pay not set"}</>
+                      : "No job assigned yet."}
+                    {(() => {
+                      const ref = refById[profileId];
+                      return ref?.job ? <> · ClassBank says: {ref.job}</> : null;
+                    })()}
+                  </p>
+                  <div className="row">
+                    <div className="field grow">
+                      <label>Job (prepopulated for this period — or type a custom title)</label>
+                      <input
+                        value={jobTitle}
+                        onChange={(e) => setJobTitle(e.target.value)}
+                        placeholder="e.g. Electrician"
+                        list={`job-catalog-${profileId}`}
+                      />
+                      <datalist id={`job-catalog-${profileId}`}>
+                        {jobCatalog.map((j: any) => (
+                          <option key={j.title} value={j.title} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div className="field"><label>Pay per paycheck ($)</label><input value={jobPay} onChange={(e) => setJobPay(e.target.value)} placeholder="e.g. 850.00" inputMode="decimal" /></div>
+                  </div>
+                  {jobCatalog.length > 0 && (
+                    <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
+                      {jobCatalog.slice(0, 12).map((j: any) => (
+                        <button key={j.title} className="ghost" disabled={busy} onClick={() => setJobTitle(j.title)} title={j.source === "custom" ? "Custom title set earlier" : "From ClassBank snapshot"}>{j.title}</button>
+                      ))}
+                      {jobCatalog.length > 12 && <span className="small">+{jobCatalog.length - 12} more — type to search</span>}
+                    </div>
+                  )}
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <button disabled={busy || (jobTitle.trim().length !== 0 && jobTitle.trim().length < 2)} onClick={saveJob}>Save job</button>
+                    {(jobTitle.trim() || jobPay.trim()) && <button className="ghost" disabled={busy} onClick={() => { setJobTitle(""); setJobPay(""); }}>Clear</button>}
+                  </div>
+                  <p className="hint">Leave both blank and Save to clear. Students see their job + pay in Banking.</p>
                 </div>
                 {(() => {
                   const ref = refById[profileId];
