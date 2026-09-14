@@ -10,6 +10,10 @@ export interface Quote {
   asOf: string;      // ISO timestamp of the quote
   source: string;    // provider name
   delayed: boolean;  // always true for classroom data
+  prevCloseCents?: number | null;
+  openCents?: number | null;
+  highCents?: number | null;
+  lowCents?: number | null;
 }
 
 export interface SecurityInfo {
@@ -173,12 +177,19 @@ export class StooqQuoteProvider implements QuoteProvider {
     if (!Number.isFinite(providerTime.getTime())) {
       throw new QuoteError("UNAVAILABLE", "The quote provider returned an invalid timestamp. Try again later.");
     }
+    const num = (v: string | undefined): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+    };
     return {
       ticker: t,
       priceCents: Math.round(close * 100),
       asOf: providerTime.toISOString(),
       source: "stooq",
       delayed: true,
+      openCents: num(row[3]),
+      highCents: num(row[4]),
+      lowCents: num(row[5]),
     };
   }
 }
@@ -216,7 +227,15 @@ export class FinnhubQuoteProvider implements QuoteProvider {
       throw new QuoteError("NOT_FOUND", `No live quote for ${t}. Check the spelling.`);
     }
     const ts = Number(body?.t) > 0 ? new Date(Number(body.t) * 1000).toISOString() : new Date().toISOString();
-    return { ticker: t, priceCents: Math.round(price * 100), asOf: ts, source: "finnhub", delayed: true };
+    const cents = (v: unknown): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+    };
+    return {
+      ticker: t, priceCents: Math.round(price * 100), asOf: ts, source: "finnhub", delayed: true,
+      prevCloseCents: cents(body?.pc), openCents: cents(body?.o),
+      highCents: cents(body?.h), lowCents: cents(body?.l),
+    };
   }
 }
 /** Server-side TTL cache in front of any provider. */

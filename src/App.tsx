@@ -148,8 +148,9 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   const [symbol, setSymbol] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [quote, setQuote] = useState<any>(null);
-  const [buyQty, setBuyQty] = useState("");
+  const [quoteName, setQuoteName] = useState("");
   const [buyDollars, setBuyDollars] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const [sellQty, setSellQty] = useState("");
   const [sellTicker, setSellTicker] = useState("");
   const [expandedTicker, setExpandedTicker] = useState("");
@@ -178,12 +179,12 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
     return () => window.clearInterval(timer);
   }, [refreshSession]);
 
-  const lookup = async (sym: string) => {
-    setErr(""); setNotice("");
+  const lookup = async (sym: string, name = "") => {
+    setErr(""); setNotice(""); setReviewing(false);
     try {
       const r = await api<{ quote: any }>(`/api/quotes?symbol=${encodeURIComponent(sym)}`);
-      setQuote(r.quote);
-    } catch (e: any) { setErr(e.message); setQuote(null); }
+      setQuote(r.quote); setQuoteName(name); setSearchResults([]);
+    } catch (e: any) { setErr(e.message); setQuote(null); setQuoteName(""); }
   };
 
   const doSearch = async (v: string) => {
@@ -197,13 +198,11 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
     if (!quote || busy) return;
     setBusy(true); setErr(""); setNotice("");
     try {
-      const body: any = { ticker: quote.ticker, idempotencyKey: buyKey.current };
-      if (buyDollars) body.dollarsCents = Math.round(Number(buyDollars) * 100);
-      else body.qtyMicro = Math.round(Number(buyQty) * 1_000_000);
+      const body: any = { ticker: quote.ticker, idempotencyKey: buyKey.current, dollarsCents: Math.round(Number(buyDollars) * 100) };
       const r = await api<any>("/api/trades/buy", { method: "POST", body: JSON.stringify(body) });
       setPf(r.portfolio); setHistory((await api<{ entries: any[] }>("/api/history")).entries);
       setNotice(r.deduped ? "Already processed — duplicate ignored." : `Bought simulated shares for ${money(r.costCents)}.`);
-      buyKey.current = uid(); setBuyQty(""); setBuyDollars("");
+      buyKey.current = uid(); setBuyDollars(""); setReviewing(false);
     } catch (e: any) {
       setErr(e.message);
       if (e instanceof ApiError && e.code === "TRADING_FROZEN") refreshSession();
@@ -251,8 +250,8 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       </nav>
       <main className="student-content">
       {onboarding && ["match", "matched", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
-      {section === "dashboard" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} />}
-      {section === "banking" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
+      {section === "dashboard" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
+      {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
@@ -275,37 +274,48 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
-      <div className="grid2">
-        <div className="panel">
-          <h2>Buy simulated shares</h2>
-          <p className="hint">Fractional shares allowed. Prices are delayed and for class only.</p>
-          <div className="field">
-            <label>Ticker symbol</label>
-            <input value={symbol} onChange={(e) => doSearch(e.target.value)} placeholder="e.g. VOO" />
+      <div className="panel buy-stock-panel">
+        <div className="panel-heading"><div><div className="eyebrow">Investing</div><h2>Buy a stock</h2><p className="hint">Search a stock to buy. Dollars only — we calculate the shares for you. Fractional shares allowed. Prices are delayed and for class only.</p></div>{pf && <span className="portfolio-count">{money(pf.cashCents)} available</span>}</div>
+        <div className="field buy-search"><label htmlFor="buy-search">Search stocks</label><input id="buy-search" type="search" value={symbol} onChange={(e) => doSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && symbol.trim()) lookup(symbol.trim()); }} placeholder="Try AAPL, KO, or VOO…" autoComplete="off" /></div>
+        {searchResults.length > 0 && (
+          <div className="buy-results" role="listbox" aria-label="Matching stocks">
+            {searchResults.map((s) => (
+              <button key={s.ticker} role="option" aria-selected={false} className="buy-result" onClick={() => { setSymbol(s.ticker); lookup(s.ticker, s.name); }}><strong>{s.ticker}</strong><span>{s.name}</span></button>
+            ))}
           </div>
-          {searchResults.length > 0 && (
-            <div className="row" style={{ marginTop: 8 }}>
-              {searchResults.map((s) => (
-                <button key={s.ticker} className="ghost" onClick={() => { setSymbol(s.ticker); lookup(s.ticker); }}>{s.ticker} — {s.name}</button>
-              ))}
-            </div>
-          )}
+        )}
+        {!quote && searchResults.length === 0 && (
           <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => lookup(symbol)} disabled={!symbol.trim()}>Look up price</button>
+            <button onClick={() => symbol.trim() && lookup(symbol.trim())} disabled={!symbol.trim()}>Look up price</button>
           </div>
-          {quote && (
-            <div style={{ marginTop: 12 }}>
-              <p><strong>{quote.ticker}</strong> — {money(quote.priceCents)} <span className="small">(delayed · {quote.source} · {new Date(quote.asOf).toLocaleTimeString()})</span></p>
+        )}
+        {quote && (() => {
+          const price = Number(quote.priceCents) / 100;
+          const dollars = Number(buyDollars);
+          const estShares = price > 0 && dollars > 0 ? dollars / price : 0;
+          const cash = pf?.cashCents ?? 0;
+          const overCash = dollars > 0 && Math.round(dollars * 100) > cash;
+          const prev = quote.prevCloseCents != null ? Number(quote.prevCloseCents) : null;
+          const chg = prev != null ? Number(quote.priceCents) - prev : null;
+          const chgPct = prev ? (chg! / prev) * 100 : null;
+          return (
+            <div className="buy-quote">
+              <div className="buy-quote-head"><div><strong className="ticker">{quote.ticker}</strong>{quoteName && <span className="small"> — {quoteName}</span>}<div className="buy-price">{money(quote.priceCents)}{chg != null && <span className={chg >= 0 ? "up" : "down"}> {chg >= 0 ? "+" : ""}{money(chg)} ({chgPct! >= 0 ? "+" : ""}{chgPct!.toFixed(2)}%) today</span>}</div></div><button className="ghost" onClick={() => { setQuote(null); setQuoteName(""); setBuyDollars(""); setReviewing(false); }}>New search</button></div>
+              <p className="small">Delayed · {quote.source} · {new Date(quote.asOf).toLocaleString()}{quote.openCents != null || quote.highCents != null || quote.lowCents != null || prev != null ? <> · {prev != null ? <>Prev close {money(prev)}</> : null}{quote.openCents != null ? <> · Open {money(quote.openCents)}</> : null}{quote.highCents != null ? <> · High {money(quote.highCents)}</> : null}{quote.lowCents != null ? <> · Low {money(quote.lowCents)}</> : null}</> : null}</p>
               <div className="row">
-                <div className="field"><label>Shares (fractional ok)</label><input value={buyQty} onChange={(e) => { setBuyQty(e.target.value); setBuyDollars(""); }} placeholder="0.5" inputMode="decimal" /></div>
-                <div className="field"><label>— or — dollars</label><input value={buyDollars} onChange={(e) => { setBuyDollars(e.target.value); setBuyQty(""); }} placeholder="25.00" inputMode="decimal" /></div>
-                <button onClick={submitBuy} disabled={busy || frozen || (!buyQty && !buyDollars)}>Buy (simulated)</button>
+                <div className="field grow"><label htmlFor="buy-dollars">Dollars to invest</label><input id="buy-dollars" value={buyDollars} onChange={(e) => { setBuyDollars(e.target.value); setReviewing(false); }} placeholder="25.00" inputMode="decimal" autoFocus /></div>
+                <div className="buy-estimate"><span>≈ {estShares > 0 ? estShares.toFixed(4) : "—"} shares</span><small>{money(pf?.cashCents ?? 0)} buying power</small></div>
               </div>
+              {overCash && <p className="small" style={{ color: "#a33" }}>That is more than your {money(cash)} available.</p>}
+              {!reviewing
+                ? <div className="row" style={{ marginTop: 8 }}><button onClick={() => setReviewing(true)} disabled={busy || frozen || !(dollars > 0) || overCash}>Review order</button></div>
+                : <div className="confirm"><p><strong>Confirm:</strong> invest <strong>{money(Math.round(dollars * 100))}</strong> in <strong>{quote.ticker}</strong> (≈ {estShares.toFixed(4)} shares at {money(quote.priceCents)})?</p><div className="row"><button disabled={busy || frozen} onClick={submitBuy}>{busy ? "Buying…" : "Yes, buy (simulated)"}</button><button className="ghost" onClick={() => setReviewing(false)}>Back</button></div></div>}
             </div>
-          )}
-        </div>
+          );
+        })()}
+      </div>
 
-        <div className="panel portfolio-panel">
+      <div className="panel portfolio-panel">
           <div className="panel-heading">
             <div><h2>Portfolio</h2><p className="hint">A clear picture of what you own and how each investment is performing.</p></div>
             {pf && pf.holdings.length > 0 && <span className="portfolio-count">{pf.holdings.length} investment{pf.holdings.length === 1 ? "" : "s"}</span>}
@@ -359,7 +369,6 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
               </div>
             </>
           )}
-        </div>
       </div>
 
       <div className="panel">
@@ -446,6 +455,7 @@ function StudentDashboard({ me, portfolio, onOpen }: { me: Me; portfolio: Portfo
       <section className="panel"><h2>What needs attention</h2>{unpaid.length ? unpaid.slice(0, 4).map((b: any) => <div className="dashboard-line" key={b.id}><div><strong>{b.title}</strong><span>Due {new Date(b.due_at).toLocaleDateString()}</span></div><b>{money(b.remaining_cents)}</b></div>) : <p className="hint">No unpaid bills. You are caught up.</p>}<button className="ghost" onClick={() => onOpen("banking")}>Open banking</button></section>
       <section className="panel"><h2>SimLife profile</h2><div className="dashboard-line"><div><strong>{me.user.job_title || "No job assigned"}</strong><span>{me.user.job_pay_cents == null ? "Ask your teacher about pay" : `${money(me.user.job_pay_cents)} each paycheck`}</span></div><span>💼</span></div><div className="dashboard-line"><div><strong>Car payment</strong><span>Monthly obligation</span></div><b>{me.user.car_payment_cents == null ? "Not set" : money(me.user.car_payment_cents)}</b></div></section>
     </div>
+    {bank && <SavingsProjection interest={bank.savingsInterest} />}
   </div>;
 }
 
@@ -651,7 +661,6 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
           <div className="activity-list">{(bank?.recent || []).slice(0, 6).map((e: any) => <div className="activity-row" key={e.id}><span>{e.kind === "income" ? "💵" : e.kind === "bill_payment" ? "🧾" : e.kind === "savings_interest" ? "✨" : "↔"}</span><div><strong>{describeBankEntry(e)}</strong><small>{e.memo || new Date(e.created_at).toLocaleDateString()}</small></div><b className={e.kind === "transfer" ? "" : bankEntryAmount(e) >= 0 ? "up" : "down"}>{money(bankEntryAmount(e))}</b></div>)}</div>
         </section>
       </div>
-      {bank && <SavingsProjection interest={bank.savingsInterest} />}
       {paid.length > 0 && (
         <div className="bank-panel paid-mail">
           <h2>Paid mail</h2>
