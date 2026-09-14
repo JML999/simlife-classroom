@@ -7,15 +7,18 @@
 import "./env.js";
 import { initSchema, one, run, newId, nowIso } from "./db.js";
 import { adjustCash } from "./ledger.js";
+import { importRosterProfiles } from "./onboarding.js";
 
-export const DEMO_IDS = ["demo-teacher", "demo-stu-1", "demo-stu-2", "demo-stu-3", "demo-stu-4"] as const;
+export const DEMO_IDS = ["demo-teacher", "demo-stu-1", "demo-stu-2", "demo-stu-3", "demo-stu-4", "demo-justin-lee"] as const;
 export const DEMO_CLASS_ID = "demo-class-1";
 
 const STUDENTS = [
-  { id: "demo-stu-1", name: "Ava Rivera" },
-  { id: "demo-stu-2", name: "Ben Carter" },
-  { id: "demo-stu-3", name: "Chloe Kim" },
-  { id: "demo-stu-4", name: "David Okafor" },
+  { id: "demo-stu-1", name: "Ava Rivera", seedBrokerageCents: 100000 },
+  { id: "demo-stu-2", name: "Ben Carter", seedBrokerageCents: 100000 },
+  { id: "demo-stu-3", name: "Chloe Kim", seedBrokerageCents: 100000 },
+  { id: "demo-stu-4", name: "David Okafor", seedBrokerageCents: 100000 },
+  // Starts empty so the first-login profile visibly supplies every balance.
+  { id: "demo-justin-lee", name: "Justin Lee", seedBrokerageCents: 0 },
 ];
 
 export async function ensureDemoUsers(): Promise<void> {
@@ -34,14 +37,31 @@ export async function ensureDemoUsers(): Promise<void> {
         [s.id, `${s.id}@example.school`, `${s.name} (demo)`, "student", DEMO_CLASS_ID, now]);
     }
   }
+  await importRosterProfiles({
+    classId: DEMO_CLASS_ID,
+    actorId: "demo-teacher",
+    sourceLabel: "Fictional first-login test data",
+    importKey: "demo-justin-profile-v1",
+    rows: [{
+      fullName: "Justin Lee (demo)",
+      jobTitle: "Personal Finance Teacher",
+      jobPayCents: 185000,
+      checkingCents: 325000,
+      savingsCents: 125000,
+      brokerageCents: 200000,
+      carPaymentCents: 42500,
+      externalRef: "demo-justin-lee",
+    }],
+  });
 }
 
 async function seedMoney(): Promise<void> {
   // Give each demo student $1,000 simulated cash once (idempotent via keys).
   for (const s of STUDENTS) {
+    if (!s.seedBrokerageCents) continue;
     try {
       await adjustCash({
-        userId: s.id, actorId: "demo-teacher", amountCents: 100000,
+        userId: s.id, actorId: "demo-teacher", amountCents: s.seedBrokerageCents,
         reason: "Starting simulated brokerage balance for the class demo.",
         idempotencyKey: `seed-cash-${s.id}`,
       });

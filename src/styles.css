@@ -188,6 +188,31 @@ th.sortable:hover { color: var(--olive-dark); }
 .section-tabs { margin: 18px 0 4px; }
 .investing-section { display: contents; }
 
+.student-shell { display: grid; grid-template-columns: 155px minmax(0, 1fr); gap: 24px; padding-top: 18px; }
+.student-nav { position: sticky; top: 18px; align-self: start; display: flex; flex-direction: column; gap: 7px; padding: 10px; background: rgba(255,254,251,.72); border: 1px solid var(--line); border-radius: 16px; }
+.student-nav button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 12px; color: var(--muted); background: transparent; border-color: transparent; text-align: left; }
+.student-nav button span { width: 20px; font-family: var(--mono); font-size: 15px; text-align: center; }
+.student-nav button.active { color: #fff; background: var(--olive); border-color: var(--olive); }
+.student-content { min-width: 0; }
+.student-content > :first-child { margin-top: 0; }
+.dashboard-experience .page-intro { padding-top: 14px; }
+.dashboard-card { color: inherit; background: var(--panel-strong); border-color: var(--line); text-align: left; }
+.dashboard-card:hover:not(:disabled) { color: inherit; background: var(--olive-pale); border-color: var(--olive); transform: translateY(-2px); }
+.dashboard-job { overflow-wrap: anywhere; font-family: var(--sans) !important; font-size: 19px !important; font-weight: 700 !important; }
+.dashboard-line { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.dashboard-line > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.dashboard-line span { color: var(--muted); font-size: 10px; }
+.dashboard-line b { white-space: nowrap; font-size: 12px; }
+.onboarding-card { margin-bottom: 18px; border-color: #c8cbb4; }
+.onboarding-card h2 { margin-bottom: 2px; }
+.onboarding-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.onboarding-summary > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 10px; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 8px; }
+.onboarding-summary span { color: var(--muted); font-size: 8px; letter-spacing: .05em; text-transform: uppercase; }
+.onboarding-summary strong { overflow-wrap: anywhere; font-size: 11px; }
+.onboarding-edit { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.onboarding-admin details { margin: 12px 0; padding: 12px; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 9px; }
+.onboarding-admin summary { cursor: pointer; font-weight: 700; }
+
 /* Banking deliberately carries a brighter, more playful classroom-bank mood
    while Investing keeps the restrained portfolio design above. */
 .banking-experience {
@@ -311,6 +336,10 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .modal-action-box p { margin: 0 0 12px; color: var(--bank-muted); font-size: 10px; }
 
 @media (max-width: 920px) {
+  .student-shell { grid-template-columns: 1fr; gap: 14px; }
+  .student-nav { position: sticky; z-index: 20; top: 0; flex-direction: row; padding: 7px; background: rgba(248,247,243,.96); box-shadow: 0 6px 18px rgba(28,28,26,.06); }
+  .student-nav button { justify-content: center; }
+  .onboarding-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .bank-dashboard-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
@@ -320,6 +349,9 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
   .teacher-banking-experience .page-intro::after { display: none; }
 }
 @media (max-width: 520px) {
+  .student-nav button { flex-direction: column; gap: 2px; padding: 7px 4px; font-size: 9px; }
+  .student-nav button span { font-size: 13px; }
+  .onboarding-summary, .onboarding-edit { grid-template-columns: 1fr 1fr; }
   .bank-welcome { padding: 24px 20px; }
   .wallet-art { display: none; }
   .bank-welcome h2 { font-size: 31px; }

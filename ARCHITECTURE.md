@@ -68,6 +68,8 @@ Public:            GET  /api/health
                    POST /api/auth/logout
 Student (auth):    GET  /api/me
                    POST /api/classes/join         { code }
+                   GET  /api/onboarding            first-login profile status/match
+                   POST /api/onboarding/claim      confirm or propose corrections
                    GET  /api/portfolio            cash, holdings, values, gains
                    GET  /api/history              own ledger entries (newest first)
                    GET  /api/quotes?symbol=AAA    cached quote + timestamp
@@ -75,6 +77,10 @@ Student (auth):    GET  /api/me
                    POST /api/trades/buy           { ticker, qtyMicro|dollars, idempotencyKey }
                    POST /api/trades/sell          { ticker, qtyMicro|all, idempotencyKey }
 Teacher (auth+role):
+                   GET  /api/teacher/onboarding?classId=
+                   POST /api/teacher/onboarding/import
+                   POST /api/teacher/onboarding/:id/approve
+                   POST /api/teacher/onboarding/:id/assign
                    GET  /api/teacher/roster?classId=
                    POST /api/teacher/cash         { studentId, amountCents, reason, idempotencyKey }
                    POST /api/teacher/cash/reverse { entryId, reason, idempotencyKey }
@@ -97,6 +103,14 @@ ledger(id PK, account_id FK, kind, amount_cents, ticker NULL, qty_micro NULL,
        price_cents NULL, reason NULL, actor_id FK, idempotency_key UNIQUE,
        reverses_id NULL, quote_ts NULL, quote_source NULL, created_at)
 ```
+
+First-login imports are staged separately from authenticated users:
+`roster_imports` identifies an idempotent teacher import and `roster_profiles`
+stores its unclaimed/pending/claimed rows. A profile can be offered only after
+the student joins its class and only when the normalized name match is unique.
+Confirmed checking/savings values create one `opening_balance` bank-journal
+entry; confirmed brokerage cash creates a normal ledger cash adjustment. The
+cached balances are updated inside the same transaction.
 
 - **Money**: integer cents (`cash_cents`, `amount_cents`, `price_cents`).
 - **Shares**: integer micro-shares (`qty_micro`, 1 share = 1,000,000 units)

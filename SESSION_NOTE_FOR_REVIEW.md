@@ -212,3 +212,19 @@ account merged during the short deployed window would not lose login access.
 Tests cover adjustments and guarded deletion. Current verification: typecheck,
 tests, production build, and local `/api/health` smoke. No live student account
 was modified by these checks.
+
+## 13. Dashboard, assigned payroll, and first-login profiles (2026-09-14)
+
+- Students now have responsive Dashboard / Banking / Investing navigation. The
+  dashboard combines checking, savings, brokerage, job/pay, car-payment
+  reminder, and bills needing attention.
+- Teacher paycheck batches can use each selected student's assigned paycheck;
+  the preview lists per-student amounts and blocks the batch when pay is missing.
+- Teachers can paste class CSV data into a separate roster-profile staging
+  area. Exact name + joined-class matches may be confirmed by the student;
+  proposed corrections require teacher approval; ambiguous names are not
+  guessed. Opening checking, savings, and brokerage values are idempotent and
+  ledger-backed. No live data is imported automatically.
+- Verification: typecheck, 52/52 tests, production build, `git diff --check`,
+  and a fictional temporary-SQLite browser walkthrough of import → claim →
+  balances plus assigned-pay preview.

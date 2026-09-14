@@ -3,7 +3,7 @@ import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
 declare global { interface Window { google?: any } }
 
-interface Me { user: { id: string; email: string | null; name: string; role: string; job_title?: string | null; job_pay_cents?: number | null }; class: any }
+interface Me { user: { id: string; email: string | null; name: string; role: string; job_title?: string | null; job_pay_cents?: number | null; car_payment_cents?: number | null }; class: any }
 interface Portfolio {
   cashCents: number; investedCents: number; portfolioCents: number; gainLossCents: number;
   unrealizedGainLossCents: number; realizedGainLossCents: number;
@@ -161,7 +161,8 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   // One idempotency key per form submission; reused across retries.
   const buyKey = useRef(uid());
   const sellKey = useRef(uid());
-  const [section, setSection] = useState<"banking" | "investing">("banking");
+  const [section, setSection] = useState<"dashboard" | "banking" | "investing">("dashboard");
+  const [onboarding, setOnboarding] = useState<any>(null);
 
   const load = useCallback(async () => {
     try {
@@ -170,6 +171,8 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
     } catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  const loadOnboarding = useCallback(() => api<any>("/api/onboarding").then(setOnboarding).catch(() => {}), []);
+  useEffect(() => { loadOnboarding(); }, [loadOnboarding]);
   useEffect(() => {
     const timer = window.setInterval(refreshSession, 15_000);
     return () => window.clearInterval(timer);
@@ -240,11 +243,15 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   const visibleHoldings = filteredHoldings.slice((currentPortfolioPage - 1) * portfolioPageSize, currentPortfolioPage * portfolioPageSize);
 
   return (
-    <>
-      <div className="pills section-tabs" role="tablist" aria-label="Money sections">
-        <button role="tab" aria-selected={section === "banking"} className={`pill${section === "banking" ? " active" : ""}`} onClick={() => setSection("banking")}>Banking</button>
-        <button role="tab" aria-selected={section === "investing"} className={`pill${section === "investing" ? " active" : ""}`} onClick={() => setSection("investing")}>Investing</button>
-      </div>
+    <div className="student-shell">
+      <nav className="student-nav" aria-label="SimLife sections">
+        <button aria-current={section === "dashboard" ? "page" : undefined} className={section === "dashboard" ? "active" : ""} onClick={() => setSection("dashboard")}><span>⌂</span>Dashboard</button>
+        <button aria-current={section === "banking" ? "page" : undefined} className={section === "banking" ? "active" : ""} onClick={() => setSection("banking")}><span>▣</span>Banking</button>
+        <button aria-current={section === "investing" ? "page" : undefined} className={section === "investing" ? "active" : ""} onClick={() => setSection("investing")}><span>↗</span>Investing</button>
+      </nav>
+      <main className="student-content">
+      {onboarding && ["match", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
+      {section === "dashboard" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} />}
       {section === "banking" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
@@ -373,12 +380,77 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
         </table></div>
       </div>
       </div>}
-    </>
+      </main>
+    </div>
   );
+}
+
+function OnboardingCard({ state, onDone }: { state: any; onDone: () => void }) {
+  const profile = state.profile || state.candidates?.[0];
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const dollars = (c: number | null | undefined) => c == null ? "" : String(Number(c) / 100);
+  const [form, setForm] = useState<any>(() => profile ? {
+    jobTitle: profile.job_title || "", jobPay: dollars(profile.job_pay_cents), checking: dollars(profile.checking_cents),
+    savings: dollars(profile.savings_cents), brokerage: dollars(profile.brokerage_cents), carPayment: dollars(profile.car_payment_cents),
+  } : {});
+  if (state.state === "ambiguous") return <div className="notice onboarding-card"><strong>We found more than one roster match.</strong><br />Your teacher needs to connect the correct profile before opening balances are added.</div>;
+  if (state.state === "pending") return <div className="notice onboarding-card"><strong>Your profile corrections are waiting for teacher review.</strong><br />You can use SimLife now; approved opening balances will appear in your activity history.</div>;
+  if (!profile) return null;
+  const submit = async (proposed?: any) => {
+    setBusy(true); setErr("");
+    try {
+      await api("/api/onboarding/claim", { method: "POST", body: JSON.stringify({ profileId: profile.id, proposed }) });
+      onDone();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const toCents = (v: string) => v.trim() === "" ? null : Math.round(Number(v) * 100);
+  return <section className="panel onboarding-card">
+    <div className="panel-heading"><div><div className="eyebrow">First-time setup</div><h2>Is this your SimLife profile?</h2><p className="hint">Confirming adds these simulated opening amounts with a visible audit entry.</p></div><span className="sim-chip">Preloaded</span></div>
+    <div className="onboarding-summary">
+      <div><span>Name</span><strong>{profile.full_name}</strong></div><div><span>Job</span><strong>{profile.job_title || "Not set"}</strong></div>
+      <div><span>Paycheck</span><strong>{profile.job_pay_cents == null ? "Not set" : money(profile.job_pay_cents)}</strong></div>
+      <div><span>Checking</span><strong>{profile.checking_cents == null ? "Not set" : money(profile.checking_cents)}</strong></div>
+      <div><span>Savings</span><strong>{profile.savings_cents == null ? "Not set" : money(profile.savings_cents)}</strong></div>
+      <div><span>Brokerage</span><strong>{profile.brokerage_cents == null ? "Not set" : money(profile.brokerage_cents)}</strong></div>
+      <div><span>Car payment</span><strong>{profile.car_payment_cents == null ? "Not set" : `${money(profile.car_payment_cents)} / month`}</strong></div>
+    </div>
+    {err && <div className="error">{err}</div>}
+    {!editing ? <div className="row"><button disabled={busy} onClick={() => submit()}>Yes, this is me</button><button className="ghost" onClick={() => setEditing(true)}>Request a correction</button></div> : <>
+      <div className="onboarding-edit">
+        <div className="field"><label>Job</label><input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} /></div>
+        {[['jobPay','Pay per paycheck'],['checking','Checking'],['savings','Savings'],['brokerage','Brokerage cash'],['carPayment','Monthly car payment']].map(([key,label]) => <div className="field" key={key}><label>{label} ($)</label><input inputMode="decimal" value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} /></div>)}
+      </div>
+      <div className="row"><button disabled={busy} onClick={() => submit({ fullName: profile.full_name, jobTitle: form.jobTitle, jobPayCents: toCents(form.jobPay), checkingCents: toCents(form.checking), savingsCents: toCents(form.savings), brokerageCents: toCents(form.brokerage), carPaymentCents: toCents(form.carPayment) })}>Send changes to teacher</button><button className="ghost" onClick={() => setEditing(false)}>Cancel</button></div>
+    </>}
+  </section>;
+}
+
+function StudentDashboard({ me, portfolio, onOpen }: { me: Me; portfolio: Portfolio | null; onOpen: (section: "dashboard" | "banking" | "investing") => void }) {
+  const [bank, setBank] = useState<any>(null);
+  useEffect(() => { api<any>("/api/bank").then(setBank).catch(() => {}); }, [me.user.job_title, me.user.job_pay_cents, me.user.car_payment_cents]);
+  const unpaid = (bank?.bills || []).filter((b: any) => b.status !== "paid");
+  const bankTotal = Number(bank?.checkingCents || 0) + Number(bank?.savingsCents || 0);
+  const total = bankTotal + Number(portfolio?.portfolioCents || 0);
+  return <div className="dashboard-experience">
+    <div className="page-intro"><div><div className="eyebrow">{me.class?.name}</div><h2>Your money at a glance</h2><p>See what is available, what is due, and what you can put to work.</p></div><div className="teacher-summary"><strong>{money(total)}</strong><span>total simulated funds</span></div></div>
+    <div className="cards dashboard-cards">
+      <button className="card dashboard-card" onClick={() => onOpen("banking")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : "…"}</div><div className="sub">{unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"} →</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("banking")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : "…"}</div><div className="sub">Move and grow money →</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("investing")}><div className="label">Investments</div><div className="value">{portfolio ? money(portfolio.portfolioCents) : "…"}</div><div className="sub">Review your portfolio →</div></button>
+      <div className="card"><div className="label">Job and pay</div><div className="value dashboard-job">{me.user.job_title || "Not assigned"}</div><div className="sub">{me.user.job_pay_cents == null ? "Pay not set" : `${money(me.user.job_pay_cents)} per paycheck`}</div></div>
+    </div>
+    <div className="grid2">
+      <section className="panel"><h2>What needs attention</h2>{unpaid.length ? unpaid.slice(0, 4).map((b: any) => <div className="dashboard-line" key={b.id}><div><strong>{b.title}</strong><span>Due {new Date(b.due_at).toLocaleDateString()}</span></div><b>{money(b.remaining_cents)}</b></div>) : <p className="hint">No unpaid bills. You are caught up.</p>}<button className="ghost" onClick={() => onOpen("banking")}>Open banking</button></section>
+      <section className="panel"><h2>SimLife profile</h2><div className="dashboard-line"><div><strong>{me.user.job_title || "No job assigned"}</strong><span>{me.user.job_pay_cents == null ? "Ask your teacher about pay" : `${money(me.user.job_pay_cents)} each paycheck`}</span></div><span>💼</span></div><div className="dashboard-line"><div><strong>Car payment</strong><span>Monthly obligation</span></div><b>{me.user.car_payment_cents == null ? "Not set" : money(me.user.car_payment_cents)}</b></div></section>
+    </div>
+  </div>;
 }
 
 function describeBankEntry(e: any): string {
   if (e.kind === "income") return "Paycheck / deposit";
+  if (e.kind === "opening_balance") return "Confirmed opening balance";
   if (e.kind === "transfer") return "Transfer";
   if (e.kind === "transfer_to_brokerage") return "Moved to brokerage";
   if (e.kind === "bill_payment") return "Bill paid";
@@ -678,6 +750,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [jobCatalog, setJobCatalog] = useState<any[]>([]);
   const [jobTitle, setJobTitle] = useState("");
   const [jobPay, setJobPay] = useState("");
+  const [carPayment, setCarPayment] = useState("");
   void me;
 
   useEffect(() => {
@@ -711,12 +784,13 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     setSelected(roster.find((s) => s.id === id) ?? null);
     setConfirming(false); setDollars(""); setReason(""); setDirection("add");
     setBankDollars(""); setBankReason(""); setDeleteConfirm("");
-    setJobCatalog([]); setJobTitle(""); setJobPay("");
+    setJobCatalog([]); setJobTitle(""); setJobPay(""); setCarPayment("");
     try {
       const next: any = await api(`/api/teacher/student?studentId=${id}`);
       setProfile(next); setEditName(next.student.name); setEditClass(next.student.class_id || "");
       setJobTitle(next.student.job_title || "");
       setJobPay(next.student.job_pay_cents == null ? "" : String(Number(next.student.job_pay_cents) / 100));
+      setCarPayment(next.student.car_payment_cents == null ? "" : String(Number(next.student.car_payment_cents) / 100));
       const cid = next.student.class_id || "";
       try {
         const cat: any = await api(`/api/teacher/job-catalog${cid ? `?classId=${cid}` : ""}`);
@@ -816,11 +890,12 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       const r = await api<any>("/api/teacher/student/job", {
         method: "POST",
-        body: JSON.stringify({ studentId: profileId, jobTitle: jobTitle.trim(), jobPayDollars: jobPay.trim() === "" ? null : Number(jobPay) }),
+        body: JSON.stringify({ studentId: profileId, jobTitle: jobTitle.trim(), jobPayDollars: jobPay.trim() === "" ? null : Number(jobPay), carPaymentDollars: carPayment.trim() === "" ? null : Number(carPayment) }),
       });
       setNotice(r.student?.job_title ? `Job set to ${r.student.job_title}.` : "Job cleared.");
       setJobTitle(r.student?.job_title || "");
       setJobPay(r.student?.job_pay_cents == null ? "" : String(Number(r.student.job_pay_cents) / 100));
+      setCarPayment(r.student?.car_payment_cents == null ? "" : String(Number(r.student.car_payment_cents) / 100));
       await load(); await refreshOpenProfile();
       // Refresh catalog so a new custom title appears for classmates too.
       try {
@@ -964,7 +1039,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <p className="hint">Email is tied to Google sign-in and cannot be edited here.</p>
                 </div>
                 <div className="panel">
-                  <h2>Job assignment</h2>
+                  <h2>Job and recurring profile</h2>
                   <p className="hint">
                     {profile.student.job_title
                       ? <>Current: <strong>{profile.student.job_title}</strong>{profile.student.job_pay_cents != null ? <> · {money(profile.student.job_pay_cents)} per paycheck</> : " · pay not set"}</>
@@ -990,6 +1065,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                       </datalist>
                     </div>
                     <div className="field"><label>Pay per paycheck ($)</label><input value={jobPay} onChange={(e) => setJobPay(e.target.value)} placeholder="e.g. 850.00" inputMode="decimal" /></div>
+                    <div className="field"><label>Monthly car payment ($)</label><input value={carPayment} onChange={(e) => setCarPayment(e.target.value)} placeholder="e.g. 275.00" inputMode="decimal" /></div>
                   </div>
                   {jobCatalog.length > 0 && (
                     <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
@@ -1001,9 +1077,9 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   )}
                   <div className="row" style={{ marginTop: 8 }}>
                     <button disabled={busy || (jobTitle.trim().length !== 0 && jobTitle.trim().length < 2)} onClick={saveJob}>Save job</button>
-                    {(jobTitle.trim() || jobPay.trim()) && <button className="ghost" disabled={busy} onClick={() => { setJobTitle(""); setJobPay(""); }}>Clear</button>}
+                    {(jobTitle.trim() || jobPay.trim() || carPayment.trim()) && <button className="ghost" disabled={busy} onClick={() => { setJobTitle(""); setJobPay(""); setCarPayment(""); }}>Clear</button>}
                   </div>
-                  <p className="hint">Leave both blank and Save to clear. Students see their job + pay in Banking.</p>
+                  <p className="hint">Leave fields blank and Save to clear. Students see job, pay, and the car-payment reminder on their dashboard.</p>
                 </div>
                 {(() => {
                   const ref = refById[profileId];
@@ -1110,6 +1186,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
   // Paycheck form
   const [payLabel, setPayLabel] = useState("Weekly paycheck");
   const [payDollars, setPayDollars] = useState("");
+  const [payMode, setPayMode] = useState<"assigned" | "flat">("assigned");
   const [payPreview, setPayPreview] = useState<any>(null);
   const payBatch = useRef("");
   // Bill form
@@ -1134,18 +1211,26 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const resolveKeys = useRef<Record<string, string>>({});
+  // Preloaded roster/onboarding
+  const [onboardingProfiles, setOnboardingProfiles] = useState<any[]>([]);
+  const [importSource, setImportSource] = useState("ClassBank migration");
+  const [importCsv, setImportCsv] = useState("");
+  const importKey = useRef(uid());
+  const [profileAssignments, setProfileAssignments] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
       const qs = classId ? `?classId=${classId}` : "";
-      const [s, t, d] = await Promise.all([
+      const [s, t, d, o] = await Promise.all([
         api<{ students: any[] }>(`/api/teacher/bank${qs}`),
         api<{ templates: any[] }>("/api/teacher/bills/templates"),
         api<{ disputes: any[] }>(`/api/teacher/disputes${qs}`),
+        api<{ profiles: any[] }>(`/api/teacher/onboarding${qs}`),
       ]);
       setSummary(s.students);
       setTemplates(t.templates);
       setDisputes(d.disputes);
+      setOnboardingProfiles(o.profiles);
     } catch (e: any) { setErr(e.message); }
   }, [classId]);
   useEffect(() => { load(); }, [load]);
@@ -1169,7 +1254,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
     try {
       const r = await api<any>("/api/teacher/income/preview", {
         method: "POST",
-        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, dollars: Number(payDollars) }),
+        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, mode: payMode, dollars: Number(payDollars) }),
       });
       payBatch.current = uid();
       setPayPreview(r);
@@ -1181,9 +1266,9 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
     try {
       const r = await api<any>("/api/teacher/income/issue", {
         method: "POST",
-        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, dollars: Number(payDollars), batchId: payBatch.current }),
+        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, mode: payMode, dollars: Number(payDollars), batchId: payBatch.current }),
       });
-      setNotice(`Posted ${money(r.totalCents)} to ${r.posted} student${r.posted === 1 ? "" : "s"}.`);
+      setNotice(r.posted === 0 ? "That paycheck batch was already posted — no duplicate deposits were made." : `Posted ${money(r.totalCents)} to ${r.posted} student${r.posted === 1 ? "" : "s"}.`);
       setPayPreview(null); setPayDollars("");
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -1256,6 +1341,62 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
   const dueCount = summary.reduce((s, x) => s + Number(x.bills_due || 0), 0);
   const lateCount = summary.reduce((s, x) => s + Number(x.bills_late || 0), 0);
   const openDisputes = disputes.filter((d) => d.status === "open");
+  const pendingProfiles = onboardingProfiles.filter((p) => p.status === "pending");
+
+  const parseCsv = () => {
+    const lines = importCsv.trim().split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) throw new Error("Paste a header row and at least one student row.");
+    const split = (line: string) => {
+      const cells: string[] = []; let cell = ""; let quoted = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' && quoted && line[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') quoted = !quoted;
+        else if (ch === "," && !quoted) { cells.push(cell.trim()); cell = ""; }
+        else cell += ch;
+      }
+      cells.push(cell.trim()); return cells;
+    };
+    const headers = split(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const aliases: Record<string, string[]> = {
+      fullName: ["name", "fullname", "student", "studentname"], jobTitle: ["job", "jobtitle"], jobPay: ["pay", "jobpay", "paycheck", "payperpaycheck"],
+      checking: ["checking", "checkingbalance"], savings: ["savings", "savingsbalance"], brokerage: ["brokerage", "brokeragecash", "investment", "investmentcash"],
+      carPayment: ["carpayment", "monthlycarpayment"], externalRef: ["studentid", "id", "externalref"],
+    };
+    const at = (cells: string[], key: string) => { const i = headers.findIndex((h) => aliases[key].includes(h)); return i < 0 ? "" : cells[i] || ""; };
+    const cents = (v: string) => v.trim() === "" ? null : Math.round(Number(v.replace(/[$,]/g, "")) * 100);
+    return lines.slice(1).map(split).map((cells) => ({
+      fullName: at(cells, "fullName"), externalRef: at(cells, "externalRef") || null, jobTitle: at(cells, "jobTitle") || null,
+      jobPayCents: cents(at(cells, "jobPay")), checkingCents: cents(at(cells, "checking")), savingsCents: cents(at(cells, "savings")),
+      brokerageCents: cents(at(cells, "brokerage")), carPaymentCents: cents(at(cells, "carPayment")),
+    }));
+  };
+
+  const importProfiles = async () => {
+    if (!classId || busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const rows = parseCsv();
+      const r = await api<any>("/api/teacher/onboarding/import", { method: "POST", body: JSON.stringify({ classId, sourceLabel: importSource, importKey: importKey.current, rows }) });
+      setNotice(`${r.deduped ? "Already imported" : "Imported"} ${r.count} preloaded student profile${r.count === 1 ? "" : "s"}.`);
+      if (!r.deduped) importKey.current = uid();
+      setImportCsv(""); await load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const approveProfile = async (id: string) => {
+    setBusy(true); setErr("");
+    try { await api(`/api/teacher/onboarding/${id}/approve`, { method: "POST" }); setNotice("Profile correction approved and opening entries posted."); await load(); onChanged(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const assignProfile = async (id: string) => {
+    const studentId = profileAssignments[id];
+    if (!studentId || busy) return;
+    setBusy(true); setErr("");
+    try { await api(`/api/teacher/onboarding/${id}/assign`, { method: "POST", body: JSON.stringify({ studentId }) }); setNotice("Profile connected to the signed-in student and opening entries posted."); await load(); onChanged(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
 
   const resolve = async (d: any) => {
     if (busy) return;
@@ -1310,6 +1451,30 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         <p className="small">{checked.size} of {summary.length} selected</p>
       </div>
 
+      <div className="panel onboarding-admin">
+        <div className="panel-heading"><div><h2>First-login profiles</h2><p className="hint">Preload class information, then track who has confirmed it. Money is posted only after a successful claim.</p></div><span className="portfolio-count">{pendingProfiles.length} need review</span></div>
+        {classId ? <>
+          <details>
+            <summary>Import or paste a class CSV</summary>
+            <p className="hint">Headers supported: Name, Job, Pay, Checking, Savings, Brokerage, Car Payment, Student ID. Blank cells stay blank.</p>
+            <div className="field"><label>Source label</label><input value={importSource} onChange={(e) => setImportSource(e.target.value)} /></div>
+            <div className="field" style={{ marginTop: 8 }}><label>CSV data</label><textarea rows={7} value={importCsv} onChange={(e) => setImportCsv(e.target.value)} placeholder={'Name,Job,Pay,Checking,Savings,Brokerage,Car Payment\nJordan Lee,Electrician,850,1200,300,500,275'} /></div>
+            <div className="row" style={{ marginTop: 8 }}><button disabled={busy || importCsv.trim().split(/\r?\n/).length < 2} onClick={importProfiles}>Import preloaded profiles</button></div>
+          </details>
+          {onboardingProfiles.length === 0 ? <p className="small">No profiles imported for this class yet.</p> : <div className="table-wrap"><table>
+            <thead><tr><th>Student</th><th>Job/pay</th><th>Opening balances</th><th>Car</th><th>Status</th><th /></tr></thead>
+            <tbody>{onboardingProfiles.map((p) => { const proposed = p.proposed_json ? JSON.parse(p.proposed_json) : null; return <tr key={p.id}>
+              <td><strong>{p.full_name}</strong><br /><span className="small">{p.source_label}</span></td>
+              <td>{proposed?.jobTitle ?? p.job_title ?? "—"}<br /><span className="small">{(proposed?.jobPayCents ?? p.job_pay_cents) == null ? "pay blank" : money(proposed?.jobPayCents ?? p.job_pay_cents)}</span></td>
+              <td className="small">C {((proposed?.checkingCents ?? p.checking_cents) == null) ? "—" : money(proposed?.checkingCents ?? p.checking_cents)} · S {((proposed?.savingsCents ?? p.savings_cents) == null) ? "—" : money(proposed?.savingsCents ?? p.savings_cents)} · I {((proposed?.brokerageCents ?? p.brokerage_cents) == null) ? "—" : money(proposed?.brokerageCents ?? p.brokerage_cents)}</td>
+              <td>{(proposed?.carPaymentCents ?? p.car_payment_cents) == null ? "—" : money(proposed?.carPaymentCents ?? p.car_payment_cents)}</td>
+              <td><span className={p.status === "claimed" ? "badge-paid" : p.status === "pending" ? "badge-late" : "badge-due"}>{p.status}</span></td>
+              <td>{p.status === "pending" && <button disabled={busy} onClick={() => approveProfile(p.id)}>Approve changes</button>}{p.status === "unclaimed" && <div className="row"><select aria-label={`Connect ${p.full_name} to signed-in student`} value={profileAssignments[p.id] || ""} onChange={(e) => setProfileAssignments({ ...profileAssignments, [p.id]: e.target.value })}><option value="">Connect…</option>{summary.filter((s) => s.email).map((s) => <option value={s.id} key={s.id}>{s.name} · {s.email}</option>)}</select><button disabled={busy || !profileAssignments[p.id]} onClick={() => assignProfile(p.id)}>Apply</button></div>}</td>
+            </tr>; })}</tbody>
+          </table></div>}
+        </> : <p className="hint">Choose a class to import or review first-login profiles.</p>}
+      </div>
+
       <div className="panel">
         <div className="panel-heading"><div><h2>Student questions</h2><p className="hint">Bill questions from students{classId ? " in this class" : ""}. Answering never changes the bill — it only records your reply.</p></div><span className="portfolio-count">{openDisputes.length} open</span></div>
         {disputes.length === 0 && <p className="small">No questions yet. When a student questions a bill, it appears here.</p>}
@@ -1340,16 +1505,17 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         <div className="grid2">
           <div className="panel">
             <h2>Send paychecks</h2>
-            <p className="hint">Deposits land in checking. Preview first — nothing posts until you confirm.</p>
+            <p className="hint">Deposits land in checking. Use each student's assigned pay or enter one flat amount.</p>
             <div className="field"><label>Label</label><input value={payLabel} onChange={(e) => { setPayLabel(e.target.value); setPayPreview(null); }} placeholder="Weekly paycheck" /></div>
-            <div className="field" style={{ marginTop: 8 }}><label>Dollars per student</label><input value={payDollars} onChange={(e) => { setPayDollars(e.target.value); setPayPreview(null); }} placeholder="1500.00" inputMode="decimal" /></div>
+            <div className="field" style={{ marginTop: 8 }}><label>Pay source</label><select value={payMode} onChange={(e) => { setPayMode(e.target.value as any); setPayPreview(null); }}><option value="assigned">Each student's assigned paycheck</option><option value="flat">One amount for everyone</option></select></div>
+            {payMode === "flat" && <div className="field" style={{ marginTop: 8 }}><label>Dollars per student</label><input value={payDollars} onChange={(e) => { setPayDollars(e.target.value); setPayPreview(null); }} placeholder="1500.00" inputMode="decimal" /></div>}
             <div className="row" style={{ marginTop: 8 }}>
-              <button disabled={!(Number(payDollars) > 0) || checked.size === 0 || busy} onClick={previewPay}>Preview ({checked.size})</button>
+              <button disabled={(payMode === "flat" && !(Number(payDollars) > 0)) || checked.size === 0 || busy} onClick={previewPay}>Preview ({checked.size})</button>
             </div>
             {payPreview && (
               <div className="confirm">
-                <p><strong>Confirm:</strong> post <strong>{money(payPreview.totalCents)}</strong> total ({money(payPreview.perStudentCents)} × {payPreview.count} students) labeled “{payLabel}”?</p>
-                <p className="small">{payPreview.students.slice(0, 5).map((s: any) => s.name).join(", ")}{payPreview.count > 5 ? ` +${payPreview.count - 5} more` : ""}</p>
+                <p><strong>Confirm:</strong> post <strong>{money(payPreview.totalCents)}</strong> total to {payPreview.count} students labeled “{payLabel}”?</p>
+                <p className="small">{payPreview.students.slice(0, 6).map((s: any) => `${s.name}: ${money(s.amountCents)}`).join(" · ")}{payPreview.count > 6 ? ` · +${payPreview.count - 6} more` : ""}</p>
                 <div className="row"><button disabled={busy} onClick={issuePay}>Yes, post paychecks</button><button className="ghost" onClick={() => setPayPreview(null)}>Cancel</button></div>
               </div>
             )}

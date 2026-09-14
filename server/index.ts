@@ -25,6 +25,9 @@ import {
   adjustBankBalance,
 } from "./bank.js";
 import { deletionStatus, deleteEmptyStudent, StudentAdminError } from "./student-admin.js";
+import {
+  importRosterProfiles, onboardingStatus, claimRosterProfile, listRosterProfiles, approveRosterProfile, assignRosterProfile, OnboardingError,
+} from "./onboarding.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 
@@ -46,8 +49,8 @@ const quotes = makeQuoteProvider();
 async function currentUser(req: express.Request) {
   const s = readSession(req);
   if (!s) return null;
-  const user = await one<{ id: string; email: string | null; name: string; role: string; class_id: string | null; job_title: string | null; job_pay_cents: number | null }>(
-    `SELECT id, email, name, role, class_id, job_title, job_pay_cents FROM users WHERE id = ?`, [s.userId],
+  const user = await one<{ id: string; email: string | null; name: string; role: string; class_id: string | null; job_title: string | null; job_pay_cents: number | null; car_payment_cents: number | null }>(
+    `SELECT id, email, name, role, class_id, job_title, job_pay_cents, car_payment_cents FROM users WHERE id = ?`, [s.userId],
   );
   if (!user) return null;
   // Heartbeat: every authenticated request marks the account seen.
@@ -204,7 +207,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
   const cls = user.class_id
     ? await one(`SELECT id, name, join_code, trading_frozen FROM classes WHERE id = ?`, [user.class_id])
     : null;
-  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, job_title: (user as any).job_title ?? null, job_pay_cents: (user as any).job_pay_cents ?? null }, class: cls });
+  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, job_title: user.job_title ?? null, job_pay_cents: user.job_pay_cents ?? null, car_payment_cents: user.car_payment_cents ?? null }, class: cls });
 });
 
 app.post("/api/classes/join", requireAuth, async (req, res) => {
@@ -216,6 +219,29 @@ app.post("/api/classes/join", requireAuth, async (req, res) => {
   if (!cls) { res.status(404).json({ error: "No class uses that code. Check with your teacher." }); return; }
   await run(`UPDATE users SET class_id = ? WHERE id = ?`, [cls.id, user.id]);
   res.json({ ok: true, class: cls });
+});
+
+function onboardingError(res: express.Response, err: unknown) {
+  if (err instanceof OnboardingError) {
+    const status = err.code === "NOT_FOUND" ? 404 : err.code === "FORBIDDEN" ? 403 : err.code === "CONFLICT" ? 409 : 400;
+    res.status(status).json({ error: err.message, code: err.code });
+    return;
+  }
+  throw err;
+}
+
+app.get("/api/onboarding", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user || user.role !== "student") { res.status(403).json({ error: "Student access only." }); return; }
+  res.json(await onboardingStatus(user.id));
+});
+
+app.post("/api/onboarding/claim", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user || user.role !== "student") { res.status(403).json({ error: "Student access only." }); return; }
+  try {
+    res.json(await claimRosterProfile({ userId: user.id, profileId: String(req.body?.profileId || ""), proposed: req.body?.proposed }));
+  } catch (err) { onboardingError(res, err); }
 });
 
 app.get("/api/search", requireAuth, async (req, res) => {
@@ -408,6 +434,32 @@ app.get("/api/teacher/classes", requireCurrentTeacher, async (_req, res) => {
   res.json({ classes: await q(`SELECT * FROM classes ORDER BY created_at`) });
 });
 
+app.get("/api/teacher/onboarding", requireCurrentTeacher, async (req, res) => {
+  res.json({ profiles: await listRosterProfiles(String(req.query["classId"] || "") || undefined) });
+});
+
+app.post("/api/teacher/onboarding/import", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try {
+    res.json(await importRosterProfiles({
+      classId: String(req.body?.classId || ""), actorId: teacher.id,
+      sourceLabel: String(req.body?.sourceLabel || ""), importKey: String(req.body?.importKey || ""), rows: req.body?.rows,
+    }));
+  } catch (err) { onboardingError(res, err); }
+});
+
+app.post("/api/teacher/onboarding/:id/approve", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try { res.json(await approveRosterProfile({ profileId: String(req.params.id || ""), actorId: teacher.id })); }
+  catch (err) { onboardingError(res, err); }
+});
+
+app.post("/api/teacher/onboarding/:id/assign", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try { res.json(await assignRosterProfile({ profileId: String(req.params.id || ""), userId: String(req.body?.studentId || ""), actorId: teacher.id })); }
+  catch (err) { onboardingError(res, err); }
+});
+
 app.post("/api/teacher/classes", requireCurrentTeacher, async (req, res) => {
   const name = String(req.body?.name || "").trim();
   if (name.length < 2 || name.length > 80) { res.status(400).json({ error: "Class name must be 2–80 characters." }); return; }
@@ -485,7 +537,7 @@ app.get("/api/teacher/audit", requireCurrentTeacher, async (req, res) => {
 
 app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
   const studentId = String(req.query["studentId"] || "");
-  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at, job_title, job_pay_cents, job_updated_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
+  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at, job_title, job_pay_cents, car_payment_cents, job_updated_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
   if (!student) { res.status(404).json({ error: "Student not found." }); return; }
   const counts = await q<{ kind: string; n: number }>(
     `SELECT l.kind AS kind, COUNT(*) AS n FROM ledger l
@@ -544,6 +596,11 @@ app.post("/api/teacher/student/job", requireCurrentTeacher, async (req, res) => 
       return;
     }
   }
+  let carPayment: number | null | undefined;
+  if (req.body?.carPaymentDollars !== undefined) {
+    carPayment = parseJobPay(req.body.carPaymentDollars);
+    if (carPayment === undefined) { res.status(400).json({ error: "Car payment must be between $0 and $100,000 per month (or empty to clear)." }); return; }
+  }
   const student = await one<{ id: string }>(`SELECT id FROM users WHERE id = ? AND role = 'student'`, [studentId]);
   if (!student) { res.status(404).json({ error: "Student not found." }); return; }
   const sets: string[] = [];
@@ -556,12 +613,16 @@ app.post("/api/teacher/student/job", requireCurrentTeacher, async (req, res) => 
     sets.push(`job_pay_cents = ?`);
     params.push(pay);
   }
+  if (carPayment !== undefined) {
+    sets.push(`car_payment_cents = ?`);
+    params.push(carPayment);
+  }
   if (!sets.length) { res.status(400).json({ error: "No job changes supplied." }); return; }
   sets.push(`job_updated_at = ?`);
   params.push(nowIso());
   params.push(studentId);
   await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ? AND role = 'student'`, params);
-  const updated = await one(`SELECT id, name, job_title, job_pay_cents, job_updated_at FROM users WHERE id = ?`, [studentId]);
+  const updated = await one(`SELECT id, name, job_title, job_pay_cents, car_payment_cents, job_updated_at FROM users WHERE id = ?`, [studentId]);
   res.json({ ok: true, student: updated });
 });
 
@@ -755,12 +816,12 @@ app.post("/api/teacher/disputes/:id/resolve", requireCurrentTeacher, async (req,
 });
 
 /** Resolve + validate the student set for a class-scoped batch. */
-async function batchStudents(classId: string, studentIds: unknown): Promise<{ id: string; name: string }[]> {
+async function batchStudents(classId: string, studentIds: unknown): Promise<{ id: string; name: string; job_pay_cents: number | null }[]> {
   if (!classId) throw new BankError("INVALID_INPUT", "Choose a class first.");
   const cls = await one(`SELECT id FROM classes WHERE id = ?`, [classId]);
   if (!cls) throw new BankError("NOT_FOUND", "Class not found.");
-  const all = await q<{ id: string; name: string }>(
-    `SELECT id, name FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId],
+  const all = await q<{ id: string; name: string; job_pay_cents: number | null }>(
+    `SELECT id, name, job_pay_cents FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId],
   );
   if (studentIds === undefined || studentIds === null || studentIds === "") return all;
   if (!Array.isArray(studentIds) || !studentIds.length) {
@@ -780,7 +841,7 @@ app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
   const where = classId ? "AND u.class_id = ?" : "";
   const params = classId ? [classId] : [];
   const rows = await q(
-    `SELECT u.id, u.name, u.class_id, c.name AS class_name,
+    `SELECT u.id, u.name, u.email, u.class_id, c.name AS class_name,
             COALESCE(b.checking_cents, 0) AS checking_cents,
             COALESCE(b.savings_cents, 0) AS savings_cents,
             COALESCE(a.cash_cents, 0) AS brokerage_cents,
@@ -798,38 +859,46 @@ app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
 
 app.post("/api/teacher/income/preview", requireCurrentTeacher, async (req, res) => {
   try {
+    const assigned = req.body?.mode === "assigned";
     const dollars = Number(req.body?.dollars);
-    if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+    if (!assigned && (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000)) {
       res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
       return;
     }
     const label = String(req.body?.label || "").trim();
     if (label.length < 2) { res.status(400).json({ error: "Give the deposit a short label." }); return; }
     const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
-    const cents = Math.round(dollars * 100);
-    res.json({ students, perStudentCents: cents, totalCents: cents * students.length, count: students.length });
+    const cents = assigned ? null : Math.round(dollars * 100);
+    const missing = assigned ? students.filter((s) => !(Number(s.job_pay_cents) > 0)) : [];
+    if (missing.length) { res.status(400).json({ error: `Assigned pay is missing for: ${missing.map((s) => s.name).join(", ")}.` }); return; }
+    const items = students.map((s) => ({ ...s, amountCents: assigned ? Number(s.job_pay_cents) : cents! }));
+    res.json({ students: items, mode: assigned ? "assigned" : "flat", perStudentCents: cents, totalCents: items.reduce((sum, s) => sum + s.amountCents, 0), count: students.length });
   } catch (err) { bankError(res, err); }
 });
 
 app.post("/api/teacher/income/issue", requireCurrentTeacher, async (req, res) => {
   const teacher = readSession(req)!;
   try {
+    const assigned = req.body?.mode === "assigned";
     const dollars = Number(req.body?.dollars);
-    if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+    if (!assigned && (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000)) {
       res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
       return;
     }
     const label = String(req.body?.label || "").trim();
     if (label.length < 2) { res.status(400).json({ error: "Give the deposit a short label." }); return; }
     const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
+    const missing = assigned ? students.filter((s) => !(Number(s.job_pay_cents) > 0)) : [];
+    if (missing.length) { res.status(400).json({ error: `Assigned pay is missing for: ${missing.map((s) => s.name).join(", ")}.` }); return; }
     const batchId = String(req.body?.batchId || "");
     if (!batchId) { res.status(400).json({ error: "Batch id is required (prevents double-posting)." }); return; }
-    const cents = Math.round(dollars * 100);
+    const cents = assigned ? 0 : Math.round(dollars * 100);
+    const items = students.map((s) => ({ userId: s.id, label, amountCents: assigned ? Number(s.job_pay_cents) : cents }));
     const r = await issueIncomeBatch({
       actorId: teacher.userId, batchId,
-      items: students.map((s) => ({ userId: s.id, label, amountCents: cents })),
+      items,
     });
-    res.json({ ok: true, posted: r.posted, batchId: r.batchId, count: students.length, totalCents: cents * r.posted });
+    res.json({ ok: true, posted: r.posted, batchId: r.batchId, count: students.length, totalCents: items.reduce((sum, item) => sum + item.amountCents, 0) });
   } catch (err) { bankError(res, err); }
 });
 
@@ -940,6 +1009,7 @@ async function boot() {  validateProductionEnv();
   await ensureColumn("users", "job_title", "TEXT");
   await ensureColumn("users", "job_pay_cents", "INTEGER");
   await ensureColumn("users", "job_updated_at", "TEXT");
+  await ensureColumn("users", "car_payment_cents", "INTEGER");
   await ensureColumn("bank_accounts", "interest_residual_micros", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("bank_accounts", "interest_accrued_at", "TEXT");
   await ensureColumn("bill_templates", "sender", "TEXT");

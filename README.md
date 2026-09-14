@@ -4,6 +4,12 @@ A small classroom brokerage simulator for Personal Finance. **All money and
 trades are simulated for class only.** No real brokerage connections, no real
 trades, no investment advice.
 
+Students use a three-part workspace: a combined money dashboard, Banking
+(checking, savings, bills, and transfers), and Investing. Teachers can preload
+class profiles from CSV, including job/pay and simulated opening balances.
+Students confirm an exact name-and-class match; corrections wait for teacher
+approval, and all opening money is posted through the normal audited ledgers.
+
 Sibling of CodeWorld (`../codeworld/`), which is **read-only reference** —
 this project shares no database, sessions, ports, keys, or deployment with it.
 
@@ -34,6 +40,18 @@ Join code for the demo class: `DEMO1`.
 | `npm run build` | Production Vite build into `dist/` |
 | `npm start` | Production: one process serves `dist/` + `/api` |
 | `npm run seed` | Seed demo classroom (dev only) |
+
+## Preloading a class
+
+In the teacher Banking workspace, choose a class and open **First-login
+profiles**. Paste CSV with a `Name` column and any of: `Job`, `Pay`, `Checking`,
+`Savings`, `Brokerage`, `Car Payment`, and `Student ID`. Dollar values are
+converted to integer cents by the client and validated again by the server.
+
+A unique normalized name match is offered only within the class the student
+joined. Duplicate matches are never guessed. Exact confirmations post opening
+balances immediately; student corrections remain pending until the teacher
+approves them. Reusing the same import or claim cannot duplicate money.
 
 ## Configuration
 
