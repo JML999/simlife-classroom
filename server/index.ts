@@ -544,7 +544,7 @@ app.get("/api/teacher/audit", requireCurrentTeacher, async (req, res) => {
 
 app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
   const studentId = String(req.query["studentId"] || "");
-  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at, job_title, job_pay_cents, car_payment_cents, job_updated_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
+  const student = await one(`SELECT id, name, email, class_id, created_at, last_active_at, job_title, job_pay_cents, car_payment_cents, rent_cents, job_updated_at FROM users WHERE id = ? AND role = 'student'`, [studentId]);
   if (!student) { res.status(404).json({ error: "Student not found." }); return; }
   const counts = await q<{ kind: string; n: number }>(
     `SELECT l.kind AS kind, COUNT(*) AS n FROM ledger l
@@ -608,6 +608,11 @@ app.post("/api/teacher/student/job", requireCurrentTeacher, async (req, res) => 
     carPayment = parseJobPay(req.body.carPaymentDollars);
     if (carPayment === undefined) { res.status(400).json({ error: "Car payment must be between $0 and $100,000 per month (or empty to clear)." }); return; }
   }
+  let rent: number | null | undefined;
+  if (req.body?.rentDollars !== undefined) {
+    rent = parseJobPay(req.body.rentDollars);
+    if (rent === undefined) { res.status(400).json({ error: "Rent must be between $0 and $100,000 per month (or empty to clear)." }); return; }
+  }
   const student = await one<{ id: string }>(`SELECT id FROM users WHERE id = ? AND role = 'student'`, [studentId]);
   if (!student) { res.status(404).json({ error: "Student not found." }); return; }
   const sets: string[] = [];
@@ -624,12 +629,16 @@ app.post("/api/teacher/student/job", requireCurrentTeacher, async (req, res) => 
     sets.push(`car_payment_cents = ?`);
     params.push(carPayment);
   }
+  if (rent !== undefined) {
+    sets.push(`rent_cents = ?`);
+    params.push(rent);
+  }
   if (!sets.length) { res.status(400).json({ error: "No job changes supplied." }); return; }
   sets.push(`job_updated_at = ?`);
   params.push(nowIso());
   params.push(studentId);
   await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ? AND role = 'student'`, params);
-  const updated = await one(`SELECT id, name, job_title, job_pay_cents, car_payment_cents, job_updated_at FROM users WHERE id = ?`, [studentId]);
+  const updated = await one(`SELECT id, name, job_title, job_pay_cents, car_payment_cents, rent_cents, job_updated_at FROM users WHERE id = ?`, [studentId]);
   res.json({ ok: true, student: updated });
 });
 
@@ -823,12 +832,12 @@ app.post("/api/teacher/disputes/:id/resolve", requireCurrentTeacher, async (req,
 });
 
 /** Resolve + validate the student set for a class-scoped batch. */
-async function batchStudents(classId: string, studentIds: unknown): Promise<{ id: string; name: string; job_pay_cents: number | null }[]> {
+async function batchStudents(classId: string, studentIds: unknown): Promise<{ id: string; name: string; job_pay_cents: number | null; car_payment_cents: number | null; rent_cents: number | null }[]> {
   if (!classId) throw new BankError("INVALID_INPUT", "Choose a class first.");
   const cls = await one(`SELECT id FROM classes WHERE id = ?`, [classId]);
   if (!cls) throw new BankError("NOT_FOUND", "Class not found.");
-  const all = await q<{ id: string; name: string; job_pay_cents: number | null }>(
-    `SELECT id, name, job_pay_cents FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId],
+  const all = await q<{ id: string; name: string; job_pay_cents: number | null; car_payment_cents: number | null; rent_cents: number | null }>(
+    `SELECT id, name, job_pay_cents, car_payment_cents, rent_cents FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId],
   );
   if (studentIds === undefined || studentIds === null || studentIds === "") return all;
   if (!Array.isArray(studentIds) || !studentIds.length) {
@@ -975,8 +984,12 @@ app.post("/api/teacher/bill-drafts/:id/send", requireCurrentTeacher, async (req,
 });
 
 function parseBillForm(body: any) {
+  const mode = String(body?.mode || "flat");
+  const assignedRent = mode === "assigned_rent" || mode === "rent";
+  const assignedCar = mode === "assigned_car" || mode === "car" || mode === "assigned";
+  const assigned = assignedRent || assignedCar;
   const dollars = Number(body?.dollars);
-  if (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000) {
+  if (!assigned && (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000)) {
     throw new BankError("INVALID_INPUT", "Enter a positive dollar amount (max $100,000).");
   }
   const feeDollars = body?.lateFeeDollars === undefined || body?.lateFeeDollars === "" ? 0 : Number(body.lateFeeDollars);
@@ -988,7 +1001,8 @@ function parseBillForm(body: any) {
   const dueAt = String(body?.dueAt || "");
   if (!dueAt || isNaN(new Date(dueAt).getTime())) throw new BankError("INVALID_INPUT", "Pick a valid due date.");
   return {
-    title, cents: Math.round(dollars * 100), feeCents: Math.round(feeDollars * 100), dueAt,
+    title, cents: assigned ? 0 : Math.round(dollars * 100), feeCents: Math.round(feeDollars * 100), dueAt,
+    mode: assignedRent ? "assigned_rent" : assignedCar ? "assigned_car" : "flat",
     sender: String(body?.sender || "").trim().slice(0, 120),
     documentTitle: String(body?.documentTitle || "").trim().slice(0, 160),
     documentBody: String(body?.documentBody || body?.description || "").trim().slice(0, 8000),
@@ -999,8 +1013,22 @@ app.post("/api/teacher/bills/preview", requireCurrentTeacher, async (req, res) =
   try {
     const form = parseBillForm(req.body);
     const students = await batchStudents(String(req.body?.classId || ""), req.body?.studentIds);
+    if (form.mode !== "flat") {
+      const key = form.mode === "assigned_rent" ? "rent_cents" : "car_payment_cents";
+      const label = form.mode === "assigned_rent" ? "rent" : "car payment";
+      const missing = students.filter((s) => !(Number((s as any)[key]) > 0));
+      if (missing.length) { res.status(400).json({ error: `Assigned ${label} is missing for: ${missing.map((s) => s.name).join(", ")}.` }); return; }
+      const items = students.map((s) => ({ ...s, amountCents: Number((s as any)[key]) }));
+      res.json({
+        students: items, mode: form.mode, perStudentCents: null,
+        totalCents: items.reduce((sum, s) => sum + s.amountCents, 0),
+        count: students.length, title: form.title, dueAt: form.dueAt, lateFeeCents: form.feeCents,
+        sender: form.sender, documentTitle: form.documentTitle, documentBody: form.documentBody,
+      });
+      return;
+    }
     res.json({
-      students, perStudentCents: form.cents, totalCents: form.cents * students.length,
+      students, mode: "flat", perStudentCents: form.cents, totalCents: form.cents * students.length,
       count: students.length, title: form.title, dueAt: form.dueAt, lateFeeCents: form.feeCents,
       sender: form.sender, documentTitle: form.documentTitle, documentBody: form.documentBody,
     });
@@ -1015,6 +1043,23 @@ app.post("/api/teacher/bills/issue", requireCurrentTeacher, async (req, res) => 
     const batchId = String(req.body?.batchId || "");
     if (!batchId) { res.status(400).json({ error: "Batch id is required (prevents double-issuing)." }); return; }
     const templateId = req.body?.templateId ? String(req.body.templateId) : null;
+    if (form.mode !== "flat") {
+      const key = form.mode === "assigned_rent" ? "rent_cents" : "car_payment_cents";
+      const label = form.mode === "assigned_rent" ? "rent" : "car payment";
+      const missing = students.filter((s) => !(Number((s as any)[key]) > 0));
+      if (missing.length) { res.status(400).json({ error: `Assigned ${label} is missing for: ${missing.map((s) => s.name).join(", ")}.` }); return; }
+      const r = await issueBillBatch({
+        issuedBy: teacher.userId, batchId,
+        items: students.map((s) => ({
+          userId: s.id, title: form.title, amountCents: Number((s as any)[key]),
+          lateFeeCents: form.feeCents, dueAt: form.dueAt, templateId,
+          sender: form.sender, documentTitle: form.documentTitle, documentBody: form.documentBody,
+        })),
+      });
+      const total = students.reduce((sum, s) => sum + Number((s as any)[key]), 0);
+      res.json({ ok: true, issued: r.issued, batchId: r.batchId, mode: form.mode, totalCents: total });
+      return;
+    }
     const r = await issueBillBatch({
       issuedBy: teacher.userId, batchId,
       items: students.map((s) => ({
@@ -1051,6 +1096,8 @@ async function boot() {  validateProductionEnv();
   await ensureColumn("users", "job_pay_cents", "INTEGER");
   await ensureColumn("users", "job_updated_at", "TEXT");
   await ensureColumn("users", "car_payment_cents", "INTEGER");
+  await ensureColumn("users", "rent_cents", "INTEGER");
+  await ensureColumn("roster_profiles", "rent_cents", "INTEGER");
   await ensureColumn("bank_accounts", "interest_residual_micros", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("bank_accounts", "interest_accrued_at", "TEXT");
   await ensureColumn("bill_templates", "sender", "TEXT");

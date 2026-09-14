@@ -10,6 +10,7 @@ export type ImportedProfileValues = {
   savingsCents?: number | null;
   brokerageCents?: number | null;
   carPaymentCents?: number | null;
+  rentCents?: number | null;
 };
 
 export class OnboardingError extends Error {
@@ -44,6 +45,7 @@ function cleanValues(raw: any): ImportedProfileValues {
     savingsCents: nullableCents(raw?.savingsCents, "Savings"),
     brokerageCents: nullableCents(raw?.brokerageCents, "Brokerage cash"),
     carPaymentCents: nullableCents(raw?.carPaymentCents, "Car payment"),
+    rentCents: nullableCents((raw as any)?.rentCents, "Rent"),
   };
 }
 
@@ -67,15 +69,15 @@ export async function importRosterProfiles(opts: { classId: string; actorId: str
     await t.run(`INSERT INTO roster_imports (id, class_id, created_by, source_label, import_key, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [importId, opts.classId, opts.actorId, source, stableImportKey, now]);
     for (const row of rows) {
       await t.run(`INSERT INTO roster_profiles
-        (id, import_id, class_id, external_ref, full_name, normalized_name, job_title, job_pay_cents, checking_cents, savings_cents, brokerage_cents, car_payment_cents, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unclaimed', ?)`,
-        [newId("rp"), importId, opts.classId, row.externalRef ?? null, row.fullName, normalizeStudentName(row.fullName), row.jobTitle ?? null, row.jobPayCents ?? null, row.checkingCents ?? null, row.savingsCents ?? null, row.brokerageCents ?? null, row.carPaymentCents ?? null, now]);
+        (id, import_id, class_id, external_ref, full_name, normalized_name, job_title, job_pay_cents, checking_cents, savings_cents, brokerage_cents, car_payment_cents, rent_cents, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unclaimed', ?)`,
+        [newId("rp"), importId, opts.classId, row.externalRef ?? null, row.fullName, normalizeStudentName(row.fullName), row.jobTitle ?? null, row.jobPayCents ?? null, row.checkingCents ?? null, row.savingsCents ?? null, row.brokerageCents ?? null, row.carPaymentCents ?? null, row.rentCents ?? null, now]);
     }
     return { importId, count: rows.length, deduped: false };
   });
 }
 
-const publicColumns = `id, class_id, full_name, job_title, job_pay_cents, checking_cents, savings_cents, brokerage_cents, car_payment_cents, status, claimed_by, proposed_json, claimed_at, reviewed_at`;
+const publicColumns = `id, class_id, full_name, job_title, job_pay_cents, checking_cents, savings_cents, brokerage_cents, car_payment_cents, rent_cents, status, claimed_by, proposed_json, claimed_at, reviewed_at`;
 
 export async function onboardingStatus(userId: string) {
   return withTx(async (t) => {
@@ -98,16 +100,20 @@ function valuesFromProfile(profile: any, override?: any): ImportedProfileValues 
     savingsCents: profile.savings_cents == null ? null : Number(profile.savings_cents),
     brokerageCents: profile.brokerage_cents == null ? null : Number(profile.brokerage_cents),
     carPaymentCents: profile.car_payment_cents == null ? null : Number(profile.car_payment_cents),
+    rentCents: (profile as any).rent_cents == null ? null : Number((profile as any).rent_cents),
   };
   return override ? cleanValues({ ...base, ...override }) : base;
 }
 
 async function applyProfile(t: Tx, profile: any, userId: string, actorId: string, values: ImportedProfileValues) {
   const fu = t.dialect === "pg" ? " FOR UPDATE" : "";
-  const user = await t.one<{ id: string }>(`SELECT id FROM users WHERE id = ? AND role = 'student'${fu}`, [userId]);
+  const user = await t.one<any>(`SELECT id, car_payment_cents, rent_cents FROM users WHERE id = ? AND role = 'student'${fu}`, [userId]);
   if (!user) throw new OnboardingError("NOT_FOUND", "Student account not found.");
   const now = nowIso();
-  await t.run(`UPDATE users SET job_title = ?, job_pay_cents = ?, car_payment_cents = ?, job_updated_at = ? WHERE id = ?`, [values.jobTitle ?? null, values.jobPayCents ?? null, values.carPaymentCents ?? null, now, userId]);
+  // Never wipe teacher-set expenses with a blank import cell: keep existing when the profile is blank.
+  const car = values.carPaymentCents ?? (user.car_payment_cents == null ? null : Number(user.car_payment_cents));
+  const rent = values.rentCents ?? ((user as any).rent_cents == null ? null : Number((user as any).rent_cents));
+  await t.run(`UPDATE users SET job_title = ?, job_pay_cents = ?, car_payment_cents = ?, rent_cents = ?, job_updated_at = ? WHERE id = ?`, [values.jobTitle ?? null, values.jobPayCents ?? null, car, rent, now, userId]);
 
   const checking = values.checkingCents ?? 0;
   const savings = values.savingsCents ?? 0;
@@ -174,8 +180,8 @@ export async function approveRosterProfile(opts: { profileId: string; actorId: s
     if (!profile) throw new OnboardingError("NOT_FOUND", "Preloaded profile not found.");
     if (!profile.claimed_by || profile.status !== "pending") throw new OnboardingError("CONFLICT", "This profile is not awaiting review.");
     const proposed = profile.proposed_json ? valuesFromProfile(profile, JSON.parse(profile.proposed_json)) : valuesFromProfile(profile);
-    await t.run(`UPDATE roster_profiles SET full_name = ?, normalized_name = ?, job_title = ?, job_pay_cents = ?, checking_cents = ?, savings_cents = ?, brokerage_cents = ?, car_payment_cents = ?, proposed_json = NULL WHERE id = ?`,
-      [proposed.fullName, normalizeStudentName(proposed.fullName), proposed.jobTitle ?? null, proposed.jobPayCents ?? null, proposed.checkingCents ?? null, proposed.savingsCents ?? null, proposed.brokerageCents ?? null, proposed.carPaymentCents ?? null, profile.id]);
+    await t.run(`UPDATE roster_profiles SET full_name = ?, normalized_name = ?, job_title = ?, job_pay_cents = ?, checking_cents = ?, savings_cents = ?, brokerage_cents = ?, car_payment_cents = ?, rent_cents = ?, proposed_json = NULL WHERE id = ?`,
+      [proposed.fullName, normalizeStudentName(proposed.fullName), proposed.jobTitle ?? null, proposed.jobPayCents ?? null, proposed.checkingCents ?? null, proposed.savingsCents ?? null, proposed.brokerageCents ?? null, proposed.carPaymentCents ?? null, proposed.rentCents ?? null, profile.id]);
     await markMatched(t, profile.id, profile.claimed_by, opts.actorId);
     return { state: "matched" };
   });

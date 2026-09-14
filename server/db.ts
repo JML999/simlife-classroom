@@ -201,6 +201,7 @@ export async function initSchema(): Promise<void> {
       job_pay_cents INTEGER,
       job_updated_at TEXT,
       car_payment_cents INTEGER,
+      rent_cents INTEGER,
       created_at TEXT NOT NULL
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_users_email ON users(email) WHERE email IS NOT NULL`,
@@ -387,6 +388,7 @@ export async function initSchema(): Promise<void> {
       savings_cents INTEGER,
       brokerage_cents INTEGER,
       car_payment_cents INTEGER,
+      rent_cents INTEGER,
       status TEXT NOT NULL DEFAULT 'unclaimed',
       claimed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
       proposed_json TEXT,

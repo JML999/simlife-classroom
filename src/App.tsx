@@ -752,6 +752,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [jobTitle, setJobTitle] = useState("");
   const [jobPay, setJobPay] = useState("");
   const [carPayment, setCarPayment] = useState("");
+  const [rent, setRent] = useState("");
   void me;
 
   useEffect(() => {
@@ -785,13 +786,14 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     setSelected(roster.find((s) => s.id === id) ?? null);
     setConfirming(false); setDollars(""); setReason(""); setDirection("add");
     setBankDollars(""); setBankReason(""); setDeleteConfirm("");
-    setJobCatalog([]); setJobTitle(""); setJobPay(""); setCarPayment("");
+    setJobCatalog([]); setJobTitle(""); setJobPay(""); setCarPayment(""); setRent("");
     try {
       const next: any = await api(`/api/teacher/student?studentId=${id}`);
       setProfile(next); setEditName(next.student.name); setEditClass(next.student.class_id || "");
       setJobTitle(next.student.job_title || "");
       setJobPay(next.student.job_pay_cents == null ? "" : String(Number(next.student.job_pay_cents) / 100));
       setCarPayment(next.student.car_payment_cents == null ? "" : String(Number(next.student.car_payment_cents) / 100));
+      setRent((next.student as any).rent_cents == null ? "" : String(Number((next.student as any).rent_cents) / 100));
       const cid = next.student.class_id || "";
       try {
         const cat: any = await api(`/api/teacher/job-catalog${cid ? `?classId=${cid}` : ""}`);
@@ -891,12 +893,13 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       const r = await api<any>("/api/teacher/student/job", {
         method: "POST",
-        body: JSON.stringify({ studentId: profileId, jobTitle: jobTitle.trim(), jobPayDollars: jobPay.trim() === "" ? null : Number(jobPay), carPaymentDollars: carPayment.trim() === "" ? null : Number(carPayment) }),
+        body: JSON.stringify({ studentId: profileId, jobTitle: jobTitle.trim(), jobPayDollars: jobPay.trim() === "" ? null : Number(jobPay), carPaymentDollars: carPayment.trim() === "" ? null : Number(carPayment), rentDollars: rent.trim() === "" ? null : Number(rent) }),
       });
       setNotice(r.student?.job_title ? `Job set to ${r.student.job_title}.` : "Job cleared.");
       setJobTitle(r.student?.job_title || "");
       setJobPay(r.student?.job_pay_cents == null ? "" : String(Number(r.student.job_pay_cents) / 100));
       setCarPayment(r.student?.car_payment_cents == null ? "" : String(Number(r.student.car_payment_cents) / 100));
+      setRent((r.student as any)?.rent_cents == null ? "" : String(Number((r.student as any).rent_cents) / 100));
       await load(); await refreshOpenProfile();
       // Refresh catalog so a new custom title appears for classmates too.
       try {
@@ -940,87 +943,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     </div>
   );
 
-  if (tsection === "banking") {
-    return (
-      <>
-        {workspaceTabs}
-        {err && <div className="error" role="alert">{err}</div>}
-        {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
-        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} onOpenStudent={(id) => { setTsection("brokerage"); void openProfile(id); }} /></div>
-      </>
-    );
-  }
-
-  return (
+  const profileDrawer = (
     <>
-      {workspaceTabs}
-      <div className="page-intro">
-        <div><div className="eyebrow">Teacher desk</div><h2>Brokerage classroom</h2><p>Fund accounts, monitor participation, and control when students may trade.</p></div>
-        <div className="teacher-summary"><strong>{roster.length}</strong><span>students shown</span></div>
-      </div>
-      <div className="pills">
-        <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => setClassId("")}>All students</button>
-        {classes.map((c) => (
-          <button key={c.id} className={`pill${classId === c.id ? " active" : ""}`} onClick={() => setClassId(c.id)}>
-            {c.name}{c.trading_frozen ? " — frozen" : ""}
-          </button>
-        ))}
-        {updating && <span className="small" style={{ alignSelf: "center" }}>Updating…</span>}
-      </div>
-      <div className="row" style={{ marginTop: 8 }}>
-        {cls && <button className={cls.trading_frozen ? "" : "danger"} onClick={() => setFreezeConfirm(cls)}>{cls.trading_frozen ? "Reopen trading" : "Close trading"}</button>}
-        <span className="small">Join code{classId ? "" : "s"}: {classId ? cls?.join_code : classes.map((c) => `${c.name.split(" ")[0]} ${c.join_code}`).join(" · ")}</span>
-      </div>
-      {freezeConfirm && <div className="confirm" role="dialog" aria-modal="true" aria-labelledby="freeze-title"><h3 id="freeze-title">{freezeConfirm.trading_frozen ? "Reopen" : "Close"} trading?</h3><p>{freezeConfirm.name} students {freezeConfirm.trading_frozen ? "will be able to buy and sell again" : "will immediately be blocked from buying and selling"}.</p><div className="row"><button className={freezeConfirm.trading_frozen ? "" : "danger-solid"} disabled={busy} onClick={() => toggleFreeze(freezeConfirm)}>Yes, {freezeConfirm.trading_frozen ? "reopen" : "close"} trading</button><button className="ghost" onClick={() => setFreezeConfirm(null)}>Cancel</button></div></div>}
-      {err && <div className="error" role="alert">{err}</div>}
-      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
-
-      <div className="panel">
-        <h2>Roster — simulated brokerage accounts</h2>
-        <p className="hint">Click a student to open their account profile, review activity, and adjust banking or brokerage balances.</p>
-        <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
-        <div className="table-wrap"><table>
-          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Brokerage cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
-          <tbody>
-            {sorted.map((s) => {
-              const ref = refById[s.id];
-              const funded = ref && (ref.checking != null || ref.savings != null);
-              const jobLabel = s.job_title || ref?.job;
-              return (
-                <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
-                  <td><strong>{s.name}</strong><br /><span className="small">{jobLabel || s.email || "no email yet"}{jobLabel && s.email ? ` · ${s.email}` : ""}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
-                  <td className="small">{s.class_name || "—"}</td>
-                  <td>{money(s.cash_cents)}</td>
-                  <td>{money(s.investedCents)}</td>
-                  <td>{money(s.portfolioCents)}</td>
-                  <td className={s.gainLossCents >= 0 ? "up" : "down"}>{money(s.gainLossCents)}</td>
-                  <td>{s.trades}</td>
-                  <td className="small">{fmtWhen(s.last_active_at)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table></div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-heading"><div><h2>Audit history</h2><p className="hint">Complete record for {classId ? "this class" : "all students"}. Open this only when you need to investigate or reverse an entry.</p></div><button className="ghost" onClick={() => setAuditOpen((v) => !v)}>{auditOpen ? "Hide audit" : `Open audit (${audit.length})`}</button></div>
-        {auditOpen && <><div className="reversal-box"><h3>Reverse an incorrect cash adjustment</h3><p className="hint">This creates a compensating entry; it never deletes the original.</p><div className="row"><div className="field"><label>Entry id</label><input value={reverseId} onChange={(e) => setReverseId(e.target.value)} placeholder="le_…" /></div><div className="field grow"><label>Reason (required)</label><input value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} placeholder="e.g. Entered for the wrong student." /></div><button disabled={!reverseId || reverseReason.trim().length < 3 || busy} onClick={submitReverse}>Record reversal</button></div></div><div className="table-wrap"><table>
-          <thead><tr><th>When</th><th>Student</th><th>What</th><th>Detail</th><th>Cash effect</th></tr></thead>
-          <tbody>
-            {audit.map((e) => (
-              <tr key={e.id}>
-                <td className="small">{new Date(e.created_at).toLocaleString()}</td>
-                <td>{e.student_name}</td>
-                <td>{describeEntry(e)}<br /><span className="small">{e.id}</span></td>
-                <td className="small">{entryDetail(e)}{e.actor_name ? ` · by ${e.actor_name}` : ""}{e.reverses_id ? ` · reverses ${e.reverses_id}` : ""}</td>
-                <td className={e.amount_cents >= 0 ? "up" : "down"}>{money(e.amount_cents)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div></>}
-      </div>
-
       {profileId && (
         <div className="drawer-overlay" onClick={() => setProfileId(null)}>
           <div className="drawer" role="dialog" aria-modal="true" aria-label="Student account profile" onClick={(e) => e.stopPropagation()}>
@@ -1040,7 +964,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <p className="hint">Email is tied to Google sign-in and cannot be edited here.</p>
                 </div>
                 <div className="panel">
-                  <h2>Job and recurring profile</h2>
+                  <h2>Job</h2>
                   <p className="hint">
                     {profile.student.job_title
                       ? <>Current: <strong>{profile.student.job_title}</strong>{profile.student.job_pay_cents != null ? <> · {money(profile.student.job_pay_cents)} per paycheck</> : " · pay not set"}</>
@@ -1066,7 +990,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                       </datalist>
                     </div>
                     <div className="field"><label>Pay per paycheck ($)</label><input value={jobPay} onChange={(e) => setJobPay(e.target.value)} placeholder="e.g. 850.00" inputMode="decimal" /></div>
-                    <div className="field"><label>Monthly car payment ($)</label><input value={carPayment} onChange={(e) => setCarPayment(e.target.value)} placeholder="e.g. 275.00" inputMode="decimal" /></div>
                   </div>
                   {jobCatalog.length > 0 && (
                     <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
@@ -1078,9 +1001,23 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   )}
                   <div className="row" style={{ marginTop: 8 }}>
                     <button disabled={busy || (jobTitle.trim().length !== 0 && jobTitle.trim().length < 2)} onClick={saveJob}>Save job</button>
-                    {(jobTitle.trim() || jobPay.trim() || carPayment.trim()) && <button className="ghost" disabled={busy} onClick={() => { setJobTitle(""); setJobPay(""); setCarPayment(""); }}>Clear</button>}
+                    {(jobTitle.trim() || jobPay.trim()) && <button className="ghost" disabled={busy} onClick={() => { setJobTitle(""); setJobPay(""); }}>Clear job</button>}
                   </div>
-                  <p className="hint">Leave fields blank and Save to clear. Students see job, pay, and the car-payment reminder on their dashboard.</p>
+                </div>
+                <div className="panel">
+                  <h2>Recurring expenses</h2>
+                  <p className="hint">
+                    Current: {(profile.student as any).rent_cents != null ? <><strong>{money((profile.student as any).rent_cents)}</strong> rent</> : "rent not set"}{" · "}{profile.student.car_payment_cents != null ? <><strong>{money(profile.student.car_payment_cents)}</strong> car</> : "car not set"}. Bill these from Banking → Send bills → assigned amounts.
+                  </p>
+                  <div className="row">
+                    <div className="field"><label>Monthly rent ($)</label><input value={rent} onChange={(e) => setRent(e.target.value)} placeholder="e.g. 800.00" inputMode="decimal" /></div>
+                    <div className="field"><label>Monthly car payment ($)</label><input value={carPayment} onChange={(e) => setCarPayment(e.target.value)} placeholder="e.g. 275.00" inputMode="decimal" /></div>
+                  </div>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <button disabled={busy} onClick={saveJob}>Save expenses</button>
+                    {(rent.trim() || carPayment.trim()) && <button className="ghost" disabled={busy} onClick={() => { setRent(""); setCarPayment(""); }}>Clear expenses</button>}
+                  </div>
+                  <p className="hint">Leave fields blank and Save to clear. Saving never touches the job above.</p>
                 </div>
                 {(() => {
                   const ref = refById[profileId];
@@ -1173,6 +1110,92 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
       )}
     </>
   );
+
+  if (tsection === "banking") {
+    return (
+      <>
+        {workspaceTabs}
+        {err && <div className="error" role="alert">{err}</div>}
+        {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} onOpenStudent={(id) => void openProfile(id)} /></div>
+        {profileDrawer}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {workspaceTabs}
+      <div className="page-intro">
+        <div><div className="eyebrow">Teacher desk</div><h2>Brokerage classroom</h2><p>Fund accounts, monitor participation, and control when students may trade.</p></div>
+        <div className="teacher-summary"><strong>{roster.length}</strong><span>students shown</span></div>
+      </div>
+      <div className="pills">
+        <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => setClassId("")}>All students</button>
+        {classes.map((c) => (
+          <button key={c.id} className={`pill${classId === c.id ? " active" : ""}`} onClick={() => setClassId(c.id)}>
+            {c.name}{c.trading_frozen ? " — frozen" : ""}
+          </button>
+        ))}
+        {updating && <span className="small" style={{ alignSelf: "center" }}>Updating…</span>}
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        {cls && <button className={cls.trading_frozen ? "" : "danger"} onClick={() => setFreezeConfirm(cls)}>{cls.trading_frozen ? "Reopen trading" : "Close trading"}</button>}
+        <span className="small">Join code{classId ? "" : "s"}: {classId ? cls?.join_code : classes.map((c) => `${c.name.split(" ")[0]} ${c.join_code}`).join(" · ")}</span>
+      </div>
+      {freezeConfirm && <div className="confirm" role="dialog" aria-modal="true" aria-labelledby="freeze-title"><h3 id="freeze-title">{freezeConfirm.trading_frozen ? "Reopen" : "Close"} trading?</h3><p>{freezeConfirm.name} students {freezeConfirm.trading_frozen ? "will be able to buy and sell again" : "will immediately be blocked from buying and selling"}.</p><div className="row"><button className={freezeConfirm.trading_frozen ? "" : "danger-solid"} disabled={busy} onClick={() => toggleFreeze(freezeConfirm)}>Yes, {freezeConfirm.trading_frozen ? "reopen" : "close"} trading</button><button className="ghost" onClick={() => setFreezeConfirm(null)}>Cancel</button></div></div>}
+      {err && <div className="error" role="alert">{err}</div>}
+      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+
+      <div className="panel">
+        <h2>Roster — simulated brokerage accounts</h2>
+        <p className="hint">Click a student to open their account profile, review activity, and adjust banking or brokerage balances.</p>
+        <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
+        <div className="table-wrap"><table>
+          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Brokerage cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
+          <tbody>
+            {sorted.map((s) => {
+              const ref = refById[s.id];
+              const funded = ref && (ref.checking != null || ref.savings != null);
+              const jobLabel = s.job_title || ref?.job;
+              return (
+                <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
+                  <td><strong>{s.name}</strong><br /><span className="small">{jobLabel || s.email || "no email yet"}{jobLabel && s.email ? ` · ${s.email}` : ""}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
+                  <td className="small">{s.class_name || "—"}</td>
+                  <td>{money(s.cash_cents)}</td>
+                  <td>{money(s.investedCents)}</td>
+                  <td>{money(s.portfolioCents)}</td>
+                  <td className={s.gainLossCents >= 0 ? "up" : "down"}>{money(s.gainLossCents)}</td>
+                  <td>{s.trades}</td>
+                  <td className="small">{fmtWhen(s.last_active_at)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table></div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-heading"><div><h2>Audit history</h2><p className="hint">Complete record for {classId ? "this class" : "all students"}. Open this only when you need to investigate or reverse an entry.</p></div><button className="ghost" onClick={() => setAuditOpen((v) => !v)}>{auditOpen ? "Hide audit" : `Open audit (${audit.length})`}</button></div>
+        {auditOpen && <><div className="reversal-box"><h3>Reverse an incorrect cash adjustment</h3><p className="hint">This creates a compensating entry; it never deletes the original.</p><div className="row"><div className="field"><label>Entry id</label><input value={reverseId} onChange={(e) => setReverseId(e.target.value)} placeholder="le_…" /></div><div className="field grow"><label>Reason (required)</label><input value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} placeholder="e.g. Entered for the wrong student." /></div><button disabled={!reverseId || reverseReason.trim().length < 3 || busy} onClick={submitReverse}>Record reversal</button></div></div><div className="table-wrap"><table>
+          <thead><tr><th>When</th><th>Student</th><th>What</th><th>Detail</th><th>Cash effect</th></tr></thead>
+          <tbody>
+            {audit.map((e) => (
+              <tr key={e.id}>
+                <td className="small">{new Date(e.created_at).toLocaleString()}</td>
+                <td>{e.student_name}</td>
+                <td>{describeEntry(e)}<br /><span className="small">{e.id}</span></td>
+                <td className="small">{entryDetail(e)}{e.actor_name ? ` · by ${e.actor_name}` : ""}{e.reverses_id ? ` · reverses ${e.reverses_id}` : ""}</td>
+                <td className={e.amount_cents >= 0 ? "up" : "down"}>{money(e.amount_cents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div></>}
+      </div>
+
+      {profileDrawer}
+    </>
+  );
 }
 
 function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStudent }: {
@@ -1191,6 +1214,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
   const [payPreview, setPayPreview] = useState<any>(null);
   const payBatch = useRef("");
   // Bill form
+  const [billMode, setBillMode] = useState<"assigned_rent" | "assigned_car" | "flat">("assigned_rent");
   const [billTemplate, setBillTemplate] = useState("");
   const [billTitle, setBillTitle] = useState("");
   const [billDollars, setBillDollars] = useState("");
@@ -1287,6 +1311,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
     setBillTemplate(id);
     const t = templates.find((x) => x.id === id);
     if (t) {
+      setBillMode("flat");
       setBillTitle(t.title);
       setBillDollars((t.amount_cents / 100).toFixed(2));
       setBillFee((t.late_fee_cents / 100).toFixed(2));
@@ -1303,7 +1328,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         method: "POST",
         body: JSON.stringify({
           classId, studentIds: ids, templateId: billTemplate || undefined,
-          title: billTitle, dollars: Number(billDollars),
+          title: billTitle, mode: billMode, dollars: Number(billDollars),
           lateFeeDollars: billFee === "" ? 0 : Number(billFee),
           dueAt: billDue ? `${billDue}T12:00:00Z` : "",
           sender: billSender, documentTitle: billDocumentTitle, documentBody: billDocumentBody,
@@ -1321,7 +1346,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         method: "POST",
         body: JSON.stringify({
           classId, studentIds: ids, templateId: billTemplate || undefined,
-          title: billTitle, dollars: Number(billDollars),
+          title: billTitle, mode: billMode, dollars: Number(billDollars),
           lateFeeDollars: billFee === "" ? 0 : Number(billFee),
           dueAt: billDue ? `${billDue}T12:00:00Z` : "", batchId: billBatch.current,
           sender: billSender, documentTitle: billDocumentTitle, documentBody: billDocumentBody,
@@ -1400,14 +1425,15 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
     const aliases: Record<string, string[]> = {
       fullName: ["name", "fullname", "student", "studentname"], jobTitle: ["job", "jobtitle"], jobPay: ["pay", "jobpay", "paycheck", "payperpaycheck"],
       checking: ["checking", "checkingbalance"], savings: ["savings", "savingsbalance"], brokerage: ["brokerage", "brokeragecash", "investment", "investmentcash"],
-      carPayment: ["carpayment", "monthlycarpayment"], externalRef: ["studentid", "id", "externalref"],
+      carPayment: ["carpayment", "monthlycarpayment", "car"], rent: ["rent", "monthlyrent", "rentshare"],
+      externalRef: ["studentid", "id", "externalref"],
     };
     const at = (cells: string[], key: string) => { const i = headers.findIndex((h) => aliases[key].includes(h)); return i < 0 ? "" : cells[i] || ""; };
     const cents = (v: string) => v.trim() === "" ? null : Math.round(Number(v.replace(/[$,]/g, "")) * 100);
     return lines.slice(1).map(split).map((cells) => ({
       fullName: at(cells, "fullName"), externalRef: at(cells, "externalRef") || null, jobTitle: at(cells, "jobTitle") || null,
       jobPayCents: cents(at(cells, "jobPay")), checkingCents: cents(at(cells, "checking")), savingsCents: cents(at(cells, "savings")),
-      brokerageCents: cents(at(cells, "brokerage")), carPaymentCents: cents(at(cells, "carPayment")),
+      brokerageCents: cents(at(cells, "brokerage")), carPaymentCents: cents(at(cells, "carPayment")), rentCents: cents(at(cells, "rent")),
     }));
   };
 
@@ -1482,18 +1508,18 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
           <div className="row" style={{ marginBottom: 8, background: "#eef0ff", padding: 8, borderRadius: 10 }} role="toolbar" aria-label="Selected student actions">
             <span className="small"><strong>{checked.size} student{checked.size === 1 ? "" : "s"} selected</strong></span>
             <button style={{ background: "#dff2dc", borderColor: "#8fce8f", color: "#2c7a2f", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Bonus"); setPayMode("flat"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send bonuses</button>
-            <button style={{ background: "#fbdcdc", borderColor: "#e88", color: "#b3261e", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillTitle("Fine"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send fines</button>
+            <button style={{ background: "#fbdcdc", borderColor: "#e88", color: "#b3261e", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillMode("flat"); setBillTitle("Fine"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send fines</button>
             <button style={{ background: "#dfe3ff", borderColor: "#8f9bf0", color: "#353dc6", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Weekly paycheck"); setPayMode("assigned"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send paychecks</button>
-            <button style={{ background: "#fdf0c3", borderColor: "#e3c25a", color: "#8a6d00", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillTitle("Expense"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send expenses</button>
+            <button style={{ background: "#fdf0c3", borderColor: "#e3c25a", color: "#8a6d00", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillMode("assigned_rent"); setBillTitle("Rent"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send expenses</button>
             <button className="ghost" onClick={() => setChecked(new Set())}>Clear</button>
           </div>
         )}
         <div className="table-wrap"><table>
-          <thead><tr><th><input type="checkbox" aria-label="Check all students" checked={allChecked} onChange={toggleAll} /></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
+          <thead><tr><th><input type="checkbox" aria-label="Check all students" checked={allChecked} onChange={toggleAll} style={{ width: 22, height: 22 }} /></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
           <tbody>
             {summary.map((s) => (
               <tr key={s.id} className="clickable-row" onClick={() => onOpenStudent(s.id)}>
-                <td><input type="checkbox" aria-label={`Select ${s.name}`} checked={checked.has(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(s.id)} /></td>
+                <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${s.name}`} checked={checked.has(s.id)} onChange={() => toggle(s.id)} style={{ width: 22, height: 22, cursor: "pointer" }} /></td>
                 <td><strong>{s.name}</strong><br /><span className="small">{s.class_name || "—"}</span></td>
                 <td>{money(s.checking_cents)}</td>
                 <td>{money(s.savings_cents)}</td>
@@ -1512,7 +1538,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         {classId ? <>
           <details>
             <summary>Import or paste a class CSV</summary>
-            <p className="hint">Headers supported: Name, Job, Pay, Checking, Savings, Brokerage, Car Payment, Student ID. Blank cells stay blank.</p>
+            <p className="hint">Headers supported: Name, Job, Pay, Checking, Savings, Brokerage, Car Payment, Rent, Student ID. Blank cells stay blank.</p>
             <div className="field"><label>Source label</label><input value={importSource} onChange={(e) => setImportSource(e.target.value)} /></div>
             <div className="field" style={{ marginTop: 8 }}><label>CSV data</label><textarea rows={7} value={importCsv} onChange={(e) => setImportCsv(e.target.value)} placeholder={'Name,Job,Pay,Checking,Savings,Brokerage,Car Payment\nJordan Lee,Electrician,850,1200,300,500,275'} /></div>
             <div className="row" style={{ marginTop: 8 }}><button disabled={busy || importCsv.trim().split(/\r?\n/).length < 2} onClick={importProfiles}>Import preloaded profiles</button></div>
@@ -1594,7 +1620,8 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
 
           <div className="panel" id="send-bills">
             <h2>Send bills</h2>
-            <p className="hint">Bills arrive in each student's mailbox. Students pay from checking — nothing is taken automatically.</p>
+            <p className="hint">Bills arrive in each student's mailbox. Students pay from checking — nothing is taken automatically. Use each student's assigned rent or car payment, or enter one flat amount.</p>
+            <div className="field"><label>Bill source</label><select value={billMode} onChange={(e) => { setBillMode(e.target.value as any); setBillPreview(null); }}><option value="assigned_rent">Each student's assigned rent</option><option value="assigned_car">Each student's assigned car payment</option><option value="flat">One amount for everyone</option></select></div>
             <div className="field"><label>From template (optional)</label>
               <select value={billTemplate} onChange={(e) => useTemplate(e.target.value)}>
                 <option value="">Custom bill…</option>
@@ -1608,16 +1635,21 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
             </div>
             <div className="field" style={{ marginTop: 8 }}><label>Letter or statement text</label><textarea rows={4} value={billDocumentBody} onChange={(e) => { setBillDocumentBody(e.target.value); setBillPreview(null); }} placeholder="Service period, charges, contract terms, or other correspondence students should review…" /></div>
             <div className="row" style={{ marginTop: 8 }}>
-              <div className="field"><label>Dollars</label><input value={billDollars} onChange={(e) => { setBillDollars(e.target.value); setBillPreview(null); }} placeholder="80.00" inputMode="decimal" /></div>
+              {billMode === "flat" && <div className="field"><label>Dollars</label><input value={billDollars} onChange={(e) => { setBillDollars(e.target.value); setBillPreview(null); }} placeholder="80.00" inputMode="decimal" /></div>}
               <div className="field"><label>Late fee ($)</label><input value={billFee} onChange={(e) => { setBillFee(e.target.value); setBillPreview(null); }} placeholder="15.00" inputMode="decimal" /></div>
               <div className="field"><label>Due date</label><input type="date" value={billDue} onChange={(e) => { setBillDue(e.target.value); setBillPreview(null); }} /></div>
             </div>
             <div className="row" style={{ marginTop: 8 }}>
-              <button disabled={!(Number(billDollars) > 0) || !billDue || checked.size === 0 || busy} onClick={previewBill}>Preview ({checked.size})</button>
+              <button disabled={(billMode === "flat" && !(Number(billDollars) > 0)) || !billDue || checked.size === 0 || busy} onClick={previewBill}>Preview ({checked.size})</button>
             </div>
             {billPreview && (
               <div className="confirm">
-                <p><strong>Confirm:</strong> issue “{billPreview.title}” ({money(billPreview.perStudentCents)} × {billPreview.count} students = {money(billPreview.totalCents)}), due {new Date(billPreview.dueAt).toLocaleDateString()}{billPreview.lateFeeCents > 0 ? `, ${money(billPreview.lateFeeCents)} late fee` : ""}?</p>
+                {billPreview.mode && billPreview.mode !== "flat" ? (
+                  <><p><strong>Confirm:</strong> issue “{billPreview.title}” at each student's assigned {billPreview.mode === "assigned_rent" ? "rent" : "car payment"} ({money(billPreview.totalCents)} total to {billPreview.count} students), due {new Date(billPreview.dueAt).toLocaleDateString()}{billPreview.lateFeeCents > 0 ? `, ${money(billPreview.lateFeeCents)} late fee` : ""}?</p>
+                  <p className="small">{billPreview.students.slice(0, 6).map((s: any) => `${s.name}: ${money(s.amountCents)}`).join(" · ")}{billPreview.count > 6 ? ` · +${billPreview.count - 6} more` : ""}</p></>
+                ) : (
+                  <p><strong>Confirm:</strong> issue “{billPreview.title}” ({money(billPreview.perStudentCents)} × {billPreview.count} students = {money(billPreview.totalCents)}), due {new Date(billPreview.dueAt).toLocaleDateString()}{billPreview.lateFeeCents > 0 ? `, ${money(billPreview.lateFeeCents)} late fee` : ""}?</p>
+                )}
                 <div className="row"><button disabled={busy} onClick={issueBill}>Yes, issue bills</button><button className="ghost" onClick={() => setBillPreview(null)}>Cancel</button></div>
               </div>
             )}
