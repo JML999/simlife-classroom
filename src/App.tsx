@@ -1201,6 +1201,12 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
   const [billDocumentBody, setBillDocumentBody] = useState("");
   const [billPreview, setBillPreview] = useState<any>(null);
   const billBatch = useRef("");
+  // Per-student bill drafts (teacher reviews, then explicitly sends).
+  const [billDrafts, setBillDrafts] = useState<any[]>([]);
+  const [draftStudent, setDraftStudent] = useState("");
+  const [draftTitle, setDraftTitle] = useState("Rent");
+  const [draftDollars, setDraftDollars] = useState("");
+  const [draftDue, setDraftDue] = useState(() => new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10));
   // Template form
   const [tplTitle, setTplTitle] = useState("");
   const [tplDollars, setTplDollars] = useState("");
@@ -1222,16 +1228,18 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
   const load = useCallback(async () => {
     try {
       const qs = classId ? `?classId=${classId}` : "";
-      const [s, t, d, o] = await Promise.all([
+      const [s, t, d, o, bd] = await Promise.all([
         api<{ students: any[] }>(`/api/teacher/bank${qs}`),
         api<{ templates: any[] }>("/api/teacher/bills/templates"),
         api<{ disputes: any[] }>(`/api/teacher/disputes${qs}`),
         api<{ profiles: any[] }>(`/api/teacher/onboarding${qs}`),
+        classId ? api<{ drafts: any[] }>(`/api/teacher/bill-drafts?classId=${encodeURIComponent(classId)}`) : Promise.resolve({ drafts: [] }),
       ]);
       setSummary(s.students);
       setTemplates(t.templates);
       setDisputes(d.disputes);
       setOnboardingProfiles(o.profiles);
+      setBillDrafts(bd.drafts);
     } catch (e: any) { setErr(e.message); }
   }, [classId]);
   useEffect(() => { load(); }, [load]);
@@ -1321,6 +1329,36 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
       });
       setNotice(`Issued “${billTitle}” to ${r.issued} student${r.issued === 1 ? "" : "s"} (${money(r.totalCents)} total). Students must pay from checking.`);
       setBillPreview(null); setBillTitle(""); setBillDollars(""); setBillFee(""); setBillDue(""); setBillTemplate(""); setBillSender(""); setBillDocumentTitle(""); setBillDocumentBody("");
+      await load(); onChanged();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const createDraft = async () => {
+    if (!classId || !draftStudent || !(Number(draftDollars) > 0) || !draftDue || busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      await api("/api/teacher/bill-drafts", { method: "POST", body: JSON.stringify({
+        classId, studentId: draftStudent, title: draftTitle, dollars: Number(draftDollars),
+        dueAt: `${draftDue}T12:00:00Z`, sender: "SimLife Housing", documentTitle: `${draftTitle} statement`,
+      }) });
+      setNotice("Bill draft added. Review it below, then press Send when ready.");
+      setDraftStudent(""); setDraftDollars(""); await load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const saveDraft = async (draft: any, send: boolean) => {
+    if (busy) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      await api(`/api/teacher/bill-drafts/${draft.id}`, { method: "PUT", body: JSON.stringify({
+        classId, studentId: draft.user_id, title: draft.title, dollars: Number(draft.dollars),
+        lateFeeDollars: Number(draft.lateFeeDollars || 0), dueAt: `${draft.dueDate}T12:00:00Z`,
+        sender: draft.sender, documentTitle: draft.documentTitle, documentBody: draft.documentBody,
+      }) });
+      if (send) {
+        const result = await api<any>(`/api/teacher/bill-drafts/${draft.id}/send`, { method: "POST" });
+        setNotice(result.deduped ? "That bill was already sent—no duplicate was created." : `Sent “${draft.title}” to the student's mailbox.`);
+      } else setNotice("Bill draft saved.");
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
@@ -1440,6 +1478,16 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
       <div className="panel">
         <h2>Class accounts</h2>
         <p className="hint">Check students to target paychecks and bills. Unchecked students are skipped.</p>
+        {checked.size > 0 && (
+          <div className="row" style={{ marginBottom: 8, background: "#eef0ff", padding: 8, borderRadius: 10 }} role="toolbar" aria-label="Selected student actions">
+            <span className="small"><strong>{checked.size} student{checked.size === 1 ? "" : "s"} selected</strong></span>
+            <button style={{ background: "#dff2dc", borderColor: "#8fce8f", color: "#2c7a2f", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Bonus"); setPayMode("flat"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send bonuses</button>
+            <button style={{ background: "#fbdcdc", borderColor: "#e88", color: "#b3261e", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillTitle("Fine"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send fines</button>
+            <button style={{ background: "#dfe3ff", borderColor: "#8f9bf0", color: "#353dc6", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Weekly paycheck"); setPayMode("assigned"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send paychecks</button>
+            <button style={{ background: "#fdf0c3", borderColor: "#e3c25a", color: "#8a6d00", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillTitle("Expense"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send expenses</button>
+            <button className="ghost" onClick={() => setChecked(new Set())}>Clear</button>
+          </div>
+        )}
         <div className="table-wrap"><table>
           <thead><tr><th><input type="checkbox" aria-label="Check all students" checked={allChecked} onChange={toggleAll} /></th><th>Student</th><th>Checking</th><th>Savings</th><th>Brokerage</th><th>Bills due</th><th>Late</th></tr></thead>
           <tbody>
@@ -1483,6 +1531,21 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         </> : <p className="hint">Choose a class to import or review first-login profiles.</p>}
       </div>
 
+      {classId && <div className="panel">
+        <div className="panel-heading"><div><h2>Assigned bill drafts</h2><p className="hint">Drafts are invisible to students until you press Send. You can edit the student, amount, and due date first.</p></div><span className="portfolio-count">{billDrafts.filter((d) => d.status === "draft").length} ready</span></div>
+        <div className="row">
+          <div className="field grow"><label>Student</label><select value={draftStudent} onChange={(e) => setDraftStudent(e.target.value)}><option value="">Choose student…</option>{summary.filter((s) => s.email).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+          <div className="field grow"><label>Bill</label><input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} placeholder="Rent" /></div>
+          <div className="field"><label>Dollars</label><input inputMode="decimal" value={draftDollars} onChange={(e) => setDraftDollars(e.target.value)} placeholder="800.00" /></div>
+          <div className="field"><label>Due date</label><input type="date" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} /></div>
+          <button disabled={busy || !draftStudent || draftTitle.trim().length < 2 || !(Number(draftDollars) > 0) || !draftDue} onClick={createDraft}>Add draft</button>
+        </div>
+        {billDrafts.length === 0 ? <p className="small">No assigned bill drafts for this class.</p> : <div className="table-wrap"><table>
+          <thead><tr><th>Student</th><th>Bill</th><th>Amount</th><th>Due</th><th>Status</th><th /></tr></thead>
+          <tbody>{billDrafts.map((draft) => <BillDraftRow key={`${draft.id}:${draft.updated_at}`} draft={draft} students={summary.filter((s) => s.email)} busy={busy} onSubmit={saveDraft} />)}</tbody>
+        </table></div>}
+      </div>}
+
       <div className="panel">
         <div className="panel-heading"><div><h2>Student questions</h2><p className="hint">Bill questions from students{classId ? " in this class" : ""}. Answering never changes the bill — it only records your reply.</p></div><span className="portfolio-count">{openDisputes.length} open</span></div>
         {disputes.length === 0 && <p className="small">No questions yet. When a student questions a bill, it appears here.</p>}
@@ -1511,7 +1574,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
 
       {classId && (
         <div className="grid2">
-          <div className="panel">
+          <div className="panel" id="send-paychecks">
             <h2>Send paychecks</h2>
             <p className="hint">Deposits land in checking. Use each student's assigned pay or enter one flat amount.</p>
             <div className="field"><label>Label</label><input value={payLabel} onChange={(e) => { setPayLabel(e.target.value); setPayPreview(null); }} placeholder="Weekly paycheck" /></div>
@@ -1529,7 +1592,7 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
             )}
           </div>
 
-          <div className="panel">
+          <div className="panel" id="send-bills">
             <h2>Send bills</h2>
             <p className="hint">Bills arrive in each student's mailbox. Students pay from checking — nothing is taken automatically.</p>
             <div className="field"><label>From template (optional)</label>
@@ -1583,4 +1646,21 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
       </div>
     </>
   );
+}
+
+function BillDraftRow({ draft, students, busy, onSubmit }: { draft: any; students: any[]; busy: boolean; onSubmit: (draft: any, send: boolean) => void }) {
+  const [form, setForm] = useState({
+    id: draft.id, user_id: draft.user_id, title: draft.title, dollars: (Number(draft.amount_cents) / 100).toFixed(2),
+    lateFeeDollars: (Number(draft.late_fee_cents) / 100).toFixed(2), dueDate: String(draft.due_at).slice(0, 10),
+    sender: draft.sender || "", documentTitle: draft.document_title || "", documentBody: draft.document_body || "",
+  });
+  const sent = draft.status === "sent";
+  return <tr>
+    <td><select disabled={sent || busy} aria-label={`Student for ${draft.title}`} value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })}>{students.map((s) => <option value={s.id} key={s.id}>{s.name}</option>)}</select></td>
+    <td><input disabled={sent || busy} aria-label={`Title for ${draft.student_name}`} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></td>
+    <td><input className="compact-money" disabled={sent || busy} aria-label={`Amount for ${draft.student_name}`} inputMode="decimal" value={form.dollars} onChange={(e) => setForm({ ...form, dollars: e.target.value })} /></td>
+    <td><input disabled={sent || busy} aria-label={`Due date for ${draft.student_name}`} type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /></td>
+    <td><span className={sent ? "badge-paid" : "badge-due"}>{sent ? "sent" : "draft"}</span></td>
+    <td>{sent ? <span className="small">In mailbox</span> : <div className="row"><button className="ghost" disabled={busy} onClick={() => onSubmit(form, false)}>Save</button><button disabled={busy || !(Number(form.dollars) > 0) || !form.dueDate || form.title.trim().length < 2} onClick={() => onSubmit(form, true)}>Send</button></div>}</td>
+  </tr>;
 }

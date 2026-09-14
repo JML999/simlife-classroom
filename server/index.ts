@@ -30,6 +30,7 @@ import {
 } from "./onboarding.js";
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
+import { createBillDraft, listBillDrafts, sendBillDraft, updateBillDraft } from "./bill-drafts.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -937,6 +938,40 @@ app.post("/api/teacher/bills/templates", requireCurrentTeacher, async (req, res)
     });
     res.json({ ok: true, id: r.id });
   } catch (err) { bankError(res, err); }
+});
+
+function draftInput(body: any) {
+  const dollars = Number(body?.dollars);
+  const feeDollars = body?.lateFeeDollars === undefined || body?.lateFeeDollars === "" ? 0 : Number(body.lateFeeDollars);
+  return {
+    studentId: String(body?.studentId || ""), classId: String(body?.classId || ""),
+    title: String(body?.title || ""), amountCents: Math.round(dollars * 100),
+    lateFeeCents: Math.round(feeDollars * 100), dueAt: String(body?.dueAt || ""),
+    sender: String(body?.sender || ""), documentTitle: String(body?.documentTitle || ""),
+    documentBody: String(body?.documentBody || ""),
+  };
+}
+
+app.get("/api/teacher/bill-drafts", requireCurrentTeacher, async (req, res) => {
+  res.json({ drafts: await listBillDrafts(String(req.query["classId"] || "")) });
+});
+
+app.post("/api/teacher/bill-drafts", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try { res.json(await createBillDraft({ ...draftInput(req.body), createdBy: teacher.userId })); }
+  catch (err) { bankError(res, err); }
+});
+
+app.put("/api/teacher/bill-drafts/:id", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try { res.json(await updateBillDraft(String(req.params.id || ""), { ...draftInput(req.body), actorId: teacher.userId })); }
+  catch (err) { bankError(res, err); }
+});
+
+app.post("/api/teacher/bill-drafts/:id/send", requireCurrentTeacher, async (req, res) => {
+  const teacher = readSession(req)!;
+  try { res.json(await sendBillDraft(String(req.params.id || ""), teacher.userId)); }
+  catch (err) { bankError(res, err); }
 });
 
 function parseBillForm(body: any) {
