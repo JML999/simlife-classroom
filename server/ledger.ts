@@ -22,7 +22,7 @@ export class LedgerError extends Error {
 export interface LedgerEntry {
   id: string;
   account_id: string;
-  kind: "cash_adjust" | "cash_reversal" | "buy" | "sell";
+  kind: "cash_adjust" | "cash_reversal" | "buy" | "sell" | "transfer_in" | "transfer_out";
   amount_cents: number;
   ticker: string | null;
   qty_micro: number | null;

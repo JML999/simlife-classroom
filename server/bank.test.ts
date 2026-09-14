@@ -356,11 +356,32 @@ test("class-wide bill batch is scoped and idempotent", async () => {
   );
 });
 
-test("brokerage→bank and savings→brokerage are rejected; conservation holds", async () => {
+test("brokerage→checking round-trips; only spare cash moves", async () => {
+  const s = await makeStudent();
+  await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 50000, idempotencyKey: uid() });
+  await transfer({ userId: s, from: "checking", to: "brokerage", amountCents: 20000, idempotencyKey: uid() });
+  await transfer({ userId: s, from: "brokerage", to: "checking", amountCents: 8000, memo: "Need it back", idempotencyKey: uid() });
+  const bank = await bankSummaryFor(s);
+  assert.equal(bank.checkingCents, 38000);
+  assert.ok((await checkBankInvariant(s)).ok);
+  const inv = await checkInvariant(s);
+  assert.ok(inv.ok && inv.cash === 12000, JSON.stringify(inv));
+  const rows = await (await import("./db.js")).q(`SELECT kind, amount_cents FROM ledger l JOIN accounts a ON a.id = l.account_id WHERE a.user_id = ? ORDER BY l.created_at ASC`, [s]);
+  assert.deepEqual(rows.map((r: any) => [r.kind, r.amount_cents]), [["transfer_in", 20000], ["transfer_out", -8000]]);
+  // Cannot withdraw more cash than exists; no partial writes.
+  await assert.rejects(
+    () => transfer({ userId: s, from: "brokerage", to: "checking", amountCents: 12001, idempotencyKey: uid() }),
+    (e: any) => e instanceof BankError && e.code === "INSUFFICIENT_FUNDS",
+  );
+  assert.ok((await checkBankInvariant(s)).ok);
+  assert.ok((await checkInvariant(s)).ok);
+});
+
+test("savings→brokerage and brokerage→savings are rejected; conservation holds", async () => {
   const s = await makeStudent();
   await postIncome({ userId: s, actorId: TEACHER, label: "Pay", amountCents: 20000, idempotencyKey: uid() });
   await assert.rejects(
-    () => transfer({ userId: s, from: "brokerage", to: "checking", amountCents: 100, idempotencyKey: uid() }),
+    () => transfer({ userId: s, from: "brokerage", to: "savings", amountCents: 100, idempotencyKey: uid() }),
     (e: any) => e instanceof BankError && e.code === "INVALID_INPUT",
   );
   await assert.rejects(

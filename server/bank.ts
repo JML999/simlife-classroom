@@ -3,10 +3,11 @@
  *
  * Boundaries (see directive):
  * - Bank money lives in bank_accounts/bank_journal ONLY. Brokerage money lives
- *   in accounts/ledger ONLY. A checking→brokerage transfer touches both sides
+ *   in accounts/ledger ONLY. A checking↔brokerage transfer touches both sides
  *   inside ONE database transaction, writing a journal row on the bank side
- *   and a `transfer_in` ledger row on the brokerage side (a transfer record,
- *   not a trade — historical brokerage entries are never reinterpreted).
+ *   and a `transfer_in`/`transfer_out` ledger row on the brokerage side (a
+ *   transfer record, not a trade — historical brokerage entries are never
+ *   reinterpreted).
  * - The journal is append-only. Balances are cached on bank_accounts but only
  *   ever updated inside the same tx as their journal row(s).
  * - Invariant per user: checking == SUM(checking_leg), savings == SUM(savings_leg).
@@ -301,10 +302,11 @@ export async function adjustBankBalance(opts: {
 export type TransferTarget = "checking" | "savings" | "brokerage";
 
 /**
- * Move money: checking↔savings (one journal row, two legs) or
- * checking→brokerage (one tx across BOTH subsystems: journal row +
- * `transfer_in` brokerage ledger row + both cached balances).
- * One-way into brokerage only — there is no brokerage→bank path.
+ * Move money: checking↔savings (one journal row, two legs),
+ * checking→brokerage or brokerage→checking (one tx across BOTH subsystems:
+ * journal row + `transfer_in`/`transfer_out` brokerage ledger row + both
+ * cached balances). Only spare brokerage CASH can move back — investments
+ * are never liquidated; the student must sell first.
  */
 export async function transfer(opts: {
   userId: string; from: TransferTarget; to: TransferTarget;
@@ -313,20 +315,20 @@ export async function transfer(opts: {
   const key = requireKey(opts.idempotencyKey);
   const amount = requireSaneCents(requirePositiveCents(opts.amountCents, "Transfer amount"));
   if (opts.from === opts.to) throw new BankError("INVALID_INPUT", "Pick two different accounts.");
-  if (opts.from === "brokerage") {
-    throw new BankError("INVALID_INPUT", "Transfers out of brokerage are not supported.");
-  }
-  if (opts.from !== "checking" && opts.from !== "savings") throw new BankError("INVALID_INPUT", "Transfers start from checking or savings.");
+  if (opts.from !== "checking" && opts.from !== "savings" && opts.from !== "brokerage") throw new BankError("INVALID_INPUT", "Transfers start from checking, savings, or brokerage.");
   if (opts.to !== "checking" && opts.to !== "savings" && opts.to !== "brokerage") {
     throw new BankError("INVALID_INPUT", "Transfers go to checking, savings, or brokerage.");
   }
   if (opts.from === "savings" && opts.to === "brokerage") {
     throw new BankError("INVALID_INPUT", "Move savings → checking first, then checking → brokerage. (Keeps every transfer to one debit + one credit.)");
   }
+  if (opts.from === "brokerage" && opts.to !== "checking") {
+    throw new BankError("INVALID_INPUT", "Brokerage cash moves back to checking only. (Bills pay from checking.)");
+  }
   const memo = (opts.memo || "").trim().slice(0, 200);
   const checkingLeg = opts.from === "checking" ? -amount : opts.to === "checking" ? amount : 0;
   const savingsLeg = opts.from === "savings" ? -amount : opts.to === "savings" ? amount : 0;
-  const kind = opts.to === "brokerage" ? "transfer_to_brokerage" : "transfer";
+  const kind = opts.to === "brokerage" ? "transfer_to_brokerage" : opts.from === "brokerage" ? "transfer_from_brokerage" : "transfer";
   return withTx(async (t) => {
     let acct = await getOrCreateBankAccount(t, opts.userId);
     const existing = await findJournalByKey(t, key);
@@ -360,6 +362,31 @@ export async function transfer(opts: {
     }
     await t.run(`UPDATE bank_accounts SET checking_cents = ?, savings_cents = ? WHERE id = ?`,
       [nextChecking, nextSavings, acct.id]);
+    if (opts.from === "brokerage") {
+      // Reverse half of the atomic move: debit existing brokerage cash.
+      // `transfer_out` is a transfer record, not a trade — only spare cash
+      // moves; holdings are untouched, and the brokerage invariant
+      // (cash == SUM(amount)) still holds.
+      let bacct = await t.one<{ id: string; cash_cents: number }>(
+        `SELECT id, cash_cents FROM accounts WHERE user_id = ?${fu}`, [opts.userId],
+      );
+      const cash = bacct ? Number(bacct.cash_cents) : 0;
+      if (!bacct || cash < amount) {
+        throw new BankError("INSUFFICIENT_FUNDS", `Only ${fmtCents(cash)} in brokerage cash. Sell investments first — transfers never sell shares automatically.`);
+      }
+      try {
+        await t.run(
+          `INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, reason, actor_id, idempotency_key, reverses_id, quote_ts, quote_source, created_at)
+           VALUES (?, ?, 'transfer_out', ?, NULL, NULL, NULL, ?, NULL, ?, NULL, NULL, NULL, ?)`,
+          [newId("le"), bacct.id, -amount, memo || "Transfer to checking", `xfer:${key}`, nowIso()],
+        );
+      } catch (err: any) {
+        if (!isUniqueViolation(err)) throw err;
+        throw new BankError("INVALID_INPUT", "This transfer was already partially recorded. Try again with a fresh confirmation.");
+      }
+      await t.run(`UPDATE accounts SET cash_cents = ? WHERE id = ?`, [cash - amount, bacct.id]);
+      entry.related_id = "brokerage:transfer_out";
+    }
     if (opts.to === "brokerage") {
       // Second half of the atomic move: credit existing brokerage cash.
       // `transfer_in` is a transfer record, not a trade — historical trade

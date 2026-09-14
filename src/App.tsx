@@ -464,6 +464,7 @@ function describeBankEntry(e: any): string {
   if (e.kind === "opening_balance") return "Confirmed opening balance";
   if (e.kind === "transfer") return "Transfer";
   if (e.kind === "transfer_to_brokerage") return "Moved to brokerage";
+  if (e.kind === "transfer_from_brokerage") return "Moved from brokerage";
   if (e.kind === "bill_payment") return "Bill paid";
   if (e.kind === "savings_interest") return "Savings interest";
   if (e.kind === "bank_adjustment") return "Balance adjusted by teacher";
@@ -551,7 +552,9 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
         ? "Already processed — duplicate ignored."
         : to === "brokerage"
           ? `Moved ${money(Math.round(Number(dollars) * 100))} into your brokerage account. It is ready to invest.`
-          : `Moved ${money(Math.round(Number(dollars) * 100))} from ${from} to ${to}.`);
+          : from === "brokerage"
+            ? `Moved ${money(Math.round(Number(dollars) * 100))} from brokerage back to checking.`
+            : `Moved ${money(Math.round(Number(dollars) * 100))} from ${from} to ${to}.`);
       xKey.current = uid(); setDollars(""); setConfirmX(false);
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -636,12 +639,13 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
 
         <section className="bank-panel transfer-panel">
           <div className="bank-panel-title"><div className="transfer-icon">↔</div><div><span className="bank-kicker">Quick action</span><h2>Move money</h2></div></div>
-          <p className="bank-hint">Move money between checking and savings, or send it to brokerage when it is truly available to invest.</p>
+          <p className="bank-hint">Move money between checking and savings, send it to brokerage when it is truly available to invest, or move spare brokerage cash back to checking.</p>
           <div className="row">
             <div className="field"><label>From</label>
-              <select value={from} onChange={(e) => { setFrom(e.target.value); setConfirmX(false); }}>
+              <select value={from} onChange={(e) => { const v = e.target.value; setFrom(v); setTo(v === "brokerage" ? "checking" : v === "savings" ? "checking" : "savings"); setConfirmX(false); }}>
                 <option value="checking">Checking</option>
                 <option value="savings">Savings</option>
+                <option value="brokerage">Brokerage (cash only)</option>
               </select>
             </div>
             <div className="field"><label>To</label>
@@ -649,6 +653,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
                 {from === "checking" && <option value="savings">Savings</option>}
                 {from === "savings" && <option value="checking">Checking</option>}
                 {from === "checking" && <option value="brokerage">Brokerage (invest)</option>}
+                {from === "brokerage" && <option value="checking">Checking</option>}
               </select>
             </div>
             <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirmX(false); }} placeholder="50.00" inputMode="decimal" /></div>
