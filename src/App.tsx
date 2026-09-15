@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
 declare global { interface Window { google?: any } }
@@ -251,7 +251,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       <main className="student-content">
       {onboarding && ["match", "matched", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
       {section === "dashboard" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
-      {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} />}
+      {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} onChanged={load} />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
@@ -437,25 +437,44 @@ function OnboardingCard({ state, onDone }: { state: any; onDone: () => void }) {
   </section>;
 }
 
-function StudentDashboard({ me, portfolio, onOpen }: { me: Me; portfolio: Portfolio | null; onOpen: (section: "dashboard" | "banking" | "investing") => void }) {
+function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfolio: Portfolio | null; onOpen: (section: "dashboard" | "banking" | "investing") => void; onChanged: () => void }) {
   const [bank, setBank] = useState<any>(null);
-  useEffect(() => { api<any>("/api/bank").then(setBank).catch(() => {}); }, [me.user.job_title, me.user.job_pay_cents, me.user.car_payment_cents]);
+  const loadBank = useCallback(() => api<any>("/api/bank").then(setBank).catch(() => {}), []);
+  useEffect(() => { loadBank(); }, [loadBank, me.user.job_title, me.user.job_pay_cents, me.user.car_payment_cents]);
   const unpaid = (bank?.bills || []).filter((b: any) => b.status !== "paid");
   const bankTotal = Number(bank?.checkingCents || 0) + Number(bank?.savingsCents || 0);
   const total = bankTotal + Number(portfolio?.portfolioCents || 0);
+  const checkingActivity = (bank?.recent || []).filter((e: any) => Number(e.checking_leg) !== 0);
   return <div className="dashboard-experience">
     <div className="page-intro"><div><div className="eyebrow">{me.class?.name}</div><h2>Your money at a glance</h2><p>See what is available, what is due, and what you can put to work.</p></div><div className="teacher-summary"><strong>{money(total)}</strong><span>total simulated funds</span></div></div>
     <div className="cards dashboard-cards">
-      <button className="card dashboard-card" onClick={() => onOpen("banking")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : "…"}</div><div className="sub">{unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"} →</div></button>
-      <button className="card dashboard-card" onClick={() => onOpen("banking")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : "…"}</div><div className="sub">Move and grow money →</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : "…"}</div><div className="sub">{unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"} →</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : "…"}</div><div className="sub">Move and grow money →</div></button>
       <button className="card dashboard-card" onClick={() => onOpen("investing")}><div className="label">Investments</div><div className="value">{portfolio ? money(portfolio.portfolioCents) : "…"}</div><div className="sub">Review your portfolio →</div></button>
       <div className="card"><div className="label">Job and pay</div><div className="value dashboard-job">{me.user.job_title || "Not assigned"}</div><div className="sub">{me.user.job_pay_cents == null ? "Pay not set" : `${money(me.user.job_pay_cents)} per paycheck`}</div></div>
     </div>
-    <div className="grid2">
-      <section className="panel"><h2>What needs attention</h2>{unpaid.length ? unpaid.slice(0, 4).map((b: any) => <div className="dashboard-line" key={b.id}><div><strong>{b.title}</strong><span>Due {new Date(b.due_at).toLocaleDateString()}</span></div><b>{money(b.remaining_cents)}</b></div>) : <p className="hint">No unpaid bills. You are caught up.</p>}<button className="ghost" onClick={() => onOpen("banking")}>Open banking</button></section>
-      <section className="panel"><h2>SimLife profile</h2><div className="dashboard-line"><div><strong>{me.user.job_title || "No job assigned"}</strong><span>{me.user.job_pay_cents == null ? "Ask your teacher about pay" : `${money(me.user.job_pay_cents)} each paycheck`}</span></div><span>💼</span></div><div className="dashboard-line"><div><strong>Car payment</strong><span>Monthly obligation</span></div><b>{me.user.car_payment_cents == null ? "Not set" : money(me.user.car_payment_cents)}</b></div></section>
+    <div className="bank-dashboard-grid">
+      <MoveMoneyPanel bank={bank} reloadBank={loadBank} onChanged={onChanged} />
+      {bank && <SavingsProjection interest={bank.savingsInterest} savingsCents={bank.savingsCents} />}
     </div>
-    {bank && <SavingsProjection interest={bank.savingsInterest} />}
+    <div className="bank-panel activity-panel">
+      <div className="bank-panel-title"><div className="transfer-icon">🧾</div><div><span className="bank-kicker">Checking account</span><h2>Transaction overview</h2></div><span className="mail-count">{checkingActivity.length} entr{checkingActivity.length === 1 ? "y" : "ies"}</span></div>
+      <p className="bank-hint">Every checking deposit, bill payment, and transfer — the same record your teacher sees.</p>
+      {!checkingActivity.length && <p className="small">No checking activity yet.</p>}
+      {checkingActivity.length > 0 && <div className="table-wrap"><table>
+        <thead><tr><th>When</th><th>What</th><th>Detail</th><th>Checking effect</th></tr></thead>
+        <tbody>
+          {checkingActivity.map((e: any) => (
+            <tr key={e.id}>
+              <td className="small">{new Date(e.created_at).toLocaleString()}</td>
+              <td>{describeBankEntry(e)}</td>
+              <td className="small">{e.memo || new Date(e.created_at).toLocaleDateString()}</td>
+              <td className={Number(e.checking_leg) >= 0 ? "up" : "down"}>{money(Number(e.checking_leg))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>}
+    </div>
   </div>;
 }
 
@@ -480,65 +499,15 @@ function billBadge(status: string): string {
   return status === "paid" ? "badge-paid" : status === "late" ? "badge-late" : "badge-due";
 }
 
-function SavingsProjection({ interest }: { interest: any }) {
-  const points = [{ years: 0, balanceCents: 0 }, ...(interest?.projection || [])];
-  const current = points.length > 1 ? Math.max(0, points[1].balanceCents - points[1].interestCents) : 0;
-  points[0].balanceCents = current;
-  const max = Math.max(1, ...points.map((p) => p.balanceCents));
-  const svgPoints = points.map((p) => `${8 + (p.years / 10) * 284},${112 - (p.balanceCents / max) * 94}`).join(" ");
-  return <div className="savings-growth">
-    <div className="growth-heading">
-      <div><span className="bank-kicker">Savings growth</span><h2>Your money earns money</h2></div>
-      <div className="apy-bubble"><strong>{((interest?.apy || 0) * 100).toFixed(2)}%</strong><span>APY</span></div>
-    </div>
-    <p>Projection assumes your current balance stays deposited with no additional contributions or withdrawals.</p>
-    <svg className="growth-chart" viewBox="0 0 300 120" role="img" aria-label="Projected savings balance over ten years">
-      <defs><linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#47c978" stopOpacity=".34" /><stop offset="100%" stopColor="#47c978" stopOpacity=".03" /></linearGradient></defs>
-      <path d={`M ${svgPoints.replaceAll(" ", " L ")} L 292 116 L 8 116 Z`} fill="url(#growthFill)" />
-      <polyline points={svgPoints} fill="none" stroke="#269c58" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((p) => <circle key={p.years} cx={8 + (p.years / 10) * 284} cy={112 - (p.balanceCents / max) * 94} r="4" fill="#fff" stroke="#269c58" strokeWidth="3" />)}
-    </svg>
-    <div className="growth-milestones">
-      {(interest?.projection || []).map((p: any) => <div key={p.years}><span>{p.years} year{p.years === 1 ? "" : "s"}</span><strong>{money(p.balanceCents)}</strong><small>+{money(p.interestCents)} interest</small></div>)}
-    </div>
-    <div className="growth-foot"><span>{interest?.label}</span><span>Rate as of {interest?.asOf ? new Date(`${interest.asOf}T12:00:00`).toLocaleDateString() : "—"} · variable classroom rate</span></div>
-  </div>;
-}
-
-function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged: () => void; onOpenInvesting: () => void }) {
-  const [bank, setBank] = useState<any>(null);
-  const [err, setErr] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [payingId, setPayingId] = useState<string | null>(null);
-  const [selectedBill, setSelectedBill] = useState<any>(null);
-  const [payDollars, setPayDollars] = useState("");
-  const [showPayment, setShowPayment] = useState(false);
-  const [showDispute, setShowDispute] = useState(false);
-  const [disputeReason, setDisputeReason] = useState("");
+function MoveMoneyPanel({ bank, reloadBank, onChanged }: { bank: any; reloadBank: () => void | Promise<void>; onChanged: () => void }) {
   const [from, setFrom] = useState("checking");
   const [to, setTo] = useState("savings");
   const [dollars, setDollars] = useState("");
   const [confirmX, setConfirmX] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
   const xKey = useRef(uid());
-  const payKey = useRef(uid());
-  const disputeKey = useRef(uid());
-
-  const load = useCallback(async () => {
-    try { setBank(await api("/api/bank")); }
-    catch (e: any) { setErr(e.message); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const bills: any[] = bank?.bills || [];
-  const unpaid = bills.filter((b) => !b.paid_at);
-  const paid = bills.filter((b) => b.paid_at);
-  const unpaidTotal = unpaid.reduce((s: number, b: any) => s + b.remaining_cents, 0);
-
-  const openBill = (bill: any, payment = false) => {
-    setSelectedBill(bill); setShowPayment(payment); setShowDispute(false); setDisputeReason("");
-    setPayDollars((bill.remaining_cents / 100).toFixed(2)); setErr("");
-  };
 
   const submitTransfer = async () => {
     if (busy || !dollars) return;
@@ -556,8 +525,119 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
             ? `Moved ${money(Math.round(Number(dollars) * 100))} from brokerage back to checking.`
             : `Moved ${money(Math.round(Number(dollars) * 100))} from ${from} to ${to}.`);
       xKey.current = uid(); setDollars(""); setConfirmX(false);
-      await load(); onChanged();
+      await reloadBank(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return <section className="bank-panel transfer-panel">
+    <div className="bank-panel-title"><div className="transfer-icon">↔</div><div><span className="bank-kicker">Quick action</span><h2>Move money</h2></div></div>
+    <p className="bank-hint">Move money between checking and savings, send it to brokerage when it is truly available to invest, or move spare brokerage cash back to checking.</p>
+    {err && <div className="error" role="alert">{err}</div>}
+    {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+    <div className="row">
+      <div className="field"><label>From</label>
+        <select value={from} onChange={(e) => { const v = e.target.value; setFrom(v); setTo(v === "brokerage" ? "checking" : v === "savings" ? "checking" : "savings"); setConfirmX(false); }}>
+          <option value="checking">Checking</option>
+          <option value="savings">Savings</option>
+          <option value="brokerage">Brokerage (cash only)</option>
+        </select>
+      </div>
+      <div className="field"><label>To</label>
+        <select value={to} onChange={(e) => { setTo(e.target.value); setConfirmX(false); }}>
+          {from === "checking" && <option value="savings">Savings</option>}
+          {from === "savings" && <option value="checking">Checking</option>}
+          {from === "checking" && <option value="brokerage">Brokerage (invest)</option>}
+          {from === "brokerage" && <option value="checking">Checking</option>}
+        </select>
+      </div>
+      <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirmX(false); }} placeholder="50.00" inputMode="decimal" /></div>
+    </div>
+    {!confirmX
+      ? <div className="row" style={{ marginTop: 8 }}><button disabled={!(Number(dollars) > 0) || busy} onClick={() => setConfirmX(true)}>Review transfer</button></div>
+      : <div className="confirm"><p><strong>Confirm:</strong> move <strong>{money(Math.round(Number(dollars) * 100))}</strong> from {from} to {to === "brokerage" ? "brokerage (for investing)" : to}?</p><div className="row"><button disabled={busy} onClick={submitTransfer}>Yes, move it</button><button className="ghost" onClick={() => setConfirmX(false)}>Cancel</button></div></div>}
+    {bank && <p className="small" style={{ marginTop: 10 }}>Checking {money(bank.checkingCents)} · Savings {money(bank.savingsCents)}</p>}
+  </section>;
+}
+
+const SAVINGS_HORIZONS = [1, 3, 5, 10, 20, 50];
+
+function SavingsProjection({ interest, savingsCents }: { interest: any; savingsCents?: number | null }) {
+  const apy = Number(interest?.apy || 0);
+  const serverPoints: any[] = interest?.projection || [];
+  const fallback = serverPoints.length > 0 ? Math.max(0, Number(serverPoints[0].balanceCents) - Number(serverPoints[0].interestCents)) : 0;
+  const principal = savingsCents ?? fallback ?? 0;
+  const [years, setYears] = useState(10);
+  const segments = years <= 10 ? years : 25;
+  const points = useMemo(() => {
+    const pts: { years: number; balanceCents: number }[] = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = (i / segments) * years;
+      pts.push({ years: t, balanceCents: Math.round(principal * Math.pow(1 + apy, t)) });
+    }
+    return pts;
+  }, [principal, apy, years, segments]);
+  const end = points.length ? points[points.length - 1].balanceCents : principal;
+  const earned = Math.max(0, end - principal);
+  const max = Math.max(1, end, principal);
+  const x = (t: number) => 8 + (years > 0 ? (t / years) * 284 : 0);
+  const y = (b: number) => 112 - (b / max) * 94;
+  const svgPoints = points.map((p) => `${x(p.years)},${y(p.balanceCents)}`).join(" ");
+  const fmtYears = (t: number) => Number.isInteger(t) ? `${t}` : t.toFixed(1);
+  return <div className="savings-growth savings-compact">
+    <div className="growth-heading">
+      <div><span className="bank-kicker">Bank savings</span><h2>Your money earns money</h2></div>
+      <div className="apy-bubble"><strong>{(apy * 100).toFixed(2)}%</strong><span>APY</span></div>
+    </div>
+    <p>Projection assumes your current {money(principal)} stays deposited with no additional contributions or withdrawals.</p>
+    <svg className="growth-chart" viewBox="0 0 300 120" role="img" aria-label={`Projected savings balance over ${years} years`}>
+      <defs><linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#47c978" stopOpacity=".34" /><stop offset="100%" stopColor="#47c978" stopOpacity=".03" /></linearGradient></defs>
+      <path d={`M ${svgPoints.replaceAll(" ", " L ")} L 292 116 L 8 116 Z`} fill="url(#growthFill)" />
+      <polyline points={svgPoints} fill="none" stroke="#269c58" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={x(0)} cy={y(principal)} r="4" fill="#fff" stroke="#269c58" strokeWidth="3" />
+      <circle cx={x(years)} cy={y(end)} r="4" fill="#fff" stroke="#269c58" strokeWidth="3" />
+    </svg>
+    <div className="growth-milestones growth-milestones-compact">
+      <div><span>Now</span><strong>{money(principal)}</strong><small>current savings</small></div>
+      <div><span>{years} year{years === 1 ? "" : "s"}</span><strong>{money(end)}</strong><small>+{money(earned)} interest</small></div>
+      <div><span>Rate</span><strong>{(apy * 100).toFixed(2)}%</strong><small>variable classroom rate</small></div>
+    </div>
+    <div className="horizon-pills" role="group" aria-label="Projection timeframe">
+      {SAVINGS_HORIZONS.map((h) => (
+        <button key={h} className={h === years ? "horizon-pill active" : "horizon-pill"} aria-pressed={h === years} onClick={() => setYears(h)}>{h}Y</button>
+      ))}
+    </div>
+    <div className="growth-foot"><span>{interest?.label}</span><span>Rate as of {interest?.asOf ? new Date(`${interest.asOf}T12:00:00`).toLocaleDateString() : "—"}</span><span>Zoom out to 50 years to watch compounding.</span></div>
+  </div>;
+}
+
+function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged: () => void; onOpenInvesting: () => void }) {
+  const [bank, setBank] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [payDollars, setPayDollars] = useState("");
+  const [showPayment, setShowPayment] = useState(false);
+  const [showDispute, setShowDispute] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const payKey = useRef(uid());
+  const disputeKey = useRef(uid());
+
+  const load = useCallback(async () => {
+    try { setBank(await api("/api/bank")); }
+    catch (e: any) { setErr(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const bills: any[] = bank?.bills || [];
+  const unpaid = bills.filter((b) => !b.paid_at);
+  const paid = bills.filter((b) => b.paid_at);
+  const unpaidTotal = unpaid.reduce((s: number, b: any) => s + b.remaining_cents, 0);
+
+  const openBill = (bill: any, payment = false) => {
+    setSelectedBill(bill); setShowPayment(payment); setShowDispute(false); setDisputeReason("");
+    setPayDollars((bill.remaining_cents / 100).toFixed(2)); setErr("");
   };
 
   const pay = async (bill: any) => {
@@ -637,30 +717,11 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
           </div>
         </section>
 
-        <section className="bank-panel transfer-panel">
-          <div className="bank-panel-title"><div className="transfer-icon">↔</div><div><span className="bank-kicker">Quick action</span><h2>Move money</h2></div></div>
-          <p className="bank-hint">Move money between checking and savings, send it to brokerage when it is truly available to invest, or move spare brokerage cash back to checking.</p>
-          <div className="row">
-            <div className="field"><label>From</label>
-              <select value={from} onChange={(e) => { const v = e.target.value; setFrom(v); setTo(v === "brokerage" ? "checking" : v === "savings" ? "checking" : "savings"); setConfirmX(false); }}>
-                <option value="checking">Checking</option>
-                <option value="savings">Savings</option>
-                <option value="brokerage">Brokerage (cash only)</option>
-              </select>
-            </div>
-            <div className="field"><label>To</label>
-              <select value={to} onChange={(e) => { setTo(e.target.value); setConfirmX(false); }}>
-                {from === "checking" && <option value="savings">Savings</option>}
-                {from === "savings" && <option value="checking">Checking</option>}
-                {from === "checking" && <option value="brokerage">Brokerage (invest)</option>}
-                {from === "brokerage" && <option value="checking">Checking</option>}
-              </select>
-            </div>
-            <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirmX(false); }} placeholder="50.00" inputMode="decimal" /></div>
-          </div>
-          {!confirmX
-            ? <div className="row" style={{ marginTop: 8 }}><button disabled={!(Number(dollars) > 0) || busy} onClick={() => setConfirmX(true)}>Review transfer</button></div>
-            : <div className="confirm"><p><strong>Confirm:</strong> move <strong>{money(Math.round(Number(dollars) * 100))}</strong> from {from} to {to === "brokerage" ? "brokerage (for investing)" : to}?</p><div className="row"><button disabled={busy} onClick={submitTransfer}>Yes, move it</button><button className="ghost" onClick={() => setConfirmX(false)}>Cancel</button></div></div>}
+        <section className="bank-panel profile-side-panel">
+          <div className="bank-panel-title"><div className="transfer-icon">💼</div><div><span className="bank-kicker">Your profile</span><h2>SimLife profile</h2></div></div>
+          <div className="dashboard-line"><div><strong>{me.user.job_title || "No job assigned"}</strong><span>{me.user.job_pay_cents == null ? "Ask your teacher about pay" : `${money(me.user.job_pay_cents)} each paycheck`}</span></div><span>💼</span></div>
+          <div className="dashboard-line"><div><strong>Car payment</strong><span>Monthly obligation</span></div><b>{me.user.car_payment_cents == null ? "Not set" : money(me.user.car_payment_cents)}</b></div>
+          <p className="bank-hint">Job, pay, and car payment are set by your teacher. Move money from the Banking tab.</p>
           <h3 className="activity-title">Recent activity</h3>
           {!bank?.recent.length && <p className="small">No bank activity yet.</p>}
           <div className="activity-list">{(bank?.recent || []).slice(0, 6).map((e: any) => <div className="activity-row" key={e.id}><span>{e.kind === "income" ? "💵" : e.kind === "bill_payment" ? "🧾" : e.kind === "savings_interest" ? "✨" : "↔"}</span><div><strong>{describeBankEntry(e)}</strong><small>{e.memo || new Date(e.created_at).toLocaleDateString()}</small></div><b className={e.kind === "transfer" ? "" : bankEntryAmount(e) >= 0 ? "up" : "down"}>{money(bankEntryAmount(e))}</b></div>)}</div>

@@ -381,6 +381,13 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .buy-estimate { display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 2px; }
 .buy-estimate span { font-family: var(--mono); font-size: 14px; font-weight: 700; }
 .buy-estimate small { color: var(--muted); font-size: 11px; }
+.savings-compact .growth-chart { height: 150px; }
+.growth-milestones-compact { grid-template-columns: repeat(3, 1fr); }
+.horizon-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e6e7ef; }
+.horizon-pill { padding: 6px 12px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 11px; font-weight: 700; cursor: pointer; }
+.horizon-pill:hover:not(:disabled) { color: inherit; background: var(--olive-pale); }
+.horizon-pill.active { color: #fff; background: var(--olive); border-color: var(--olive); }
+.activity-panel { margin-top: 14px; }
 .question-thread { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
 .question-thread h3 { font-size: 13px; margin: 0 0 8px; }
 .question-item { margin-bottom: 10px; }
