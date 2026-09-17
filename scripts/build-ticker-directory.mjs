@@ -51,6 +51,10 @@ for (const m of text.matchAll(/\|\|\s*\{\{(?:NyseSymbol|NasdaqSymbol)\|([^}]+)\}
 for (const [ticker, name] of ETFS) {
   if (!seen.has(ticker)) { seen.add(ticker); rows.push([ticker, name, "ETF"]); }
 }
+// Classroom picks that are not S&P 500 constituents (kept across rebuilds).
+for (const [ticker, name] of [["GME", "GameStop"], ["BBW", "Build-A-Bear Workshop"]]) {
+  if (!seen.has(ticker)) { seen.add(ticker); rows.push([ticker, name, "STOCK"]); }
+}
 rows.sort((a, b) => (a[0] < b[0] ? -1 : 1));
 fs.writeFileSync(out, JSON.stringify({ updated: new Date().toISOString().slice(0, 10), count: rows.length, rows }));
 console.log(`wrote ${out}: ${rows.length} symbols`);

@@ -46,6 +46,17 @@ test("mock quotes: fixed classroom prices, stable stand-ins elsewhere", async ()
   assert.equal(a.delayed, true);
 });
 
+test("classroom meme picks: GME + BBW are searchable with fixed mock prices", async () => {
+  const { MockQuoteProvider, searchDirectory } = await import("./quotes.js");
+  assert.ok(searchDirectory("GME").some((s) => s.ticker === "GME"), "GME by ticker");
+  assert.ok(searchDirectory("gamestop").some((s) => s.ticker === "GME"), "GME by company name");
+  assert.ok(searchDirectory("BBW").some((s) => s.ticker === "BBW"), "BBW by ticker");
+  assert.ok(searchDirectory("bear").some((s) => s.ticker === "BBW"), "BBW by company name");
+  const m = new MockQuoteProvider();
+  assert.equal((await m.getQuote("GME")).priceCents, 2250);
+  assert.equal((await m.getQuote("BBW")).priceCents, 4525);
+});
+
 test("finnhub adapter parses live quotes and handles gaps", async () => {
   const { FinnhubQuoteProvider } = await import("./quotes.js");
   const originalFetch = globalThis.fetch;
