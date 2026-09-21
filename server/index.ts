@@ -751,13 +751,13 @@ app.get("/api/class/activities", requireAuth, async (req, res) => {
   const out = [];
   for (const a of acts) {
     const attempts = await attemptsFor(a.id, user.id);
-    const best = attempts.reduce((b: any, r: any) => (!b || r.correct_count > b.correct_count ? r : b), null);
+    // Grading stays teacher-side: students only learn whether they submitted.
+    const last = attempts.reduce((b: any, r: any) => (!b || r.attempt_no > b.attempt_no ? r : b), null);
     out.push({
       id: a.id, title: a.title, prompt: a.prompt,
       tokenCount: a.tokens.length, bucketCount: a.buckets.length,
       attempts: attempts.length,
-      bestCorrect: best ? best.correct_count : null,
-      total: best ? best.total_count : null,
+      submittedAt: last ? last.created_at : null,
     });
   }
   res.json({ activities: out });
@@ -773,11 +773,12 @@ app.get("/api/class/activities/:id", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Activity not found." }); return;
   }
   const attempts = await attemptsFor(act.id, user.id);
+  // No scores or correctness here — the teacher does the checking.
   res.json({
     id: act.id, title: act.title, prompt: act.prompt,
     buckets: act.buckets, tokens: act.tokens,
     attempts: attempts.map((a: any) => ({
-      attemptNo: a.attempt_no, correctCount: a.correct_count, totalCount: a.total_count,
+      attemptNo: a.attempt_no,
       placements: JSON.parse(a.placements), createdAt: a.created_at,
     })),
   });
@@ -795,7 +796,16 @@ app.post("/api/class/activities/:id/submit", requireAuth, async (req, res) => {
       placements: req.body?.placements ?? {},
       idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
     });
-    res.json(result);
+    // Grading is recorded for the teacher dashboard but never sent to the
+    // student: a submit means "I'm done, please check it."
+    const attempts = await attemptsFor(act.id, user.id);
+    const saved = attempts.find((a: any) => a.attempt_no === result.attemptNo) ?? attempts[0];
+    res.json({
+      attemptNo: result.attemptNo,
+      totalCount: result.totalCount,
+      deduped: result.deduped,
+      submittedAt: saved ? saved.created_at : new Date().toISOString(),
+    });
   } catch (err) {
     if (err instanceof SortError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message }); return; }
     throw err;

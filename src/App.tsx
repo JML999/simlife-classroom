@@ -1795,7 +1795,7 @@ function ClassSection() {
         <div>
           <div className="eyebrow">Class</div>
           <h2>Practice and assignments</h2>
-          <p>Work your teacher has posted. Most of it you can retry as many times as you like.</p>
+          <p>Work your teacher has posted. Submit when you are done — your teacher checks it.</p>
         </div>
       </div>
       {err && <div className="error" role="alert">{err}</div>}
@@ -1813,10 +1813,8 @@ function ClassSection() {
             <div className="activity-status">
               {a.attempts === 0
                 ? <span className="badge-due">Not started</span>
-                : a.bestCorrect === a.total
-                  ? <span className="badge-paid">All {a.total} correct</span>
-                  : <span className="badge-due">Best: {a.bestCorrect} of {a.total}</span>}
-              <span className="small">{a.attempts} {a.attempts === 1 ? "try" : "tries"}</span>
+                : <span className="badge-paid">Submitted</span>}
+              <span className="small">{a.attempts} {a.attempts === 1 ? "submission" : "submissions"}</span>
             </div>
           </button>
         ))}
@@ -1829,7 +1827,7 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
   const [act, setAct] = useState<any>(null);
   const [placements, setPlacements] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
+  const [submitted, setSubmitted] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const key = useRef(uid());
@@ -1848,8 +1846,11 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
       try {
         const a = await api<any>(`/api/class/activities/${id}`);
         setAct(a);
-        // Resume from the most recent attempt so a reload never loses work.
-        if (a.attempts?.length) setPlacements(a.attempts[0].placements || {});
+        // Resume from the most recent submission so a reload never loses work.
+        if (a.attempts?.length) {
+          setPlacements(a.attempts[0].placements || {});
+          setSubmitted({ attemptNo: a.attempts[0].attemptNo, submittedAt: a.attempts[0].createdAt });
+        }
       } catch (e: any) { setErr(e.message); }
     })();
   }, [id]);
@@ -1894,11 +1895,11 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
 
   const assign = (ticker: string, bucket: string) => {
     setPlacements((p) => ({ ...p, [ticker]: bucket }));
-    setPicked(null); setResult(null);
+    setPicked(null);
   };
   const unplace = (ticker: string) => {
     setPlacements((p) => { const n = { ...p }; delete n[ticker]; return n; });
-    setPicked(null); setResult(null);
+    setPicked(null);
   };
 
   if (err) return <div className="class-section"><div className="error" role="alert">{err}</div><button className="ghost" onClick={onBack}>Back</button></div>;
@@ -1906,7 +1907,6 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
 
   const unplaced = act.tokens.filter((t: any) => !placements[t.ticker]);
   const allPlaced = unplaced.length === 0;
-  const resultFor = (ticker: string) => result?.results?.find((r: any) => r.ticker === ticker);
 
   const submit = async () => {
     if (busy) return;
@@ -1915,18 +1915,16 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
       const r = await api<any>(`/api/class/activities/${id}/submit`, {
         method: "POST", body: JSON.stringify({ placements, idempotencyKey: key.current }),
       });
-      setResult(r);
-      key.current = uid();   // a fresh key so the next try is its own attempt
+      setSubmitted(r);
+      key.current = uid();   // a fresh key so a resubmit is its own submission
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
 
   const chip = (t: any, placed: boolean) => {
-    const r = resultFor(t.ticker);
-    const mark = !r ? "" : r.unknown ? " unknown" : r.correct ? " right" : " wrong";
     return (
       <button key={t.ticker}
-        className={`ticker-chip${placed ? " placed" : ""}${picked === t.ticker ? " picked" : ""}${drag && drag.ticker === t.ticker && drag.moved ? " dragging" : ""}${mark}`}
+        className={`ticker-chip${placed ? " placed" : ""}${picked === t.ticker ? " picked" : ""}${drag && drag.ticker === t.ticker && drag.moved ? " dragging" : ""}`}
         aria-pressed={picked === t.ticker}
         onPointerDown={onPointerDown(t.ticker)}
         onPointerMove={onPointerMove}
@@ -1946,19 +1944,17 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
       <p className="hint">{act.prompt}</p>
       {err && <div className="error" role="alert">{err}</div>}
 
-      {result && (
-        <div className={result.correctCount === result.totalCount ? "notice" : "frozen"} role="status" aria-live="polite">
-          <strong>{result.correctCount} of {result.totalCount} in the right sector.</strong>{" "}
-          {result.correctCount === result.totalCount
-            ? "That is all of them."
-            : "The ones marked ? are in the wrong place. Move them and check again."}
+      {submitted && (
+        <div className="notice" role="status" aria-live="polite">
+          <strong>Submitted{submitted.submittedAt ? ` · ${new Date(submitted.submittedAt).toLocaleString()}` : ""}.</strong>{" "}
+          Your teacher will check it. You can move companies and submit again if you need to change it.
         </div>
       )}
 
       <div ref={trayRef} className={`panel sort-tray${hover === "__tray__" ? " over" : ""}`}>
         <h3>{unplaced.length ? `Still to sort — ${unplaced.length}` : "All sorted"}</h3>
         {unplaced.length === 0
-          ? <p className="hint">Every company is in a category. Check your answers, or drag one back here to change it.</p>
+          ? <p className="hint">Every company is in a category. Hit Submit when you are done.</p>
           : <div className="chip-row">{unplaced.map((t: any) => chip(t, false))}</div>}
         <p className="small">Drag a company into a category — or tap it, then tap the category.</p>
       </div>
@@ -1989,10 +1985,10 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
 
       <div className="row" style={{ marginTop: 12 }}>
         <button disabled={busy || !allPlaced} onClick={submit}>
-          {busy ? "Checking…" : result ? "Check again" : "Check my answers"}
+          {busy ? "Submitting…" : submitted ? "Submit again" : "Submit"}
         </button>
-        {!allPlaced && <span className="small">Sort all {act.tokens.length} to check.</span>}
-        {result && <span className="small">Attempt {result.attemptNo} · unlimited tries</span>}
+        {!allPlaced && <span className="small">Sort all {act.tokens.length} to submit.</span>}
+        {submitted && <span className="small">Submission {submitted.attemptNo}{submitted.submittedAt ? ` · ${new Date(submitted.submittedAt).toLocaleString()}` : ""}</span>}
       </div>
     </div>
   );
@@ -2034,7 +2030,7 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
 
   const csv = () => {
     if (!data) return;
-    const head = ["Student", "Attempts", "Best", "Total", ...tickers];
+    const head = ["Student", "Submissions", "SubmittedAt", "Best", "Total", ...tickers];
     const lines = [head.join(",")];
     for (const s of data.students) {
       const cells = tickers.map((t) => {
@@ -2043,7 +2039,7 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
         if (!placed) return "";
         return placed === data.answerKey[t] ? "correct" : placed;
       });
-      lines.push([`"${s.name}"`, s.attempts, s.bestCorrect ?? "", s.total ?? "", ...cells].join(","));
+      lines.push([`"${s.name}"`, s.attempts, s.lastAt ? `"${s.lastAt}"` : "", s.bestCorrect ?? "", s.total ?? "", ...cells].join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -2089,9 +2085,9 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
       {data && (
         <>
           <div className="cards" style={{ marginTop: 14 }}>
-            <div className="card"><div className="label">Started</div><div className="value">{started.length}</div><div className="sub">of {data.students.length} students</div></div>
+            <div className="card"><div className="label">Submitted</div><div className="value">{started.length}</div><div className="sub">of {data.students.length} students</div></div>
             <div className="card"><div className="label">All correct</div><div className="value">{perfect.length}</div><div className="sub">got every company right</div></div>
-            <div className="card"><div className="label">Not started</div><div className="value">{data.students.length - started.length}</div><div className="sub">no attempt yet</div></div>
+            <div className="card"><div className="label">Not submitted</div><div className="value">{data.students.length - started.length}</div><div className="sub">no submission yet</div></div>
           </div>
 
           <div className="panel" style={{ marginTop: 14 }}>
@@ -2115,11 +2111,11 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
 
           <div className="panel" style={{ marginTop: 14 }}>
             <h2>Every student</h2>
-            <p className="hint">Best attempt shown. ✓ correct · ✕ wrong category · blank means they never placed it.</p>
+            <p className="hint">Latest submission shown with teacher checking. ✓ correct · ✕ wrong category · blank means they never placed it.</p>
             <div className="table-wrap"><table className="sort-grid">
               <thead>
                 <tr>
-                  <th>Student</th><th>Tries</th><th>Best</th>
+                  <th>Student</th><th>Subs</th><th>Submitted</th><th>Best</th>
                   {tickers.map((t) => <th key={t} className="tick-col">{t}</th>)}
                 </tr>
               </thead>
@@ -2128,6 +2124,7 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
                   <tr key={s.userId}>
                     <td>{s.name}</td>
                     <td className="small">{s.attempts || "—"}</td>
+                    <td className="small">{s.lastAt ? new Date(s.lastAt).toLocaleString() : "—"}</td>
                     <td>{s.bestCorrect == null ? <span className="small">—</span> : <strong>{s.bestCorrect}/{s.total}</strong>}</td>
                     {tickers.map((t) => {
                       const placed = s.bestPlacements?.[t];
