@@ -84,3 +84,15 @@ npm run typecheck; npm run build; npm start  # prod equivalents
 every phase (final check 2026-09-10). No files under `codeworld/` were
 written; its `.env` was never opened. `SIMLIFE_DATABASE_URL` never references
 `DATABASE_URL`.
+
+---
+
+## Class tab / first module (2026-09-21)
+
+The Class tab and its first module (sector sort) are described in
+`CLASS_MODULE_STATUS.md` — what is built, what was actually verified in a
+browser, and what is explicitly NOT yet verified. Read that before changing
+anything under `server/sorting.ts` or the Class parts of `src/App.tsx`.
+
+Related design docs: `CLASS_TAB_PLAN.md`, `MODULE_WEEK2_BALANCED_PORTFOLIO.md`,
+`LEADERBOARD_PLAN.md`.

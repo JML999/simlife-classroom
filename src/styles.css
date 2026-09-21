@@ -507,6 +507,15 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .class-post-list { margin-top: 12px; border-top: 1px solid var(--line); }
 .class-post-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .class-post-row > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+.module-visibility-desk { margin-bottom: 14px; }
+.module-visibility-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.module-visibility-grid label { display: flex; gap: 10px; align-items: flex-start; padding: 11px; background: #f8f7f1; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.module-visibility-grid label.module-hidden { color: var(--muted); background: #f1f0eb; }
+.module-visibility-grid input { margin-top: 3px; accent-color: var(--olive); }
+.module-visibility-grid span { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.module-visibility-grid span strong { color: var(--olive); font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.module-visibility-grid span small { color: var(--muted); font-size: 10px; }
+.module-save-state { min-height: 18px; margin-top: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: right; }
 table.sort-grid th.tick-col { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
 table.sort-grid td.cell { width: 34px; font-family: var(--mono); font-size: 14px; text-align: center; }
 table.sort-grid td.cell-ok { color: #3B4622; background: #EFF2E6; }
@@ -520,6 +529,7 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
   .research-pick { grid-template-columns: 1fr; }
   .mission-submit-bar { align-items: stretch; flex-direction: column; }
   .class-post-row { grid-template-columns: 1fr; }
+  .module-visibility-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .mission-layout { grid-template-columns: 1fr; }

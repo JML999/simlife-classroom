@@ -513,6 +513,15 @@ export async function initSchema(): Promise<void> {
       created_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_class_post_submissions ON class_post_submissions(post_id, user_id, created_at)`,
+
+    // Per-class module visibility. Store what is hidden, not what is visible:
+    // newly published modules therefore appear by default without a backfill.
+    // Hiding is presentation-only and never deletes progress or submissions.
+    `CREATE TABLE IF NOT EXISTS class_hidden_modules (
+      class_id TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      module_key TEXT NOT NULL,
+      PRIMARY KEY (class_id, module_key)
+    )`,
   ];
   for (const s of stmts) await b.run(s);
 }

@@ -39,6 +39,9 @@ import {
   createClassPost, getClassPost, listClassPosts, setClassPostStatus,
   portfolioMissionState, latestClassPostSubmission, submitPortfolioMission, ClassPostError,
 } from "./class-posts.js";
+import {
+  classModuleCatalog, classModuleKey, hiddenClassModuleKeys, replaceHiddenClassModules,
+} from "./class-modules.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -752,8 +755,14 @@ app.get("/api/class/activities", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
   const acts = await listActivities({ classId: user.class_id, publishedOnly: true });
+  const [catalog, hidden] = await Promise.all([
+    classModuleCatalog(user.class_id), hiddenClassModuleKeys(user.class_id),
+  ]);
+  const moduleNumbers = new Map(catalog.map((item) => [item.key, item.moduleNumber]));
   const out = [];
   for (const a of acts) {
+    const key = classModuleKey("sort", a.id);
+    if (hidden.has(key)) continue;
     const attempts = await attemptsFor(a.id, user.id);
     // Grading stays teacher-side: students only learn whether they submitted.
     const last = attempts.reduce((b: any, r: any) => (!b || r.attempt_no > b.attempt_no ? r : b), null);
@@ -764,6 +773,8 @@ app.get("/api/class/activities", requireAuth, async (req, res) => {
       attempts: attempts.length,
       submittedAt: last ? last.created_at : null,
       hasDraft: !!draft,
+      createdAt: a.createdAt,
+      moduleNumber: moduleNumbers.get(key),
     });
   }
   res.json({ activities: out });
@@ -891,11 +902,17 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
   const posts = await listClassPosts({ classId: user.class_id, publishedOnly: true });
+  const [catalog, hidden] = await Promise.all([
+    classModuleCatalog(user.class_id), hiddenClassModuleKeys(user.class_id),
+  ]);
+  const moduleNumbers = new Map(catalog.map((item) => [item.key, item.moduleNumber]));
   const out = [];
   for (const post of posts) {
+    const key = post.kind === "portfolio_mission" ? classModuleKey("post", post.id) : null;
+    if (key && hidden.has(key)) continue;
     const submission = post.kind === "portfolio_mission" ? await latestClassPostSubmission(post.id, user.id) : null;
     const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : null;
-    out.push({ ...post, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission });
+    out.push({ ...post, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
   }
   res.json({ posts: out });
 });
@@ -957,6 +974,23 @@ app.post("/api/teacher/class-posts/:id/status", requireCurrentTeacher, async (re
     res.json({ ok: true, status });
   } catch (err) {
     if (err instanceof ClassPostError) { res.status(404).json({ error: err.message }); return; }
+    throw err;
+  }
+});
+
+app.get("/api/teacher/classes/:id/modules", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.params.id);
+  if (!(await one(`SELECT id FROM classes WHERE id = ?`, [classId]))) { res.status(404).json({ error: "Class not found." }); return; }
+  const [modules, hidden] = await Promise.all([classModuleCatalog(classId), hiddenClassModuleKeys(classId)]);
+  res.json({ modules, hidden: [...hidden] });
+});
+
+app.put("/api/teacher/classes/:id/modules", requireCurrentTeacher, async (req, res) => {
+  try {
+    const hidden = await replaceHiddenClassModules(String(req.params.id), Array.isArray(req.body?.hidden) ? req.body.hidden : []);
+    res.json({ ok: true, hidden });
+  } catch (err: any) {
+    if (String(err?.message) === "Class not found.") { res.status(404).json({ error: err.message }); return; }
     throw err;
   }
 });

@@ -1805,6 +1805,10 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
 
   const announcements = posts?.filter((post) => post.kind === "announcement") ?? [];
   const missions = posts?.filter((post) => post.kind === "portfolio_mission") ?? [];
+  const modules = [
+    ...missions.map((post) => ({ kind: "mission" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
+    ...(activities ?? []).map((activity) => ({ kind: "sort" as const, moduleNumber: activity.moduleNumber, createdAt: activity.createdAt, data: activity })),
+  ].sort((a, b) => Number(a.moduleNumber || 999) - Number(b.moduleNumber || 999) || String(a.createdAt).localeCompare(String(b.createdAt)));
   const empty = activities?.length === 0 && posts?.length === 0;
 
   return (
@@ -1812,7 +1816,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       <div className="page-intro">
         <div>
           <div className="eyebrow">Class</div>
-          <h2>Your field guide</h2>
+          <h2>Modules</h2>
           <p>Read the brief, do the work in SimLife, and submit the thinking behind your decisions.</p>
         </div>
       </div>
@@ -1825,12 +1829,12 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       {empty && (
         <div className="panel"><p className="hint">Nothing posted yet. Check back after class.</p></div>
       )}
-      {(missions.length > 0 || (activities?.length ?? 0) > 0) && <div className="section-kicker">Missions and practice</div>}
+      {modules.length > 0 && <div className="section-kicker">Assignments and practice</div>}
       <div className="module-grid">
-        {missions.map((post) => (
-          <button key={post.id} className="module-card mission-card" onClick={() => setOpenPostId(post.id)}>
+        {modules.map((module) => module.kind === "mission" ? (() => { const post = module.data; return (
+          <button key={`post:${post.id}`} className="module-card mission-card" onClick={() => setOpenPostId(post.id)}>
             <div className="module-cover" style={{ backgroundImage: post.heroUrl ? `url(${classPostHeroUrl(post.heroUrl)})` : undefined }}>
-              <span className="module-kind">Portfolio mission</span>
+              <span className="module-kind">Module {module.moduleNumber} · Portfolio mission</span>
               {post.submittedAt && <span className="module-complete">Submitted ✓</span>}
             </div>
             <div className="module-card-body">
@@ -1842,11 +1846,10 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
               <span className={post.submittedAt ? "badge-paid" : post.mission.met ? "badge-ready" : "badge-due"}>{post.submittedAt ? "Submitted" : post.mission.met ? "Ready to submit" : "In progress"}</span>
             </div>
           </button>
-        ))}
-        {activities?.map((a) => (
-          <button key={a.id} className="module-card practice-card" onClick={() => setOpenId(a.id)}>
+        ); })() : (() => { const a = module.data; return (
+          <button key={`sort:${a.id}`} className="module-card practice-card" onClick={() => setOpenId(a.id)}>
             <div className="module-cover sort-cover">
-              <span className="module-kind">Sector practice</span>
+              <span className="module-kind">Module {module.moduleNumber} · Sector practice</span>
               <div className="sort-cover-chips" aria-hidden="true"><i>NKE</i><i>AAPL</i><i>KO</i><i>JPM</i></div>
               {a.attempts > 0 && <span className="module-complete">Submitted ✓</span>}
             </div>
@@ -1859,7 +1862,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
                 : <span className="badge-paid">Submitted</span>}
             </div>
           </button>
-        ))}
+        ); })())}
       </div>
     </div>
   );
@@ -2125,7 +2128,50 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
 
 // ---------------- teacher: class activity results ----------------
 
-function TeacherClassPosts({ classes, defaultClassId }: { classes: any[]; defaultClassId: string }) {
+function TeacherModuleVisibility({ classId, refreshKey }: { classId: string; refreshKey: number }) {
+  const [modules, setModules] = useState<any[]>([]);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    if (!classId) { setModules([]); setHidden(new Set()); return; }
+    const result = await api<any>(`/api/teacher/classes/${classId}/modules`);
+    setModules(result.modules); setHidden(new Set(result.hidden));
+  }, [classId]);
+  useEffect(() => { load().catch((e: any) => setErr(e.message)); }, [load, refreshKey]);
+
+  const save = async (next: Set<string>) => {
+    const previous = hidden;
+    setHidden(next); setBusy(true); setSaved(false); setErr("");
+    try {
+      const result = await api<any>(`/api/teacher/classes/${classId}/modules`, {
+        method: "PUT", body: JSON.stringify({ hidden: [...next] }),
+      });
+      setHidden(new Set(result.hidden)); setSaved(true);
+      window.setTimeout(() => setSaved(false), 1600);
+    } catch (e: any) { setHidden(previous); setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  const toggle = (key: string) => {
+    const next = new Set(hidden);
+    next.has(key) ? next.delete(key) : next.add(key);
+    void save(next);
+  };
+  const setAll = (show: boolean) => void save(show ? new Set() : new Set(modules.map((module) => module.key)));
+
+  return <div className="panel module-visibility-desk">
+    <div className="panel-heading"><div><h2>Modules shown to this class</h2><p className="hint">Untick a module to remove it from the student Class page. Their saved work and submissions stay intact.</p></div>{classId && <div className="row"><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(true)}>Show all</button><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(false)}>Hide all</button></div>}</div>
+    {!classId && <p className="small">Choose one class below to manage what its students can see.</p>}
+    {err && <div className="error" role="alert">{err}</div>}
+    {classId && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or portfolio mission first.</p>}
+    {classId && modules.length > 0 && <div className="module-visibility-grid">{modules.map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : "Portfolio mission"}</small></span></label>)}</div>}
+    {classId && <div className="module-save-state" aria-live="polite">{busy ? "Saving…" : saved ? "Saved ✓" : `${modules.length - hidden.size} shown · ${hidden.size} hidden`}</div>}
+  </div>;
+}
+
+function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { classes: any[]; defaultClassId: string; onModulesChanged: () => void }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [open, setOpen] = useState<"" | "announcement" | "portfolio_mission">("");
   const [title, setTitle] = useState("");
@@ -2155,7 +2201,7 @@ function TeacherClassPosts({ classes, defaultClassId }: { classes: any[]; defaul
         heroUrl: open === "portfolio_mission" ? "/module-art/balanced-portfolio.svg" : null,
         spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5, minNewCompanies: 3, minNewSectorCompanies: 3, pickThesisMinWords: 12, reflectionMinWords: 40 } : {},
       }) });
-      setOpen(""); await load(); setNotice(`Draft “${created.title}” created.`);
+      setOpen(""); await load(); onModulesChanged(); setNotice(`Draft “${created.title}” created.`);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
@@ -2163,7 +2209,7 @@ function TeacherClassPosts({ classes, defaultClassId }: { classes: any[]; defaul
     setBusy(true); setErr(""); setNotice("");
     try {
       await api(`/api/teacher/class-posts/${id}/status`, { method: "POST", body: JSON.stringify({ status: next }) });
-      await load(); setNotice(next === "published" ? "Posted to students." : next === "archived" ? "Post archived." : "Post returned to draft.");
+      await load(); onModulesChanged(); setNotice(next === "published" ? "Posted to students." : next === "archived" ? "Post archived." : "Post returned to draft.");
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
@@ -2197,6 +2243,7 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
     "Health Care", "Financials", "Utilities",
   ].join("\n"));
   const [tickersText, setTickersText] = useState("NKE\nSBUX\nCOST\nPG\nNVDA\nAAPL\nAMZN\nJNJ\nJPM\nBAC\nNEE\nDUK");
+  const [moduleRevision, setModuleRevision] = useState(0);
 
   const loadActivities = useCallback(async (preferId?: string) => {
     const r = await api<any>("/api/teacher/activities");
@@ -2243,7 +2290,7 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
       await api(`/api/teacher/activities/${selected}/status`, {
         method: "POST", body: JSON.stringify({ status }),
       });
-      await loadActivities(selected); await load();
+      await loadActivities(selected); await load(); setModuleRevision((value) => value + 1);
       setNotice(status === "published" ? "Activity published to students." : status === "archived" ? "Activity archived." : "Activity returned to draft.");
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -2292,7 +2339,8 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
 
-      <TeacherClassPosts classes={classes} defaultClassId={classId} />
+      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => setModuleRevision((value) => value + 1)} />
+      <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} />
 
       {composing && (
         <div className="panel activity-composer">
