@@ -117,7 +117,7 @@ test("a bucket the activity did not define is discarded", async () => {
 });
 
 test("an unpublished activity cannot be submitted to", async () => {
-  const act = await activity(["NKE"], "draft");
+  const act = await activity(["NKE", "AAPL"], "draft");
   const stu = await student();
   await assert.rejects(
     () => s.submit({ activityId: act.id, userId: stu, placements: { NKE: "Consumer Discretionary" } }),

@@ -11,7 +11,8 @@
  *   GOOGL feels like technology; it is Communication Services
  *   CEG   Constellation Energy - almost nobody knows it is a Utility
  *
- * Correct answers are NOT stored here; grading reads ticker-directory.json.
+ * Twelve tickers, six categories. Correct answers are NOT stored here;
+ * grading reads ticker-directory.json.
  * Run: npm run seed:sort
  */
 import "./env.js";

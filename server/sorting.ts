@@ -215,7 +215,13 @@ export async function attemptsFor(activityId: string, userId: string): Promise<a
   );
 }
 
-/** Teacher view: every student in a class with their best attempt. */
+/**
+ * Teacher view: every student in the class with their best attempt, including
+ * that attempt's placements so the dashboard can draw a per-ticker grid.
+ *
+ * Students with no submission are included with nulls. A roster view that
+ * silently omitted them would hide exactly the students who most need chasing.
+ */
 export async function progressFor(activityId: string, classId?: string | null): Promise<any[]> {
   const students = classId
     ? await q<any>(`SELECT id, name FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId])
@@ -223,20 +229,31 @@ export async function progressFor(activityId: string, classId?: string | null): 
   const out = [];
   for (const s of students) {
     const rows = await q<any>(
-      `SELECT attempt_no, correct_count, total_count, created_at FROM sort_submissions
+      `SELECT attempt_no, correct_count, total_count, placements, created_at FROM sort_submissions
         WHERE activity_id = ? AND user_id = ? ORDER BY attempt_no`,
       [activityId, s.id],
     );
+    // Best, not latest: a student who got it right then experimented should not
+    // be recorded as having done worse.
     const best = rows.reduce((b: any, r: any) => (!b || r.correct_count > b.correct_count ? r : b), null);
     out.push({
       userId: s.id, name: s.name,
       attempts: rows.length,
       bestCorrect: best ? best.correct_count : null,
       total: best ? best.total_count : null,
+      bestPlacements: best ? JSON.parse(best.placements) : null,
+      firstCorrect: rows.length ? rows[0]!.correct_count : null,
       lastAt: rows.length ? rows[rows.length - 1]!.created_at : null,
     });
   }
   return out;
+}
+
+/** The correct bucket per ticker. Teacher-only: never sent to a student. */
+export function answerKeyFor(act: SortActivity): Record<string, string | null> {
+  const key: Record<string, string | null> = {};
+  for (const t of act.tokens) key[String(t.ticker).toUpperCase()] = sectorOf(t.ticker);
+  return key;
 }
 
 /** Which tickers the class as a whole misfiled — the reteach list. */

@@ -817,7 +817,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [query, setQuery] = useState("");
   const [freezeConfirm, setFreezeConfirm] = useState<any>(null);
   const [auditOpen, setAuditOpen] = useState(false);
-  const [tsection, setTsection] = useState<"brokerage" | "banking">("banking");
+  const [tsection, setTsection] = useState<"brokerage" | "banking" | "class">("banking");
   const cashKey = useRef(uid());
   const bankKey = useRef(uid());
   const [bankAccount, setBankAccount] = useState<"checking" | "savings">("checking");
@@ -1019,6 +1019,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     <div className="pills section-tabs" role="tablist" aria-label="Workspace sections">
       <button role="tab" aria-selected={tsection === "brokerage"} className={`pill${tsection === "brokerage" ? " active" : ""}`} onClick={() => setTsection("brokerage")}>Brokerage</button>
       <button role="tab" aria-selected={tsection === "banking"} className={`pill${tsection === "banking" ? " active" : ""}`} onClick={() => setTsection("banking")}>Banking</button>
+      <button role="tab" aria-selected={tsection === "class"} className={`pill${tsection === "class" ? " active" : ""}`} onClick={() => setTsection("class")}>Class</button>
     </div>
   );
 
@@ -1189,6 +1190,15 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
       )}
     </>
   );
+
+  if (tsection === "class") {
+    return (
+      <>
+        {workspaceTabs}
+        <TeacherClass classes={classes} classId={classId} onClassChange={setClassId} />
+      </>
+    );
+  }
 
   if (tsection === "banking") {
     return (
@@ -1824,30 +1834,75 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
   const [err, setErr] = useState("");
   const key = useRef(uid());
 
+  // Drag state. POINTER EVENTS, not HTML5 drag-and-drop: pointer events fire
+  // for mouse, touch and pen alike, so the same code works on a Chromebook
+  // trackpad and a phone. HTML5 `draggable` does not fire on touch at all,
+  // which would leave any student on a phone unable to do the assignment.
+  const [drag, setDrag] = useState<{ ticker: string; x: number; y: number; moved: boolean } | null>(null);
+  const bucketRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const trayRef = useRef<HTMLDivElement | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
+
   useEffect(() => {
     (async () => {
       try {
         const a = await api<any>(`/api/class/activities/${id}`);
         setAct(a);
-        // Resume from the most recent attempt so a reload does not lose work.
+        // Resume from the most recent attempt so a reload never loses work.
         if (a.attempts?.length) setPlacements(a.attempts[0].placements || {});
       } catch (e: any) { setErr(e.message); }
     })();
   }, [id]);
 
-  if (err) return <div className="class-section"><div className="error" role="alert">{err}</div><button className="ghost" onClick={onBack}>Back</button></div>;
-  if (!act) return <div className="class-section"><p>Loading…</p></div>;
+  const zoneAt = useCallback((x: number, y: number): string | null => {
+    for (const [name, el] of Object.entries(bucketRefs.current)) {
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return name;
+    }
+    const tray = trayRef.current?.getBoundingClientRect();
+    if (tray && x >= tray.left && x <= tray.right && y >= tray.top && y <= tray.bottom) return "__tray__";
+    return null;
+  }, []);
 
-  const place = (bucket: string) => {
-    if (!picked) return;
-    setPlacements((p) => ({ ...p, [picked]: bucket }));
-    setPicked(null);
-    setResult(null);
+  const onPointerDown = (ticker: string) => (e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    setDrag({ ticker, x: e.clientX, y: e.clientY, moved: false });
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag) return;
+    // A few pixels of slop so a tap is not mistaken for a drag.
+    const moved = drag.moved || Math.abs(e.clientX - drag.x) > 6 || Math.abs(e.clientY - drag.y) > 6;
+    setDrag({ ...drag, x: e.clientX, y: e.clientY, moved });
+    if (moved) setHover(zoneAt(e.clientX, e.clientY));
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const { ticker, moved } = drag;
+    const zone = moved ? zoneAt(e.clientX, e.clientY) : null;
+    setDrag(null); setHover(null);
+    if (moved) {
+      if (zone === "__tray__") unplace(ticker);
+      else if (zone) { assign(ticker, zone); }
+      return;
+    }
+    // Not a drag: treat as a tap. Tap a chip then a bucket also works, which is
+    // what keyboard and screen-reader users get via the buttons.
+    if (placements[ticker]) unplace(ticker);
+    else setPicked(picked === ticker ? null : ticker);
+  };
+
+  const assign = (ticker: string, bucket: string) => {
+    setPlacements((p) => ({ ...p, [ticker]: bucket }));
+    setPicked(null); setResult(null);
   };
   const unplace = (ticker: string) => {
     setPlacements((p) => { const n = { ...p }; delete n[ticker]; return n; });
-    setResult(null);
+    setPicked(null); setResult(null);
   };
+
+  if (err) return <div className="class-section"><div className="error" role="alert">{err}</div><button className="ghost" onClick={onBack}>Back</button></div>;
+  if (!act) return <div className="class-section"><p>Loading…</p></div>;
 
   const unplaced = act.tokens.filter((t: any) => !placements[t.ticker]);
   const allPlaced = unplaced.length === 0;
@@ -1858,22 +1913,34 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
     setBusy(true); setErr("");
     try {
       const r = await api<any>(`/api/class/activities/${id}/submit`, {
-        method: "POST",
-        body: JSON.stringify({ placements, idempotencyKey: key.current }),
+        method: "POST", body: JSON.stringify({ placements, idempotencyKey: key.current }),
       });
       setResult(r);
-      key.current = uid();   // a new key so the next try is its own attempt
+      key.current = uid();   // a fresh key so the next try is its own attempt
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
+  };
+
+  const chip = (t: any, placed: boolean) => {
+    const r = resultFor(t.ticker);
+    const mark = !r ? "" : r.unknown ? " unknown" : r.correct ? " right" : " wrong";
+    return (
+      <button key={t.ticker}
+        className={`ticker-chip${placed ? " placed" : ""}${picked === t.ticker ? " picked" : ""}${drag && drag.ticker === t.ticker && drag.moved ? " dragging" : ""}${mark}`}
+        aria-pressed={picked === t.ticker}
+        onPointerDown={onPointerDown(t.ticker)}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => { setDrag(null); setHover(null); }}>
+        {t.ticker}
+      </button>
+    );
   };
 
   return (
     <div className="class-section">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "start" }}>
-        <div>
-          <div className="eyebrow">Class activity</div>
-          <h2>{act.title}</h2>
-        </div>
+        <div><div className="eyebrow">Class activity</div><h2>{act.title}</h2></div>
         <button className="ghost" onClick={onBack}>Back</button>
       </div>
       <p className="hint">{act.prompt}</p>
@@ -1884,60 +1951,201 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
           <strong>{result.correctCount} of {result.totalCount} in the right sector.</strong>{" "}
           {result.correctCount === result.totalCount
             ? "That is all of them."
-            : "The ones to look at again are outlined below. Move them and try again."}
+            : "The ones marked ? are in the wrong place. Move them and check again."}
         </div>
       )}
 
-      <div className="panel sort-tray">
-        <h3>{unplaced.length ? "Still to place" : "All placed"}</h3>
+      <div ref={trayRef} className={`panel sort-tray${hover === "__tray__" ? " over" : ""}`}>
+        <h3>{unplaced.length ? `Still to sort — ${unplaced.length}` : "All sorted"}</h3>
         {unplaced.length === 0
-          ? <p className="hint">Every company is in a sector. Check it, or submit.</p>
-          : <div className="chip-row">
-              {unplaced.map((t: any) => (
-                <button key={t.ticker}
-                  className={`ticker-chip${picked === t.ticker ? " picked" : ""}`}
-                  aria-pressed={picked === t.ticker}
-                  onClick={() => setPicked(picked === t.ticker ? null : t.ticker)}>
-                  {t.ticker}
-                </button>
-              ))}
-            </div>}
-        <p className="small">{picked ? `${picked} selected — now choose a sector below.` : "Tap a company, then tap the sector it belongs to."}</p>
+          ? <p className="hint">Every company is in a category. Check your answers, or drag one back here to change it.</p>
+          : <div className="chip-row">{unplaced.map((t: any) => chip(t, false))}</div>}
+        <p className="small">Drag a company into a category — or tap it, then tap the category.</p>
       </div>
 
       <div className="bucket-grid">
         {act.buckets.map((b: string) => {
           const inHere = act.tokens.filter((t: any) => placements[t.ticker] === b);
           return (
-            <div key={b} className={`panel bucket${picked ? " targetable" : ""}`}>
-              <button className="bucket-head" disabled={!picked} onClick={() => place(b)}>
+            <div key={b}
+              ref={(el) => { bucketRefs.current[b] = el; }}
+              className={`panel bucket${picked ? " targetable" : ""}${hover === b ? " over" : ""}`}>
+              <button className="bucket-head" disabled={!picked} onClick={() => picked && assign(picked, b)}>
                 <h3>{b}</h3>
-                {picked && <span className="small">Put {picked} here</span>}
+                <span className="small">{picked ? `Put ${picked} here` : `${inHere.length} placed`}</span>
               </button>
               <div className="chip-row">
-                {inHere.map((t: any) => {
-                  const r = resultFor(t.ticker);
-                  const cls = !r ? "" : r.unknown ? " unknown" : r.correct ? " right" : " wrong";
-                  return (
-                    <button key={t.ticker} className={`ticker-chip placed${cls}`} onClick={() => unplace(t.ticker)}
-                      title="Tap to take it back out">
-                      {t.ticker}
-                    </button>
-                  );
-                })}
-                {inHere.length === 0 && <span className="small">empty</span>}
+                {inHere.map((t: any) => chip(t, true))}
+                {inHere.length === 0 && <span className="small">drop here</span>}
               </div>
             </div>
           );
         })}
       </div>
 
+      {drag?.moved && (
+        <div className="drag-ghost" style={{ left: drag.x, top: drag.y }}>{drag.ticker}</div>
+      )}
+
       <div className="row" style={{ marginTop: 12 }}>
         <button disabled={busy || !allPlaced} onClick={submit}>
           {busy ? "Checking…" : result ? "Check again" : "Check my answers"}
         </button>
-        {!allPlaced && <span className="small">Place all {act.tokens.length} to submit.</span>}
+        {!allPlaced && <span className="small">Sort all {act.tokens.length} to check.</span>}
+        {result && <span className="small">Attempt {result.attemptNo} · unlimited tries</span>}
       </div>
+    </div>
+  );
+}
+
+// ---------------- teacher: class activity results ----------------
+
+function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; classId: string; onClassChange: (id: string) => void }) {
+  const [activities, setActivities] = useState<any[]>([]);
+  const [selected, setSelected] = useState<string>("");
+  const [data, setData] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api<any>("/api/teacher/activities");
+        setActivities(r.activities);
+        if (r.activities.length && !selected) setSelected(r.activities[0].id);
+      } catch (e: any) { setErr(e.message); }
+    })();
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!selected) { setData(null); return; }
+    setBusy(true);
+    try {
+      setData(await api<any>(`/api/teacher/activities/${selected}/progress${classId ? `?classId=${classId}` : ""}`));
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }, [selected, classId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const act = data?.activity;
+  const tickers: string[] = act ? act.tokens.map((t: any) => String(t.ticker)) : [];
+  const started = (data?.students ?? []).filter((s: any) => s.attempts > 0);
+  const perfect = started.filter((s: any) => s.bestCorrect === s.total);
+
+  const csv = () => {
+    if (!data) return;
+    const head = ["Student", "Attempts", "Best", "Total", ...tickers];
+    const lines = [head.join(",")];
+    for (const s of data.students) {
+      const cells = tickers.map((t) => {
+        if (!s.bestPlacements) return "";
+        const placed = s.bestPlacements[t];
+        if (!placed) return "";
+        return placed === data.answerKey[t] ? "correct" : placed;
+      });
+      lines.push([`"${s.name}"`, s.attempts, s.bestCorrect ?? "", s.total ?? "", ...cells].join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${act.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  return (
+    <div className="teacher-class">
+      <div className="page-intro">
+        <div>
+          <div className="eyebrow">Teacher desk</div>
+          <h2>Class activities</h2>
+          <p>Who has done it, and which companies the room is getting wrong.</p>
+        </div>
+        {data && <div className="teacher-summary"><strong>{started.length}</strong><span>of {data.students.length} started</span></div>}
+      </div>
+
+      {err && <div className="error" role="alert">{err}</div>}
+
+      <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+        <div className="field grow">
+          <label htmlFor="act-pick">Activity</label>
+          <select id="act-pick" value={selected} onChange={(e) => setSelected(e.target.value)}>
+            {activities.length === 0 && <option value="">No activities yet — run npm run seed:sort</option>}
+            {activities.map((a) => <option key={a.id} value={a.id}>{a.title}{a.status !== "published" ? ` (${a.status})` : ""}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="act-class">Class</label>
+          <select id="act-class" value={classId} onChange={(e) => onClassChange(e.target.value)}>
+            <option value="">All students</option>
+            {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        {data && <button className="ghost" onClick={csv} style={{ alignSelf: "end" }}>Export CSV</button>}
+      </div>
+
+      {busy && <p className="small">Loading…</p>}
+
+      {data && (
+        <>
+          <div className="cards" style={{ marginTop: 14 }}>
+            <div className="card"><div className="label">Started</div><div className="value">{started.length}</div><div className="sub">of {data.students.length} students</div></div>
+            <div className="card"><div className="label">All correct</div><div className="value">{perfect.length}</div><div className="sub">got every company right</div></div>
+            <div className="card"><div className="label">Not started</div><div className="value">{data.students.length - started.length}</div><div className="sub">no attempt yet</div></div>
+          </div>
+
+          <div className="panel" style={{ marginTop: 14 }}>
+            <h2>Which companies the class misfiled</h2>
+            <p className="hint">Ranked by how often it was put in the wrong category. The last column is where they put it — that is the misconception, not just the miss.</p>
+            <div className="table-wrap"><table>
+              <thead><tr><th>Company</th><th>Correct category</th><th>Got it wrong</th><th>Most common wrong answer</th></tr></thead>
+              <tbody>
+                {data.misses.filter((m: any) => m.attempts > 0).map((m: any) => (
+                  <tr key={m.ticker}>
+                    <td><strong className="ticker">{m.ticker}</strong></td>
+                    <td className="small">{data.answerKey[m.ticker] || "—"}</td>
+                    <td>{m.wrong} of {m.attempts}</td>
+                    <td className="small">{m.commonWrongBucket || "—"}</td>
+                  </tr>
+                ))}
+                {data.misses.every((m: any) => m.attempts === 0) && <tr><td colSpan={4} className="small">No submissions yet.</td></tr>}
+              </tbody>
+            </table></div>
+          </div>
+
+          <div className="panel" style={{ marginTop: 14 }}>
+            <h2>Every student</h2>
+            <p className="hint">Best attempt shown. ✓ correct · ✕ wrong category · blank means they never placed it.</p>
+            <div className="table-wrap"><table className="sort-grid">
+              <thead>
+                <tr>
+                  <th>Student</th><th>Tries</th><th>Best</th>
+                  {tickers.map((t) => <th key={t} className="tick-col">{t}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {data.students.map((s: any) => (
+                  <tr key={s.userId}>
+                    <td>{s.name}</td>
+                    <td className="small">{s.attempts || "—"}</td>
+                    <td>{s.bestCorrect == null ? <span className="small">—</span> : <strong>{s.bestCorrect}/{s.total}</strong>}</td>
+                    {tickers.map((t) => {
+                      const placed = s.bestPlacements?.[t];
+                      const correct = placed && placed === data.answerKey[t];
+                      return (
+                        <td key={t} className={`cell ${!placed ? "cell-none" : correct ? "cell-ok" : "cell-bad"}`}
+                          title={!placed ? `${s.name}: ${t} not placed` : `${s.name}: ${t} → ${placed}${correct ? "" : ` (should be ${data.answerKey[t]})`}`}>
+                          {!placed ? "" : correct ? "✓" : "✕"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

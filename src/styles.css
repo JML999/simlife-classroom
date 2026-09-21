@@ -436,3 +436,21 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
   .activity-card { flex-direction: column; align-items: flex-start; }
   .activity-status { align-items: flex-start; }
 }
+
+/* Drag: pointer-events based, so it works with a mouse and a finger alike.
+   touch-action:none stops the browser scrolling the page while a chip is
+   being dragged on a phone — without it, dragging just scrolls. */
+.ticker-chip { touch-action: none; user-select: none; }
+.ticker-chip.dragging { opacity: .35; }
+.drag-ghost { position: fixed; z-index: 60; padding: 9px 15px; font-family: var(--mono); font-size: 15px; font-weight: 600; color: #fff; white-space: nowrap; background: var(--olive); border-radius: 100px; box-shadow: 0 8px 20px rgba(28,28,26,.22); transform: translate(-50%, -140%); pointer-events: none; }
+.bucket.over, .sort-tray.over { background: var(--olive-pale); border-color: var(--olive); }
+.sort-tray { min-height: 110px; }
+
+/* Teacher results grid. Status never rides on color alone — every cell also
+   carries a ✓ or ✕ glyph, for colorblind teachers and for a projector. */
+.teacher-class .table-wrap { overflow-x: auto; }
+table.sort-grid th.tick-col { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+table.sort-grid td.cell { width: 34px; font-family: var(--mono); font-size: 14px; text-align: center; }
+table.sort-grid td.cell-ok { color: #3B4622; background: #EFF2E6; }
+table.sort-grid td.cell-bad { color: #A8524B; background: #F8EEED; }
+table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f3ee, #f4f3ee 4px, #fbfaf6 4px, #fbfaf6 8px); }

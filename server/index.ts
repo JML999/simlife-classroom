@@ -33,7 +33,7 @@ import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 import { createBillDraft, listBillDrafts, sendBillDraft, updateBillDraft } from "./bill-drafts.js";
 import {
   createActivity, getActivity, listActivities, setStatus, submit as submitSort,
-  attemptsFor, progressFor, missesFor, SortError,
+  attemptsFor, progressFor, missesFor, answerKeyFor, SortError,
 } from "./sorting.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
@@ -844,6 +844,7 @@ app.get("/api/teacher/activities/:id/progress", requireCurrentTeacher, async (re
   if (!act) { res.status(404).json({ error: "Activity not found." }); return; }
   res.json({
     activity: { id: act.id, title: act.title, status: act.status, buckets: act.buckets, tokens: act.tokens },
+    answerKey: answerKeyFor(act),
     students: await progressFor(id, classId),
     misses: await missesFor(id, classId),
   });
