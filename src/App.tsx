@@ -1812,7 +1812,9 @@ function ClassSection() {
             </div>
             <div className="activity-status">
               {a.attempts === 0
-                ? <span className="badge-due">Not started</span>
+                ? (a.hasDraft
+                  ? <span className="badge-due">Draft saved</span>
+                  : <span className="badge-due">Not started</span>)
                 : <span className="badge-paid">Submitted</span>}
               <span className="small">{a.attempts} {a.attempts === 1 ? "submission" : "submissions"}</span>
             </div>
@@ -1828,6 +1830,8 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
   const [placements, setPlacements] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<any>(null);
+  const [saved, setSaved] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const key = useRef(uid());
@@ -1850,6 +1854,9 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
         if (a.attempts?.length) {
           setPlacements(a.attempts[0].placements || {});
           setSubmitted({ attemptNo: a.attempts[0].attemptNo, submittedAt: a.attempts[0].createdAt });
+        } else if (a.draft) {
+          setPlacements(a.draft.placements || {});
+          setSaved({ savedAt: a.draft.updatedAt });
         }
       } catch (e: any) { setErr(e.message); }
     })();
@@ -1907,6 +1914,7 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
 
   const unplaced = act.tokens.filter((t: any) => !placements[t.ticker]);
   const allPlaced = unplaced.length === 0;
+  const placedCount = act.tokens.length - unplaced.length;
 
   const submit = async () => {
     if (busy) return;
@@ -1916,9 +1924,22 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
         method: "POST", body: JSON.stringify({ placements, idempotencyKey: key.current }),
       });
       setSubmitted(r);
+      setSaved(null);
       key.current = uid();   // a fresh key so a resubmit is its own submission
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
+  };
+
+  const save = async () => {
+    if (saving || busy) return;
+    setSaving(true); setErr("");
+    try {
+      const r = await api<any>(`/api/class/activities/${id}/draft`, {
+        method: "POST", body: JSON.stringify({ placements }),
+      });
+      setSaved(r);
+    } catch (e: any) { setErr(e.message); }
+    finally { setSaving(false); }
   };
 
   const chip = (t: any, placed: boolean) => {
@@ -1948,6 +1969,12 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="notice" role="status" aria-live="polite">
           <strong>Submitted{submitted.submittedAt ? ` · ${new Date(submitted.submittedAt).toLocaleString()}` : ""}.</strong>{" "}
           Your teacher will check it. You can move companies and submit again if you need to change it.
+        </div>
+      )}
+      {!submitted && saved && (
+        <div className="frozen" role="status" aria-live="polite">
+          <strong>Progress saved{saved.savedAt ? ` · ${new Date(saved.savedAt).toLocaleString()}` : ""}.</strong>{" "}
+          Not submitted yet — finish sorting and hit Submit when you are done.
         </div>
       )}
 
@@ -1984,11 +2011,15 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
       )}
 
       <div className="row" style={{ marginTop: 12 }}>
+        <button className="ghost" disabled={saving || busy || placedCount === 0} onClick={save}>
+          {saving ? "Saving…" : "Save"}
+        </button>
         <button disabled={busy || !allPlaced} onClick={submit}>
           {busy ? "Submitting…" : submitted ? "Submit again" : "Submit"}
         </button>
-        {!allPlaced && <span className="small">Sort all {act.tokens.length} to submit.</span>}
+        {!allPlaced && <span className="small">Sort all {act.tokens.length} to submit — or Save to finish later.</span>}
         {submitted && <span className="small">Submission {submitted.attemptNo}{submitted.submittedAt ? ` · ${new Date(submitted.submittedAt).toLocaleString()}` : ""}</span>}
+        {!submitted && saved && <span className="small">Saved{saved.savedAt ? ` · ${new Date(saved.savedAt).toLocaleString()}` : ""}</span>}
       </div>
     </div>
   );

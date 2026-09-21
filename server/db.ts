@@ -474,6 +474,16 @@ export async function initSchema(): Promise<void> {
       created_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_sort_sub_user ON sort_submissions(activity_id, user_id, attempt_no)`,
+    // Drafts are one row per student per activity: unfinished work the student
+    // can resume. A draft is never graded and never shown to the teacher as a
+    // submission — only an explicit Submit counts.
+    `CREATE TABLE IF NOT EXISTS sort_drafts (
+      activity_id TEXT NOT NULL REFERENCES sort_activities(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      placements TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (activity_id, user_id)
+    )`,
   ];
   for (const s of stmts) await b.run(s);
 }

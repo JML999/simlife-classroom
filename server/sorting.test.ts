@@ -161,3 +161,24 @@ test("an activity needs buckets and tickers", async () => {
   await assert.rejects(() => s.createActivity({ title: "x", prompt: "", buckets: ["a"], tokens: [{ ticker: "NKE" }] }));
   await assert.rejects(() => s.createActivity({ title: "", prompt: "", buckets: BUCKETS, tokens: [{ ticker: "NKE" }] }));
 });
+
+test("a draft saves partial progress and is not a submission", async () => {
+  const act = await activity();
+  const stu = await student();
+  const d = await s.saveDraft({ activityId: act.id, userId: stu, placements: { NKE: "Consumer Discretionary" } });
+  assert.deepEqual(d.placements, { NKE: "Consumer Discretionary" });
+  assert.equal((await s.attemptsFor(act.id, stu)).length, 0, "saving is not submitting");
+  const back = await s.draftFor(act.id, stu);
+  assert.deepEqual(back!.placements, { NKE: "Consumer Discretionary" });
+});
+
+test("a draft drops invented buckets and is cleared by submit", async () => {
+  const act = await activity();
+  const stu = await student();
+  await s.saveDraft({ activityId: act.id, userId: stu, placements: { NKE: "Not A Real Bucket" } });
+  assert.deepEqual((await s.draftFor(act.id, stu))!.placements, {}, "invented bucket dropped");
+  await s.saveDraft({ activityId: act.id, userId: stu, placements: { NKE: "Consumer Discretionary" } });
+  await s.submit({ activityId: act.id, userId: stu, placements: {
+    NKE: "Consumer Discretionary", AAPL: "Information Technology", KO: "Consumer Staples" } });
+  assert.equal(await s.draftFor(act.id, stu), null, "submit supersedes the draft");
+});

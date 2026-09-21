@@ -161,6 +161,19 @@ export interface SubmitResult {
   results: TokenResult[]; unknownTickers: string[]; deduped: boolean;
 }
 
+/** Keep only real tickers filed into buckets this activity defines. */
+function cleanPlacements(act: SortActivity, placements: unknown): Record<string, string> {
+  const input = placements && typeof placements === "object" ? placements : {};
+  const allowed = new Set(act.buckets);
+  const clean: Record<string, string> = {};
+  for (const t of act.tokens) {
+    const ticker = String(t.ticker).toUpperCase();
+    const v = (input as any)[ticker];
+    if (typeof v === "string" && allowed.has(v)) clean[ticker] = v;
+  }
+  return clean;
+}
+
 export async function submit(opts: {
   activityId: string; userId: string;
   placements: Record<string, string>; idempotencyKey?: string;
@@ -169,16 +182,7 @@ export async function submit(opts: {
   if (!act) throw new SortError("NOT_FOUND", "Activity not found.");
   if (act.status !== "published") throw new SortError("NOT_FOUND", "Activity not found.");
 
-  const placements = opts.placements && typeof opts.placements === "object" ? opts.placements : {};
-  // Only buckets this activity defines may be used; anything else is dropped
-  // rather than trusted, so a crafted request cannot invent a bucket.
-  const allowed = new Set(act.buckets);
-  const clean: Record<string, string> = {};
-  for (const t of act.tokens) {
-    const ticker = String(t.ticker).toUpperCase();
-    const v = (placements as any)[ticker];
-    if (typeof v === "string" && allowed.has(v)) clean[ticker] = v;
-  }
+  const clean = cleanPlacements(act, opts.placements);
 
   if (opts.idempotencyKey) {
     const dup = await one<any>(`SELECT * FROM sort_submissions WHERE idempotency_key = ?`, [opts.idempotencyKey]);
@@ -202,6 +206,8 @@ export async function submit(opts: {
     [newId("ssub"), opts.activityId, opts.userId, attemptNo, JSON.stringify(clean),
      g.correctCount, g.totalCount, opts.idempotencyKey ?? null, nowIso()],
   );
+  // A submit supersedes any saved draft.
+  await clearDraft(opts.activityId, opts.userId);
 
   return { attemptNo, correctCount: g.correctCount, totalCount: g.totalCount,
            results: g.results, unknownTickers: g.unknownTickers, deduped: false };
@@ -213,6 +219,48 @@ export async function attemptsFor(activityId: string, userId: string): Promise<a
        FROM sort_submissions WHERE activity_id = ? AND user_id = ? ORDER BY attempt_no DESC`,
     [activityId, userId],
   );
+}
+
+// --- drafts -----------------------------------------------------------------
+//
+// One row per student per activity, upserted on every Save. Partial progress
+// is fine here — unlike Submit, a draft needs no completeness check and is
+// never graded.
+
+export interface SortDraft {
+  placements: Record<string, string>;
+  updatedAt: string;
+}
+
+export async function saveDraft(opts: {
+  activityId: string; userId: string; placements: Record<string, string>;
+}): Promise<SortDraft> {
+  const act = await getActivity(opts.activityId);
+  if (!act) throw new SortError("NOT_FOUND", "Activity not found.");
+  if (act.status !== "published") throw new SortError("NOT_FOUND", "Activity not found.");
+  const clean = cleanPlacements(act, opts.placements);
+  const updatedAt = nowIso();
+  // Both SQLite and Postgres understand this upsert shape.
+  await run(
+    `INSERT INTO sort_drafts (activity_id, user_id, placements, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (activity_id, user_id) DO UPDATE SET placements = excluded.placements, updated_at = excluded.updated_at`,
+    [opts.activityId, opts.userId, JSON.stringify(clean), updatedAt],
+  );
+  return { placements: clean, updatedAt };
+}
+
+export async function draftFor(activityId: string, userId: string): Promise<SortDraft | null> {
+  const r = await one<any>(
+    `SELECT placements, updated_at FROM sort_drafts WHERE activity_id = ? AND user_id = ?`,
+    [activityId, userId],
+  );
+  if (!r) return null;
+  return { placements: JSON.parse(r.placements), updatedAt: r.updated_at };
+}
+
+export async function clearDraft(activityId: string, userId: string): Promise<void> {
+  await run(`DELETE FROM sort_drafts WHERE activity_id = ? AND user_id = ?`, [activityId, userId]);
 }
 
 /**

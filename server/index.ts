@@ -33,7 +33,7 @@ import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 import { createBillDraft, listBillDrafts, sendBillDraft, updateBillDraft } from "./bill-drafts.js";
 import {
   createActivity, getActivity, listActivities, setStatus, submit as submitSort,
-  attemptsFor, progressFor, missesFor, answerKeyFor, SortError,
+  attemptsFor, draftFor, saveDraft, progressFor, missesFor, answerKeyFor, SortError,
 } from "./sorting.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
@@ -753,11 +753,13 @@ app.get("/api/class/activities", requireAuth, async (req, res) => {
     const attempts = await attemptsFor(a.id, user.id);
     // Grading stays teacher-side: students only learn whether they submitted.
     const last = attempts.reduce((b: any, r: any) => (!b || r.attempt_no > b.attempt_no ? r : b), null);
+    const draft = attempts.length ? null : await draftFor(a.id, user.id);
     out.push({
       id: a.id, title: a.title, prompt: a.prompt,
       tokenCount: a.tokens.length, bucketCount: a.buckets.length,
       attempts: attempts.length,
       submittedAt: last ? last.created_at : null,
+      hasDraft: !!draft,
     });
   }
   res.json({ activities: out });
@@ -773,6 +775,7 @@ app.get("/api/class/activities/:id", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Activity not found." }); return;
   }
   const attempts = await attemptsFor(act.id, user.id);
+  const draft = await draftFor(act.id, user.id);
   // No scores or correctness here — the teacher does the checking.
   res.json({
     id: act.id, title: act.title, prompt: act.prompt,
@@ -781,7 +784,25 @@ app.get("/api/class/activities/:id", requireAuth, async (req, res) => {
       attemptNo: a.attempt_no,
       placements: JSON.parse(a.placements), createdAt: a.created_at,
     })),
+    draft: draft ?? null,
   });
+});
+
+app.post("/api/class/activities/:id/draft", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers do not save drafts." }); return; }
+  const act = await getActivity(String(req.params["id"]));
+  if (!act || (act.classId && act.classId !== user.class_id)) { res.status(404).json({ error: "Activity not found." }); return; }
+  try {
+    const d = await saveDraft({
+      activityId: act.id, userId: user.id, placements: req.body?.placements ?? {},
+    });
+    res.json({ savedAt: d.updatedAt, placed: Object.keys(d.placements).length });
+  } catch (err) {
+    if (err instanceof SortError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message }); return; }
+    throw err;
+  }
 });
 
 app.post("/api/class/activities/:id/submit", requireAuth, async (req, res) => {
