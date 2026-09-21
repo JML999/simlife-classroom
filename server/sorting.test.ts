@@ -23,12 +23,14 @@ before(async () => {
   await initSchema();
   await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, ?, ?)`,
     ["sclass", "Sort Period", "SORT1", 0, new Date().toISOString()]);
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ["other-class", "Other Period", "SORT2", 0, new Date().toISOString()]);
 });
 
-async function student(): Promise<string> {
+async function student(classId: string | null = "sclass"): Promise<string> {
   const id = uid();
   await run(`INSERT INTO users (id, email, name, role, class_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, `${id}@example.school`, "Stu", "student", "sclass", new Date().toISOString()]);
+    [id, `${id}@example.school`, "Stu", "student", classId, new Date().toISOString()]);
   return id;
 }
 
@@ -160,6 +162,53 @@ test("the miss list surfaces what the class got wrong and where they put it", as
 test("an activity needs buckets and tickers", async () => {
   await assert.rejects(() => s.createActivity({ title: "x", prompt: "", buckets: ["a"], tokens: [{ ticker: "NKE" }] }));
   await assert.rejects(() => s.createActivity({ title: "", prompt: "", buckets: BUCKETS, tokens: [{ ticker: "NKE" }] }));
+});
+
+test("activity authoring normalizes tickers and rejects impossible category sets", async () => {
+  const act = await s.createActivity({
+    title: "Normalized sort", prompt: " Sort these. ",
+    buckets: [" Consumer Discretionary ", "Information Technology"],
+    tokens: [{ ticker: " nke " }, { ticker: "aapl" }], status: "draft",
+  });
+  assert.deepEqual(act.buckets, ["Consumer Discretionary", "Information Technology"]);
+  assert.deepEqual(act.tokens, [{ ticker: "NKE" }, { ticker: "AAPL" }]);
+  await assert.rejects(
+    () => s.createActivity({ title: "Missing category", prompt: "", buckets: ["Consumer Staples", "Utilities"], tokens: [{ ticker: "NKE" }, { ticker: "KO" }] }),
+    /Add Consumer Discretionary to the categories/,
+  );
+  await assert.rejects(
+    () => s.createActivity({ title: "Unknown ticker", prompt: "", buckets: BUCKETS, tokens: [{ ticker: "NKE" }, { ticker: "ZZZZ" }] }),
+    /No sector data for: ZZZZ/,
+  );
+});
+
+test("class activity visibility distinguishes all, targeted, and no-class views", async () => {
+  const global = await s.createActivity({ title: "Everyone sort", prompt: "", buckets: BUCKETS, tokens: [{ ticker: "NKE" }, { ticker: "AAPL" }], status: "published" });
+  const targeted = await s.createActivity({ classId: "sclass", title: "One class sort", prompt: "", buckets: BUCKETS, tokens: [{ ticker: "NKE" }, { ticker: "AAPL" }], status: "published" });
+  const other = await s.createActivity({ classId: "other-class", title: "Other class sort", prompt: "", buckets: BUCKETS, tokens: [{ ticker: "NKE" }, { ticker: "AAPL" }], status: "published" });
+  const forClass = await s.listActivities({ classId: "sclass", publishedOnly: true });
+  assert.ok(forClass.some((a) => a.id === global.id));
+  assert.ok(forClass.some((a) => a.id === targeted.id));
+  assert.ok(!forClass.some((a) => a.id === other.id));
+  const noClass = await s.listActivities({ classId: null, publishedOnly: true });
+  assert.ok(noClass.some((a) => a.id === global.id));
+  assert.ok(!noClass.some((a) => a.id === targeted.id));
+  const teacherAll = await s.listActivities({});
+  assert.ok(teacherAll.some((a) => a.id === targeted.id) && teacherAll.some((a) => a.id === other.id));
+});
+
+test("teacher progress and misses honor the selected class", async () => {
+  const act = await activity();
+  const inClass = await student("sclass");
+  const elsewhere = await student("other-class");
+  await s.submit({ activityId: act.id, userId: inClass, placements: { NKE: "Consumer Staples" } });
+  await s.submit({ activityId: act.id, userId: elsewhere, placements: { NKE: "Consumer Discretionary" } });
+  const rows = await s.progressFor(act.id, "sclass");
+  assert.ok(rows.some((row) => row.userId === inClass));
+  assert.ok(!rows.some((row) => row.userId === elsewhere));
+  const nke = (await s.missesFor(act.id, "sclass")).find((row) => row.ticker === "NKE")!;
+  assert.equal(nke.attempts, 1);
+  assert.equal(nke.wrong, 1);
 });
 
 test("a draft saves partial progress and is not a submission", async () => {

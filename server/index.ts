@@ -35,6 +35,10 @@ import {
   createActivity, getActivity, listActivities, setStatus, submit as submitSort,
   attemptsFor, draftFor, saveDraft, progressFor, missesFor, answerKeyFor, SortError,
 } from "./sorting.js";
+import {
+  createClassPost, getClassPost, listClassPosts, setClassPostStatus,
+  portfolioMissionState, latestClassPostSubmission, submitPortfolioMission, ClassPostError,
+} from "./class-posts.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -879,6 +883,82 @@ app.get("/api/teacher/activities/:id/progress", requireCurrentTeacher, async (re
     students: await progressFor(id, classId),
     misses: await missesFor(id, classId),
   });
+});
+
+// ---- Class feed: announcements + portfolio-linked missions ----------------
+
+app.get("/api/class/posts", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const posts = await listClassPosts({ classId: user.class_id, publishedOnly: true });
+  const out = [];
+  for (const post of posts) {
+    const submission = post.kind === "portfolio_mission" ? await latestClassPostSubmission(post.id, user.id) : null;
+    const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : null;
+    out.push({ ...post, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission });
+  }
+  res.json({ posts: out });
+});
+
+app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const post = await getClassPost(String(req.params.id));
+  if (!post || post.status !== "published" || (post.classId && post.classId !== user.class_id)) {
+    res.status(404).json({ error: "Class post not found." }); return;
+  }
+  const submission = post.kind === "portfolio_mission" ? await latestClassPostSubmission(post.id, user.id) : null;
+  const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : null;
+  res.json({ ...post, submission, mission });
+});
+
+app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user || user.role !== "student") { res.status(403).json({ error: "Student access only." }); return; }
+  const post = await getClassPost(String(req.params.id));
+  if (!post || (post.classId && post.classId !== user.class_id)) { res.status(404).json({ error: "Mission not found." }); return; }
+  try {
+    res.json(await submitPortfolioMission({
+      post, userId: user.id, response: req.body?.response,
+      idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
+    }));
+  } catch (err) {
+    if (err instanceof ClassPostError) {
+      res.status(err.code === "NOT_FOUND" ? 404 : err.code === "NOT_READY" ? 422 : 400).json({ error: err.message, code: err.code }); return;
+    }
+    throw err;
+  }
+});
+
+app.get("/api/teacher/class-posts", requireCurrentTeacher, async (_req, res) => {
+  res.json({ posts: await listClassPosts({}) });
+});
+
+app.post("/api/teacher/class-posts", requireCurrentTeacher, async (req, res) => {
+  const teacher = (req as any).currentUser;
+  try {
+    res.json(await createClassPost({
+      kind: String(req.body?.kind || ""), classId: req.body?.classId || null,
+      title: String(req.body?.title || ""), summary: String(req.body?.summary || ""),
+      body: String(req.body?.body || ""), spec: req.body?.spec,
+      heroUrl: req.body?.heroUrl ? String(req.body.heroUrl) : null, createdBy: teacher.id,
+    }));
+  } catch (err) {
+    if (err instanceof ClassPostError) { res.status(400).json({ error: err.message, code: err.code }); return; }
+    throw err;
+  }
+});
+
+app.post("/api/teacher/class-posts/:id/status", requireCurrentTeacher, async (req, res) => {
+  const status = String(req.body?.status || "");
+  if (!['draft', 'published', 'archived'].includes(status)) { res.status(400).json({ error: "Bad status." }); return; }
+  try {
+    await setClassPostStatus(String(req.params.id), status as any);
+    res.json({ ok: true, status });
+  } catch (err) {
+    if (err instanceof ClassPostError) { res.status(404).json({ error: err.message }); return; }
+    throw err;
+  }
 });
 
 app.get("/api/bank", requireAuth, async (req, res) => {

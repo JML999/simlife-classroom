@@ -484,6 +484,35 @@ export async function initSchema(): Promise<void> {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (activity_id, user_id)
     )`,
+
+    // ---- Class feed -------------------------------------------------------
+    // A small extensible feed for teacher announcements and portfolio-linked
+    // missions. Content is data; portfolio evidence is always computed by
+    // server code from the append-only ledger.
+    `CREATE TABLE IF NOT EXISTS class_posts (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      class_id TEXT,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      body TEXT NOT NULL,
+      spec TEXT NOT NULL,
+      hero_url TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_class_posts_scope ON class_posts(class_id, status, created_at)`,
+    `CREATE TABLE IF NOT EXISTS class_post_submissions (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL REFERENCES class_posts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      response TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      idempotency_key TEXT UNIQUE,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_class_post_submissions ON class_post_submissions(post_id, user_id, created_at)`,
   ];
   for (const s of stmts) await b.run(s);
 }

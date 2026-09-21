@@ -255,7 +255,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       {onboarding && ["match", "matched", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
       {section === "dashboard" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} onChanged={load} />}
-      {section === "class" && <ClassSection />}
+      {section === "class" && <ClassSection onOpenInvesting={() => setSection("investing")} />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
@@ -1776,53 +1776,150 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
 // keyboard and screen-reader users. Pick a ticker, pick a bucket. Less code,
 // works everywhere, and is undoable.
 
-function ClassSection() {
+function classPostHeroUrl(heroUrl?: string | null) {
+  return heroUrl === "/module-art/balanced-portfolio.png"
+    ? "/module-art/balanced-portfolio.svg"
+    : heroUrl;
+}
+
+function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
+  const [posts, setPosts] = useState<any[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openPostId, setOpenPostId] = useState<string | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
-    try { setActivities((await api<any>("/api/class/activities")).activities); }
+    try {
+      const [activityResult, postResult] = await Promise.all([
+        api<any>("/api/class/activities"), api<any>("/api/class/posts"),
+      ]);
+      setActivities(activityResult.activities); setPosts(postResult.posts);
+    }
     catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
   if (openId) return <SortActivity id={openId} onBack={() => { setOpenId(null); void load(); }} />;
+  if (openPostId) return <PortfolioMission id={openPostId} onBack={() => { setOpenPostId(null); void load(); }} onOpenInvesting={onOpenInvesting} />;
+
+  const announcements = posts?.filter((post) => post.kind === "announcement") ?? [];
+  const missions = posts?.filter((post) => post.kind === "portfolio_mission") ?? [];
+  const empty = activities?.length === 0 && posts?.length === 0;
 
   return (
     <div className="class-section">
       <div className="page-intro">
         <div>
           <div className="eyebrow">Class</div>
-          <h2>Practice and assignments</h2>
-          <p>Work your teacher has posted. Submit when you are done — your teacher checks it.</p>
+          <h2>Your field guide</h2>
+          <p>Read the brief, do the work in SimLife, and submit the thinking behind your decisions.</p>
         </div>
       </div>
       {err && <div className="error" role="alert">{err}</div>}
-      {activities === null && <p>Loading…</p>}
-      {activities?.length === 0 && (
+      {(activities === null || posts === null) && <p>Loading…</p>}
+      {announcements.length > 0 && <section className="class-announcements" aria-label="Announcements">
+        <div className="section-kicker">From your teacher</div>
+        {announcements.map((post) => <article className="class-announcement" key={post.id}><span aria-hidden="true">✦</span><div><strong>{post.title}</strong><p>{post.body}</p></div></article>)}
+      </section>}
+      {empty && (
         <div className="panel"><p className="hint">Nothing posted yet. Check back after class.</p></div>
       )}
-      <div className="activity-list">
-        {activities?.map((a) => (
-          <button key={a.id} className="panel activity-card" onClick={() => setOpenId(a.id)}>
-            <div>
-              <h3>{a.title}</h3>
-              <p className="small">{a.tokenCount} companies · {a.bucketCount} sectors</p>
+      {(missions.length > 0 || (activities?.length ?? 0) > 0) && <div className="section-kicker">Missions and practice</div>}
+      <div className="module-grid">
+        {missions.map((post) => (
+          <button key={post.id} className="module-card mission-card" onClick={() => setOpenPostId(post.id)}>
+            <div className="module-cover" style={{ backgroundImage: post.heroUrl ? `url(${classPostHeroUrl(post.heroUrl)})` : undefined }}>
+              <span className="module-kind">Portfolio mission</span>
+              {post.submittedAt && <span className="module-complete">Submitted ✓</span>}
             </div>
-            <div className="activity-status">
+            <div className="module-card-body">
+              <h3>{post.title}</h3><p>{post.summary}</p>
+              <div className="module-progress-line">
+                <span>{post.mission.counts.companies}/{post.mission.targets.minCompanies} companies</span>
+                <span>{post.mission.counts.sectors}/{post.mission.targets.minSectors} sectors</span>
+              </div>
+              <span className={post.submittedAt ? "badge-paid" : post.mission.met ? "badge-ready" : "badge-due"}>{post.submittedAt ? "Submitted" : post.mission.met ? "Ready to submit" : "In progress"}</span>
+            </div>
+          </button>
+        ))}
+        {activities?.map((a) => (
+          <button key={a.id} className="module-card practice-card" onClick={() => setOpenId(a.id)}>
+            <div className="module-cover sort-cover">
+              <span className="module-kind">Sector practice</span>
+              <div className="sort-cover-chips" aria-hidden="true"><i>NKE</i><i>AAPL</i><i>KO</i><i>JPM</i></div>
+              {a.attempts > 0 && <span className="module-complete">Submitted ✓</span>}
+            </div>
+            <div className="module-card-body">
+              <h3>{a.title}</h3><p>{a.tokenCount} companies · {a.bucketCount} sectors</p>
               {a.attempts === 0
                 ? (a.hasDraft
                   ? <span className="badge-due">Draft saved</span>
                   : <span className="badge-due">Not started</span>)
                 : <span className="badge-paid">Submitted</span>}
-              <span className="small">{a.attempts} {a.attempts === 1 ? "submission" : "submissions"}</span>
             </div>
           </button>
         ))}
       </div>
     </div>
   );
+}
+
+function PortfolioMission({ id, onBack, onOpenInvesting }: { id: string; onBack: () => void; onOpenInvesting: () => void }) {
+  const [post, setPost] = useState<any>(null);
+  const [picks, setPicks] = useState([{ ticker: "", thesis: "" }, { ticker: "", thesis: "" }, { ticker: "", thesis: "" }]);
+  const [reflection, setReflection] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const key = useRef(uid());
+  const load = useCallback(async () => {
+    try {
+      const result = await api<any>(`/api/class/posts/${id}`);
+      setPost(result);
+      if (result.submission?.response) {
+        setPicks(result.submission.response.picks); setReflection(result.submission.response.reflection);
+      }
+    } catch (e: any) { setErr(e.message); }
+  }, [id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try {
+      await api(`/api/class/posts/${id}/submit`, { method: "POST", body: JSON.stringify({ response: { picks, reflection }, idempotencyKey: key.current }) });
+      key.current = uid(); await load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  if (!post) return <div>{err ? <div className="error">{err}</div> : "Loading mission…"}</div>;
+  const mission = post.mission;
+  const options = mission.newSectorCompanies as string[];
+  const updatePick = (index: number, changes: any) => setPicks(picks.map((pick, i) => i === index ? { ...pick, ...changes } : pick));
+  const checks = [
+    [mission.checks.baselineReady, "Original basket", `${mission.baselineTickers.length}/3 starting companies found`],
+    [mission.checks.companies, "Company holdings", `${mission.counts.companies}/${mission.targets.minCompanies} companies`],
+    [mission.checks.sectors, "Sector coverage", `${mission.counts.sectors}/${mission.targets.minSectors} sectors`],
+    [mission.checks.newSectorCompanies, "Different-sector additions", `${mission.counts.newSectorCompanies}/${mission.targets.minNewSectorCompanies} new companies outside the original sectors`],
+  ];
+  return <div className="portfolio-mission">
+    <div className="mission-hero" style={{ backgroundImage: post.heroUrl ? `linear-gradient(90deg, rgba(248,246,239,.98) 0%, rgba(248,246,239,.86) 38%, rgba(248,246,239,.08) 72%), url(${classPostHeroUrl(post.heroUrl)})` : undefined }}>
+      <button className="ghost" onClick={onBack}>← Class</button>
+      <div className="eyebrow">Portfolio mission</div><h2>{post.title}</h2><p>{post.summary}</p>
+      {post.submission && <div className="mission-submitted"><strong>Submitted ✓</strong><span>Your evidence and explanation were recorded {new Date(post.submission.createdAt).toLocaleString()}.</span></div>}
+    </div>
+    {err && <div className="error" role="alert">{err}</div>}
+    <div className="mission-layout">
+      <div>
+        <section className="panel mission-step"><span className="step-no">01</span><div><h3>Read your starting basket</h3><p>{post.body}</p><div className="sector-chip-row">{mission.baselineTickers.map((ticker: string) => <span className="sector-chip" key={ticker}><strong>{ticker}</strong> {mission.companies.find((h: any) => h.ticker === ticker)?.sector || "original pick"}</span>)}</div></div></section>
+        <section className="panel mission-step"><span className="step-no">02</span><div className="grow"><h3>Research companies outside those sectors</h3><p>Use reliable sources outside SimLife. Pick companies whose businesses do not depend on the same customers or the same economic weather as your first basket.</p>{picks.map((pick, index) => <div className="research-pick" key={index}><div className="field"><label>New company {index + 1}</label><select value={pick.ticker} disabled={!!post.submission} onChange={(e) => updatePick(index, { ticker: e.target.value })}><option value="">Choose a current new holding…</option>{options.map((ticker) => <option key={ticker} value={ticker}>{ticker} · {mission.companies.find((h: any) => h.ticker === ticker)?.sector}</option>)}</select></div><div className="field grow"><label>What does it do, and why is it a different bet?</label><textarea rows={2} disabled={!!post.submission} value={pick.thesis} onChange={(e) => updatePick(index, { thesis: e.target.value })} /></div></div>)}</div></section>
+        <section className="panel mission-step"><span className="step-no">03</span><div className="grow"><h3>Explain the portfolio you built</h3><p>What risks are now spread out? Which original weakness did your additions address?</p><textarea rows={5} disabled={!!post.submission} value={reflection} onChange={(e) => setReflection(e.target.value)} placeholder={`At least ${mission.targets.reflectionMinWords} words…`} /></div></section>
+      </div>
+      <aside className="mission-evidence">
+        <div className="panel sticky-card"><div className="section-kicker">Live evidence</div>{checks.map(([ok, label, detail]: any) => <div className={`mission-check ${ok ? "done" : ""}`} key={label}><span>{ok ? "✓" : "○"}</span><div><strong>{label}</strong><small>{detail}</small></div></div>)}<div className="sector-chip-row">{mission.sectors.map((sector: string) => <span className="sector-chip" key={sector}>{sector}</span>)}</div><button className="ghost wide" onClick={onOpenInvesting}>Open Investing →</button></div>
+      </aside>
+    </div>
+    {!post.submission && <div className="mission-submit-bar"><div><strong>{mission.met ? "Portfolio evidence complete." : "Keep building before you submit."}</strong><span>Your teacher receives the holdings snapshot plus your explanation.</span></div><button disabled={busy || !mission.met} onClick={submit}>{busy ? "Submitting…" : "Submit mission"}</button></div>}
+  </div>;
 }
 
 function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
@@ -1892,6 +1989,7 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
     if (moved) {
       if (zone === "__tray__") unplace(ticker);
       else if (zone) { assign(ticker, zone); }
+      else unplace(ticker);
       return;
     }
     // Not a drag: treat as a tap. Tap a chip then a bucket also works, which is
@@ -2027,22 +2125,85 @@ function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
 
 // ---------------- teacher: class activity results ----------------
 
+function TeacherClassPosts({ classes, defaultClassId }: { classes: any[]; defaultClassId: string }) {
+  const [posts, setPosts] = useState<any[]>([]);
+  const [open, setOpen] = useState<"" | "announcement" | "portfolio_mission">("");
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [body, setBody] = useState("");
+  const [scope, setScope] = useState(defaultClassId);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
+  const load = useCallback(async () => setPosts((await api<any>("/api/teacher/class-posts")).posts), []);
+  useEffect(() => { load().catch((e: any) => setErr(e.message)); }, [load]);
+  useEffect(() => { if (open) setScope(defaultClassId); }, [defaultClassId, open]);
+
+  const start = (kind: "announcement" | "portfolio_mission") => {
+    setOpen(kind); setErr(""); setNotice("");
+    if (kind === "portfolio_mission") {
+      setTitle("Build a five-sector portfolio");
+      setSummary("Research beyond your first three picks. Add companies until you hold at least six across five sectors, then explain why each addition changes the risk you are taking.");
+      setBody("Your first three stock purchases are your starting basket. Do not just collect three more logos: research companies outside those original sectors, buy them in SimLife, and explain what each business adds. If your original three were concentrated in one sector, you may need more than three additions to reach five sectors. ETFs do not count toward the six-company target for this mission.");
+    } else { setTitle(""); setSummary(""); setBody(""); }
+  };
+  const createPost = async () => {
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const created = await api<any>("/api/teacher/class-posts", { method: "POST", body: JSON.stringify({
+        kind: open, classId: scope || null, title, summary, body,
+        heroUrl: open === "portfolio_mission" ? "/module-art/balanced-portfolio.svg" : null,
+        spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5, minNewCompanies: 3, minNewSectorCompanies: 3, pickThesisMinWords: 12, reflectionMinWords: 40 } : {},
+      }) });
+      setOpen(""); await load(); setNotice(`Draft “${created.title}” created.`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  const status = async (id: string, next: string) => {
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      await api(`/api/teacher/class-posts/${id}/status`, { method: "POST", body: JSON.stringify({ status: next }) });
+      await load(); setNotice(next === "published" ? "Posted to students." : next === "archived" ? "Post archived." : "Post returned to draft.");
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  return <div className="panel class-post-desk">
+    <div className="panel-heading"><div><h2>Class feed</h2><p className="hint">Post a quick announcement or a portfolio-linked mission. Drafts stay invisible until you publish.</p></div><div className="row"><button className="ghost" onClick={() => start("announcement")}>Announcement</button><button onClick={() => start("portfolio_mission")}>Portfolio mission</button></div></div>
+    {err && <div className="error">{err}</div>}{notice && <div className="notice">{notice}</div>}
+    {open && <div className="class-post-form">
+      <div className="grid2"><div className="field"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} /></div><div className="field"><label>Who gets it</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div></div>
+      {open === "portfolio_mission" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
+      <div className="field"><label>{open === "announcement" ? "Message" : "Mission brief"}</label><textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)} /></div>
+      {open === "portfolio_mission" && <p className="hint">Built-in evidence: original three stock buys · 6 current companies · 5 sectors · 3 additions outside the original sectors · three research explanations · final reflection.</p>}
+      <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
+    </div>}
+    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement" : "Portfolio mission"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
+  </div>;
+}
+
 function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; classId: string; onClassChange: (id: string) => void }) {
   const [activities, setActivities] = useState<any[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("Put each ticker in its sector.");
+  const [activityClass, setActivityClass] = useState("");
+  const [bucketsText, setBucketsText] = useState([
+    "Consumer Discretionary", "Consumer Staples", "Information Technology",
+    "Health Care", "Financials", "Utilities",
+  ].join("\n"));
+  const [tickersText, setTickersText] = useState("NKE\nSBUX\nCOST\nPG\nNVDA\nAAPL\nAMZN\nJNJ\nJPM\nBAC\nNEE\nDUK");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await api<any>("/api/teacher/activities");
-        setActivities(r.activities);
-        if (r.activities.length && !selected) setSelected(r.activities[0].id);
-      } catch (e: any) { setErr(e.message); }
-    })();
+  const loadActivities = useCallback(async (preferId?: string) => {
+    const r = await api<any>("/api/teacher/activities");
+    setActivities(r.activities);
+    setSelected((current) => preferId || current || r.activities[0]?.id || "");
   }, []);
+  useEffect(() => { loadActivities().catch((e: any) => setErr(e.message)); }, [loadActivities]);
 
   const load = useCallback(async () => {
     if (!selected) { setData(null); return; }
@@ -2053,6 +2214,40 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
     finally { setBusy(false); }
   }, [selected, classId]);
   useEffect(() => { void load(); }, [load]);
+
+  const lines = (value: string) => value.split(/[\n,]+/).map((part) => part.trim()).filter(Boolean);
+  const create = async () => {
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const act = await api<any>("/api/teacher/activities", {
+        method: "POST",
+        body: JSON.stringify({
+          classId: activityClass || null,
+          title, prompt,
+          buckets: lines(bucketsText),
+          tokens: lines(tickersText).map((ticker) => ({ ticker: ticker.toUpperCase() })),
+          status: "draft",
+        }),
+      });
+      await loadActivities(act.id);
+      setComposing(false); setTitle("");
+      setNotice(`Draft “${act.title}” created. Review it, then publish when ready.`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const changeStatus = async (status: "draft" | "published" | "archived") => {
+    if (!selected) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      await api(`/api/teacher/activities/${selected}/status`, {
+        method: "POST", body: JSON.stringify({ status }),
+      });
+      await loadActivities(selected); await load();
+      setNotice(status === "published" ? "Activity published to students." : status === "archived" ? "Activity archived." : "Activity returned to draft.");
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
 
   const act = data?.activity;
   const tickers: string[] = act ? act.tokens.map((t: any) => String(t.ticker)) : [];
@@ -2088,10 +2283,32 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
           <h2>Class activities</h2>
           <p>Who has done it, and which companies the room is getting wrong.</p>
         </div>
-        {data && <div className="teacher-summary"><strong>{started.length}</strong><span>of {data.students.length} started</span></div>}
+        <div className="row">
+          {data && <div className="teacher-summary"><strong>{started.length}</strong><span>of {data.students.length} started</span></div>}
+          <button className="ghost" onClick={() => { setComposing((open) => !open); setActivityClass(classId); setErr(""); }}>{composing ? "Close sort creator" : "Create sector sort"}</button>
+        </div>
       </div>
 
       {err && <div className="error" role="alert">{err}</div>}
+      {notice && <div className="notice" role="status">{notice}</div>}
+
+      <TeacherClassPosts classes={classes} defaultClassId={classId} />
+
+      {composing && (
+        <div className="panel activity-composer">
+          <div className="panel-heading"><div><h2>New sector sort</h2><p className="hint">The answer key comes from the ticker directory. New activities stay private until you publish them.</p></div><span className="badge-due">Draft</span></div>
+          <div className="grid2">
+            <div className="field"><label htmlFor="new-act-title">Title</label><input id="new-act-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Sector sort — Week 2" /></div>
+            <div className="field"><label htmlFor="new-act-class">Who gets it</label><select id="new-act-class" value={activityClass} onChange={(e) => setActivityClass(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          </div>
+          <div className="field"><label htmlFor="new-act-prompt">Directions</label><textarea id="new-act-prompt" rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} /></div>
+          <div className="grid2">
+            <div className="field"><label htmlFor="new-act-buckets">Categories — one per line</label><textarea id="new-act-buckets" rows={8} value={bucketsText} onChange={(e) => setBucketsText(e.target.value)} /></div>
+            <div className="field"><label htmlFor="new-act-tickers">Tickers — one per line</label><textarea id="new-act-tickers" rows={8} value={tickersText} onChange={(e) => setTickersText(e.target.value)} /></div>
+          </div>
+          <div className="row"><button disabled={busy || title.trim().length < 2 || lines(bucketsText).length < 2 || lines(tickersText).length < 2} onClick={create}>{busy ? "Saving…" : "Save draft"}</button><span className="small">You can publish it from the activity controls below.</span></div>
+        </div>
+      )}
 
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
         <div className="field grow">
@@ -2110,6 +2327,17 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
         </div>
         {data && <button className="ghost" onClick={csv} style={{ alignSelf: "end" }}>Export CSV</button>}
       </div>
+
+      {act && (
+        <div className="activity-publish-bar">
+          <div><strong>{act.title}</strong> <span className={act.status === "published" ? "badge-paid" : "badge-due"}>{act.status}</span><div className="small">{activities.find((a) => a.id === act.id)?.classId ? classes.find((c) => c.id === activities.find((a) => a.id === act.id)?.classId)?.name || "One class" : "Every class"}</div></div>
+          <div className="row">
+            {act.status !== "published" && <button disabled={busy} onClick={() => changeStatus("published")}>Publish</button>}
+            {act.status === "published" && <button className="ghost" disabled={busy} onClick={() => changeStatus("draft")}>Unpublish</button>}
+            {act.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => changeStatus("archived")}>Archive</button>}
+          </div>
+        </div>
+      )}
 
       {busy && <p className="small">Loading…</p>}
 

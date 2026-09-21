@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 800" role="img" aria-labelledby="title desc">
+  <title id="title">Building a balanced portfolio</title>
+  <desc id="desc">A student organizes company cards into five colorful sector trays while comparing growth and risk.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7f0de"/>
+      <stop offset="1" stop-color="#e8ddc4"/>
+    </linearGradient>
+    <linearGradient id="sweater" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4e6656"/>
+      <stop offset="1" stop-color="#273d35"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#3a3429" flood-opacity=".16"/>
+    </filter>
+    <pattern id="grain" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="5" r="1" fill="#705f43" opacity=".08"/>
+      <circle cx="17" cy="14" r=".8" fill="#705f43" opacity=".06"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="800" fill="url(#paper)"/>
+  <rect width="1600" height="800" fill="url(#grain)"/>
+  <path d="M0 610C250 566 433 594 641 624c274 39 610-38 959-10v186H0Z" fill="#d2c29f" opacity=".5"/>
+
+  <!-- Window and classroom details -->
+  <g opacity=".72">
+    <rect x="100" y="86" width="380" height="270" rx="18" fill="#c5d4c0" stroke="#6d745f" stroke-width="8"/>
+    <path d="M290 88v266M102 222h376" stroke="#f6f0df" stroke-width="12"/>
+    <circle cx="177" cy="160" r="42" fill="#edd48c" opacity=".8"/>
+    <path d="M115 355c40-96 88-131 145-77 43-73 104-48 158 77Z" fill="#8ba085"/>
+  </g>
+  <g transform="translate(1290 86)" fill="none" stroke="#7e6842" stroke-width="9" stroke-linecap="round">
+    <path d="M105 0v47M16 49h178M105 48 42 151M105 48l63 103"/>
+    <path d="M11 151h62c-4 43-58 43-62 0Zm126 0h62c-4 43-58 43-62 0Z" fill="#d8b65f" stroke-width="7"/>
+  </g>
+
+  <!-- Plant -->
+  <g transform="translate(75 430)">
+    <path d="M93 151C79 81 70 38 51 0m42 151c18-67 35-103 69-133M93 151C64 90 35 72 2 69" fill="none" stroke="#536f4f" stroke-width="10"/>
+    <ellipse cx="43" cy="25" rx="39" ry="20" transform="rotate(34 43 25)" fill="#77906c"/>
+    <ellipse cx="155" cy="26" rx="42" ry="21" transform="rotate(-31 155 26)" fill="#587b5c"/>
+    <ellipse cx="27" cy="78" rx="36" ry="19" transform="rotate(14 27 78)" fill="#628160"/>
+    <path d="M38 139h112l-17 109H55Z" fill="#aa7052" stroke="#684b3d" stroke-width="7"/>
+  </g>
+
+  <!-- Student -->
+  <g transform="translate(780 34)">
+    <path d="M249 91c49-61 165-53 207 28 32 61 9 151-10 226H207c-24-87-34-194 42-254Z" fill="#2d2925"/>
+    <ellipse cx="330" cy="165" rx="91" ry="111" fill="#c98665"/>
+    <path d="M239 135c22-91 146-105 214-42 26 24 35 55 37 84-34-28-69-59-93-92-28 54-83 82-158 92Z" fill="#302924"/>
+    <path d="M287 174q17 13 34 0m51 0q17 13 34 0" fill="none" stroke="#4d3028" stroke-width="7" stroke-linecap="round"/>
+    <path d="M326 220q31 24 61-2" fill="none" stroke="#814d3c" stroke-width="7" stroke-linecap="round"/>
+    <path d="M227 298c62-41 184-38 247 5 61 42 91 167 96 324H119c9-157 45-286 108-329Z" fill="url(#sweater)" stroke="#24372f" stroke-width="9"/>
+    <path d="M447 323c62 31 73 112 50 186l-43 125H338l63-196" fill="#405b4b"/>
+    <path d="M128 587c38-117 70-186 119-201 47-14 93 18 71 60-35 66-91 121-130 171Z" fill="#496453"/>
+    <path d="M231 430c33 1 61 17 66 39 4 19-12 37-45 54l-89 44-33-66 76-58c9-7 17-11 25-13Z" fill="#c98665"/>
+    <path d="M456 315c38-20 81-7 94 25 10 25 0 56-24 77l-64 57-51-54 45-105Z" fill="#c98665"/>
+  </g>
+
+  <!-- Desk -->
+  <path d="M300 610h1216l84 190H210Z" fill="#b9875f" stroke="#76583f" stroke-width="9"/>
+  <path d="M300 610h1216l20 46H278Z" fill="#d2a477"/>
+
+  <!-- Research notebook and chart -->
+  <g filter="url(#shadow)" transform="translate(322 628) rotate(-4)">
+    <rect width="320" height="128" rx="10" fill="#f8f3e7" stroke="#7d725f" stroke-width="6"/>
+    <path d="M160 3v122M30 34h98M30 60h80M30 86h104" stroke="#b5a990" stroke-width="5"/>
+    <path d="m188 91 31-30 28 13 39-46" fill="none" stroke="#52705e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="219" cy="61" r="7" fill="#52705e"/><circle cx="247" cy="74" r="7" fill="#52705e"/><circle cx="286" cy="28" r="7" fill="#52705e"/>
+  </g>
+
+  <!-- Six sector trays -->
+  <g filter="url(#shadow)" stroke="#4e463a" stroke-width="6" stroke-linejoin="round">
+    <g transform="translate(680 628)"><path d="m0 38 91-30 96 35-12 119H12Z" fill="#607d63"/><rect x="53" y="-31" width="82" height="82" rx="8" fill="#f4efdf"/><path d="M78 25c3-28 27-39 38-46 3 30-8 49-38 46Zm4 0c-13-21-27-25-39-25 6 25 19 34 39 25Z" fill="#557b58" stroke="none"/></g>
+    <g transform="translate(860 628)"><path d="m0 38 91-30 96 35-12 119H12Z" fill="#b86648"/><rect x="53" y="-31" width="82" height="82" rx="8" fill="#f4efdf"/><path d="M74-5h41v31H74Zm8-11h25v11H82Z" fill="#a8563e" stroke="none"/></g>
+    <g transform="translate(1040 628)"><path d="m0 38 91-30 96 35-12 119H12Z" fill="#496b82"/><rect x="53" y="-31" width="82" height="82" rx="8" fill="#f4efdf"/><g fill="#496b82" stroke="none"><circle cx="77" cy="2" r="12"/><circle cx="111" cy="2" r="12"/><path d="M58 33c1-21 38-21 39 0Zm34 0c1-21 38-21 39 0Z"/></g></g>
+    <g transform="translate(1220 628)"><path d="m0 38 91-30 96 35-12 119H12Z" fill="#c49b49"/><rect x="53" y="-31" width="82" height="82" rx="8" fill="#f4efdf"/><path d="M94-18c-25 0-32 30-14 43v10h28V25c18-13 11-43-14-43Zm-11 58h22" fill="#c49b49" stroke="none"/></g>
+    <g transform="translate(1400 628)"><path d="m0 38 78-26 96 35-12 115H12Z" fill="#9a6e78"/><rect x="43" y="-31" width="82" height="82" rx="8" fill="#f4efdf"/><path d="m84-17 10 20 23 3-17 16 4 23-20-11-21 11 4-23L50 6l23-3Z" fill="#9a6e78" stroke="none"/></g>
+  </g>
+
+  <!-- Paper guide character -->
+  <g transform="translate(552 404)" stroke="#3f3b34" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m0 54 65-40 72 31-6 133-105 4Z" fill="#f8f3e7"/>
+    <circle cx="55" cy="75" r="6" fill="#3f3b34" stroke="none"/><circle cx="88" cy="75" r="6" fill="#3f3b34" stroke="none"/>
+    <path d="M58 99q14 13 29-1M28 123-8 148m139-30 38-31M44 181l-20 39m83-40 27 37" fill="none"/>
+    <path d="m169 87 35-9-18 31Z" fill="#d5b15e"/>
+  </g>
+</svg>

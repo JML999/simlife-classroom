@@ -115,19 +115,43 @@ export async function createActivity(opts: {
 }): Promise<SortActivity> {
   const title = String(opts.title || "").trim();
   if (title.length < 2) throw new SortError("INVALID_INPUT", "Give the activity a title.");
-  if (!Array.isArray(opts.buckets) || opts.buckets.length < 2) {
+  const buckets = Array.isArray(opts.buckets)
+    ? [...new Set(opts.buckets.map((b) => String(b || "").trim()).filter(Boolean))]
+    : [];
+  if (buckets.length < 2) {
     throw new SortError("INVALID_INPUT", "An activity needs at least two buckets.");
   }
-  if (!Array.isArray(opts.tokens) || opts.tokens.length < 2) {
+  const tokenTickers = Array.isArray(opts.tokens)
+    ? opts.tokens.map((t) => String(t?.ticker || "").trim().toUpperCase()).filter(Boolean)
+    : [];
+  if (tokenTickers.length < 2) {
     throw new SortError("INVALID_INPUT", "An activity needs at least two tickers.");
   }
+  if (new Set(tokenTickers).size !== tokenTickers.length) {
+    throw new SortError("INVALID_INPUT", "Each ticker can appear only once.");
+  }
+  const badTicker = tokenTickers.find((ticker) => !/^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker));
+  if (badTicker) throw new SortError("INVALID_INPUT", `“${badTicker}” is not a valid ticker symbol.`);
+  const unknown = tokenTickers.filter((ticker) => !sectorOf(ticker));
+  if (unknown.length) {
+    throw new SortError("INVALID_INPUT", `No sector data for: ${unknown.join(", ")}. Choose tickers from the directory.`);
+  }
+  const missingBuckets = [...new Set(tokenTickers.map((ticker) => sectorOf(ticker)!).filter((sector) => !buckets.includes(sector)))];
+  if (missingBuckets.length) {
+    throw new SortError("INVALID_INPUT", `Add ${missingBuckets.join(", ")} to the categories, or remove its tickers.`);
+  }
+  if (opts.classId && !(await one(`SELECT id FROM classes WHERE id = ?`, [opts.classId]))) {
+    throw new SortError("INVALID_INPUT", "Choose a class that still exists.");
+  }
+  const status = opts.status === "published" ? "published" : "draft";
+  const tokens = tokenTickers.map((ticker) => ({ ticker }));
   const id = newId("sact");
   await run(
     `INSERT INTO sort_activities (id, class_id, title, prompt, buckets, tokens, status, created_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, opts.classId ?? null, title, String(opts.prompt || ""),
-     JSON.stringify(opts.buckets), JSON.stringify(opts.tokens),
-     opts.status || "draft", opts.createdBy ?? null, nowIso()],
+    [id, opts.classId ?? null, title, String(opts.prompt || "").trim(),
+     JSON.stringify(buckets), JSON.stringify(tokens),
+     status, opts.createdBy ?? null, nowIso()],
   );
   return (await getActivity(id))!;
 }
@@ -139,10 +163,15 @@ export async function getActivity(id: string): Promise<SortActivity | null> {
 
 export async function listActivities(opts: { classId?: string | null; publishedOnly?: boolean } = {}): Promise<SortActivity[]> {
   // A NULL class_id means the activity is offered to every class.
+  // `undefined` is the teacher's all-activities view. `null` is a signed-in
+  // user with no class, who may see only school-wide activities.
   const rows = opts.classId
     ? await q<any>(
         `SELECT * FROM sort_activities WHERE (class_id = ? OR class_id IS NULL)${opts.publishedOnly ? " AND status = 'published'" : ""} ORDER BY created_at DESC`,
         [opts.classId])
+    : opts.classId === null
+      ? await q<any>(
+          `SELECT * FROM sort_activities WHERE class_id IS NULL${opts.publishedOnly ? " AND status = 'published'" : ""} ORDER BY created_at DESC`)
     : await q<any>(
         `SELECT * FROM sort_activities${opts.publishedOnly ? " WHERE status = 'published'" : ""} ORDER BY created_at DESC`);
   return rows.map(rowToActivity);
