@@ -395,3 +395,44 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .question-q { background: #f4f6f4; border: 1px solid var(--line); }
 .question-a { background: #eef6f3; border: 1px solid #bcd8d0; }
 .question-answered { font-size: 12px; color: var(--pine-dark, #0a463f); margin-top: 4px; }
+
+/* ---- Class tab: sector sort ---------------------------------------------
+   The Class button sits at the BOTTOM of the rail, under a divider: the three
+   above it are places money lives, and this is a different kind of thing. */
+.student-nav-foot { margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); }
+.class-section .page-intro { padding-top: 14px; }
+.activity-list { display: flex; flex-direction: column; gap: 10px; }
+.activity-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; color: inherit; text-align: left; cursor: pointer; }
+.activity-card:hover { border-color: var(--olive); background: var(--olive-pale); }
+.activity-card h3 { margin: 0 0 2px; }
+.activity-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; white-space: nowrap; }
+.sort-tray { margin-top: 14px; }
+.sort-tray h3 { margin: 0 0 8px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ticker-chip { padding: 9px 15px; font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); background: var(--panel-strong); border: 1px solid var(--line); border-radius: 100px; cursor: pointer; }
+.ticker-chip:hover { border-color: var(--olive); }
+.ticker-chip.picked { color: #fff; background: var(--olive); border-color: var(--olive); }
+.ticker-chip.placed { background: #fff; }
+/* Result states never rely on color alone: right/wrong also changes the border
+   weight and adds a mark, for colorblind students and for a projector. */
+.ticker-chip.placed.right { border: 2px solid #5A6B33; }
+.ticker-chip.placed.right::after { content: " ✓"; }
+.ticker-chip.placed.wrong { border: 2px dashed #A8524B; }
+.ticker-chip.placed.wrong::after { content: " ?"; }
+.ticker-chip.placed.unknown { border: 2px dotted var(--muted); }
+.bucket-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.bucket { padding: 14px; }
+.bucket.targetable { border-color: var(--olive); }
+.bucket-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; margin-bottom: 8px; padding: 6px 8px; color: inherit; background: transparent; border: 0; text-align: left; }
+.bucket-head:disabled { cursor: default; opacity: 1; }
+.bucket-head h3 { margin: 0; font-size: 15px; }
+.bucket.targetable .bucket-head { background: var(--olive-pale); border-radius: 8px; cursor: pointer; }
+@media (max-width: 900px) {
+  .student-nav-foot { margin-top: 0; margin-left: auto; padding-top: 0; padding-left: 9px; border-top: 0; border-left: 1px solid var(--line); }
+  .bucket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .bucket-grid { grid-template-columns: 1fr; }
+  .activity-card { flex-direction: column; align-items: flex-start; }
+  .activity-status { align-items: flex-start; }
+}

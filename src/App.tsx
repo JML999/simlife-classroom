@@ -162,7 +162,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   // One idempotency key per form submission; reused across retries.
   const buyKey = useRef(uid());
   const sellKey = useRef(uid());
-  const [section, setSection] = useState<"dashboard" | "banking" | "investing">("dashboard");
+  const [section, setSection] = useState<"dashboard" | "banking" | "investing" | "class">("dashboard");
   const [onboarding, setOnboarding] = useState<any>(null);
 
   const load = useCallback(async () => {
@@ -247,11 +247,15 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
         <button aria-current={section === "dashboard" ? "page" : undefined} className={section === "dashboard" ? "active" : ""} onClick={() => setSection("dashboard")}><span>⌂</span>Dashboard</button>
         <button aria-current={section === "banking" ? "page" : undefined} className={section === "banking" ? "active" : ""} onClick={() => setSection("banking")}><span>▣</span>Banking</button>
         <button aria-current={section === "investing" ? "page" : undefined} className={section === "investing" ? "active" : ""} onClick={() => setSection("investing")}><span>↗</span>Investing</button>
+        <div className="student-nav-foot">
+          <button aria-current={section === "class" ? "page" : undefined} className={section === "class" ? "active" : ""} onClick={() => setSection("class")}><span>◆</span>Class</button>
+        </div>
       </nav>
       <main className="student-content">
       {onboarding && ["match", "matched", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
       {section === "dashboard" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} onChanged={load} />}
+      {section === "class" && <ClassSection />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
@@ -1752,6 +1756,189 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         )}
       </div>
     </>
+  );
+}
+
+// ---------------- class: sector sort ----------------
+//
+// Placement is CLICK-TO-PLACE, not drag and drop. Students are on Chromebooks
+// and phones, where HTML5 drag events are unreliable and inaccessible to
+// keyboard and screen-reader users. Pick a ticker, pick a bucket. Less code,
+// works everywhere, and is undoable.
+
+function ClassSection() {
+  const [activities, setActivities] = useState<any[] | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    try { setActivities((await api<any>("/api/class/activities")).activities); }
+    catch (e: any) { setErr(e.message); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  if (openId) return <SortActivity id={openId} onBack={() => { setOpenId(null); void load(); }} />;
+
+  return (
+    <div className="class-section">
+      <div className="page-intro">
+        <div>
+          <div className="eyebrow">Class</div>
+          <h2>Practice and assignments</h2>
+          <p>Work your teacher has posted. Most of it you can retry as many times as you like.</p>
+        </div>
+      </div>
+      {err && <div className="error" role="alert">{err}</div>}
+      {activities === null && <p>Loading…</p>}
+      {activities?.length === 0 && (
+        <div className="panel"><p className="hint">Nothing posted yet. Check back after class.</p></div>
+      )}
+      <div className="activity-list">
+        {activities?.map((a) => (
+          <button key={a.id} className="panel activity-card" onClick={() => setOpenId(a.id)}>
+            <div>
+              <h3>{a.title}</h3>
+              <p className="small">{a.tokenCount} companies · {a.bucketCount} sectors</p>
+            </div>
+            <div className="activity-status">
+              {a.attempts === 0
+                ? <span className="badge-due">Not started</span>
+                : a.bestCorrect === a.total
+                  ? <span className="badge-paid">All {a.total} correct</span>
+                  : <span className="badge-due">Best: {a.bestCorrect} of {a.total}</span>}
+              <span className="small">{a.attempts} {a.attempts === 1 ? "try" : "tries"}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SortActivity({ id, onBack }: { id: string; onBack: () => void }) {
+  const [act, setAct] = useState<any>(null);
+  const [placements, setPlacements] = useState<Record<string, string>>({});
+  const [picked, setPicked] = useState<string | null>(null);
+  const [result, setResult] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const key = useRef(uid());
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const a = await api<any>(`/api/class/activities/${id}`);
+        setAct(a);
+        // Resume from the most recent attempt so a reload does not lose work.
+        if (a.attempts?.length) setPlacements(a.attempts[0].placements || {});
+      } catch (e: any) { setErr(e.message); }
+    })();
+  }, [id]);
+
+  if (err) return <div className="class-section"><div className="error" role="alert">{err}</div><button className="ghost" onClick={onBack}>Back</button></div>;
+  if (!act) return <div className="class-section"><p>Loading…</p></div>;
+
+  const place = (bucket: string) => {
+    if (!picked) return;
+    setPlacements((p) => ({ ...p, [picked]: bucket }));
+    setPicked(null);
+    setResult(null);
+  };
+  const unplace = (ticker: string) => {
+    setPlacements((p) => { const n = { ...p }; delete n[ticker]; return n; });
+    setResult(null);
+  };
+
+  const unplaced = act.tokens.filter((t: any) => !placements[t.ticker]);
+  const allPlaced = unplaced.length === 0;
+  const resultFor = (ticker: string) => result?.results?.find((r: any) => r.ticker === ticker);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await api<any>(`/api/class/activities/${id}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ placements, idempotencyKey: key.current }),
+      });
+      setResult(r);
+      key.current = uid();   // a new key so the next try is its own attempt
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="class-section">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "start" }}>
+        <div>
+          <div className="eyebrow">Class activity</div>
+          <h2>{act.title}</h2>
+        </div>
+        <button className="ghost" onClick={onBack}>Back</button>
+      </div>
+      <p className="hint">{act.prompt}</p>
+      {err && <div className="error" role="alert">{err}</div>}
+
+      {result && (
+        <div className={result.correctCount === result.totalCount ? "notice" : "frozen"} role="status" aria-live="polite">
+          <strong>{result.correctCount} of {result.totalCount} in the right sector.</strong>{" "}
+          {result.correctCount === result.totalCount
+            ? "That is all of them."
+            : "The ones to look at again are outlined below. Move them and try again."}
+        </div>
+      )}
+
+      <div className="panel sort-tray">
+        <h3>{unplaced.length ? "Still to place" : "All placed"}</h3>
+        {unplaced.length === 0
+          ? <p className="hint">Every company is in a sector. Check it, or submit.</p>
+          : <div className="chip-row">
+              {unplaced.map((t: any) => (
+                <button key={t.ticker}
+                  className={`ticker-chip${picked === t.ticker ? " picked" : ""}`}
+                  aria-pressed={picked === t.ticker}
+                  onClick={() => setPicked(picked === t.ticker ? null : t.ticker)}>
+                  {t.ticker}
+                </button>
+              ))}
+            </div>}
+        <p className="small">{picked ? `${picked} selected — now choose a sector below.` : "Tap a company, then tap the sector it belongs to."}</p>
+      </div>
+
+      <div className="bucket-grid">
+        {act.buckets.map((b: string) => {
+          const inHere = act.tokens.filter((t: any) => placements[t.ticker] === b);
+          return (
+            <div key={b} className={`panel bucket${picked ? " targetable" : ""}`}>
+              <button className="bucket-head" disabled={!picked} onClick={() => place(b)}>
+                <h3>{b}</h3>
+                {picked && <span className="small">Put {picked} here</span>}
+              </button>
+              <div className="chip-row">
+                {inHere.map((t: any) => {
+                  const r = resultFor(t.ticker);
+                  const cls = !r ? "" : r.unknown ? " unknown" : r.correct ? " right" : " wrong";
+                  return (
+                    <button key={t.ticker} className={`ticker-chip placed${cls}`} onClick={() => unplace(t.ticker)}
+                      title="Tap to take it back out">
+                      {t.ticker}
+                    </button>
+                  );
+                })}
+                {inHere.length === 0 && <span className="small">empty</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="row" style={{ marginTop: 12 }}>
+        <button disabled={busy || !allPlaced} onClick={submit}>
+          {busy ? "Checking…" : result ? "Check again" : "Check my answers"}
+        </button>
+        {!allPlaced && <span className="small">Place all {act.tokens.length} to submit.</span>}
+      </div>
+    </div>
   );
 }
 

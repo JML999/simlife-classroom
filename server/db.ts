@@ -410,6 +410,70 @@ export async function initSchema(): Promise<void> {
       created_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_student_merges_target ON student_account_merges(target_user_id, created_at)`,
+
+    // ---- Leaderboard (see LEADERBOARD_PLAN.md) -----------------------------
+    // One row per student per school day. Percent return is TIME-WEIGHTED, so a
+    // teacher cash adjustment changes how much money a student has and never
+    // their percentage. twr_bp is CUMULATIVE since the account opened, in basis
+    // points (1234 = +12.34%); a competition's return is the ratio of two of
+    // them, which is why the cumulative figure is what gets stored.
+    //
+    // These CANNOT be backfilled: historical portfolio value needs historical
+    // prices, and only current quotes exist. The row written today is the only
+    // record of today that will ever exist.
+    `CREATE TABLE IF NOT EXISTS leaderboard_snapshots (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      class_id TEXT,
+      as_of_date TEXT NOT NULL,
+      value_cents INTEGER NOT NULL,
+      cash_cents INTEGER NOT NULL,
+      holdings_value_cents INTEGER NOT NULL,
+      net_contributed_cents INTEGER NOT NULL,
+      period_return_bp INTEGER NOT NULL,
+      twr_bp INTEGER NOT NULL,
+      holdings_count INTEGER NOT NULL,
+      sectors_held INTEGER,
+      top_position_bp INTEGER,
+      quote_source TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_lb_snap_user_date ON leaderboard_snapshots(user_id, as_of_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_lb_snap_class_date ON leaderboard_snapshots(class_id, as_of_date)`,
+
+    // ---- Sector sort activity ---------------------------------------------
+    // A basket of tickers the student files into sector buckets. The ANSWER KEY
+    // IS NOT STORED: correctness is checked against ticker-directory.json's
+    // sector for each ticker, so an activity cannot drift out of sync with the
+    // directory and nobody hand-types a sector wrong.
+    //
+    // Submissions are append-only, one row per attempt. Retries are the point -
+    // this is practice, not a test - and the attempt history is what shows a
+    // student converging rather than just their final answer.
+    `CREATE TABLE IF NOT EXISTS sort_activities (
+      id TEXT PRIMARY KEY,
+      class_id TEXT,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      buckets TEXT NOT NULL,
+      tokens TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_sort_act_class ON sort_activities(class_id, status)`,
+    `CREATE TABLE IF NOT EXISTS sort_submissions (
+      id TEXT PRIMARY KEY,
+      activity_id TEXT NOT NULL REFERENCES sort_activities(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      attempt_no INTEGER NOT NULL,
+      placements TEXT NOT NULL,
+      correct_count INTEGER NOT NULL,
+      total_count INTEGER NOT NULL,
+      idempotency_key TEXT UNIQUE,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_sort_sub_user ON sort_submissions(activity_id, user_id, attempt_no)`,
   ];
   for (const s of stmts) await b.run(s);
 }

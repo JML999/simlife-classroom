@@ -31,6 +31,10 @@ import {
 import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 import { createBillDraft, listBillDrafts, sendBillDraft, updateBillDraft } from "./bill-drafts.js";
+import {
+  createActivity, getActivity, listActivities, setStatus, submit as submitSort,
+  attemptsFor, progressFor, missesFor, SortError,
+} from "./sorting.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -735,6 +739,115 @@ function bankError(res: express.Response, err: unknown) {
   }
   throw err;
 }
+
+// ---- Class: sector sort activity ------------------------------------------
+// Students file a basket of tickers into sector buckets. Practice, not a test:
+// retries are allowed and every attempt is kept.
+
+app.get("/api/class/activities", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const acts = await listActivities({ classId: user.class_id, publishedOnly: true });
+  const out = [];
+  for (const a of acts) {
+    const attempts = await attemptsFor(a.id, user.id);
+    const best = attempts.reduce((b: any, r: any) => (!b || r.correct_count > b.correct_count ? r : b), null);
+    out.push({
+      id: a.id, title: a.title, prompt: a.prompt,
+      tokenCount: a.tokens.length, bucketCount: a.buckets.length,
+      attempts: attempts.length,
+      bestCorrect: best ? best.correct_count : null,
+      total: best ? best.total_count : null,
+    });
+  }
+  res.json({ activities: out });
+});
+
+app.get("/api/class/activities/:id", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const act = await getActivity(String(req.params["id"]));
+  // An unpublished or other-class activity is reported as missing, not
+  // forbidden: an unannounced assignment should not be discoverable.
+  if (!act || act.status !== "published" || (act.classId && act.classId !== user.class_id)) {
+    res.status(404).json({ error: "Activity not found." }); return;
+  }
+  const attempts = await attemptsFor(act.id, user.id);
+  res.json({
+    id: act.id, title: act.title, prompt: act.prompt,
+    buckets: act.buckets, tokens: act.tokens,
+    attempts: attempts.map((a: any) => ({
+      attemptNo: a.attempt_no, correctCount: a.correct_count, totalCount: a.total_count,
+      placements: JSON.parse(a.placements), createdAt: a.created_at,
+    })),
+  });
+});
+
+app.post("/api/class/activities/:id/submit", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (user.role !== "student") { res.status(403).json({ error: "Teachers do not submit activities." }); return; }
+  const act = await getActivity(String(req.params["id"]));
+  if (!act || (act.classId && act.classId !== user.class_id)) { res.status(404).json({ error: "Activity not found." }); return; }
+  try {
+    const result = await submitSort({
+      activityId: act.id, userId: user.id,
+      placements: req.body?.placements ?? {},
+      idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof SortError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message }); return; }
+    throw err;
+  }
+});
+
+app.get("/api/teacher/activities", requireCurrentTeacher, async (_req, res) => {
+  res.json({ activities: await listActivities({}) });
+});
+
+app.post("/api/teacher/activities", requireCurrentTeacher, async (req, res) => {
+  const user = await currentUser(req);
+  try {
+    const act = await createActivity({
+      classId: req.body?.classId || null,
+      title: String(req.body?.title || ""),
+      prompt: String(req.body?.prompt || ""),
+      buckets: req.body?.buckets,
+      tokens: req.body?.tokens,
+      status: req.body?.status === "published" ? "published" : "draft",
+      createdBy: user?.id ?? null,
+    });
+    res.json(act);
+  } catch (err) {
+    if (err instanceof SortError) { res.status(400).json({ error: err.message }); return; }
+    throw err;
+  }
+});
+
+app.post("/api/teacher/activities/:id/status", requireCurrentTeacher, async (req, res) => {
+  const status = String(req.body?.status || "");
+  if (!["draft", "published", "archived"].includes(status)) { res.status(400).json({ error: "Bad status." }); return; }
+  try {
+    await setStatus(String(req.params["id"]), status as any);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err instanceof SortError) { res.status(404).json({ error: err.message }); return; }
+    throw err;
+  }
+});
+
+app.get("/api/teacher/activities/:id/progress", requireCurrentTeacher, async (req, res) => {
+  const classId = typeof req.query["classId"] === "string" && req.query["classId"] ? String(req.query["classId"]) : null;
+  const id = String(req.params["id"]);
+  const act = await getActivity(id);
+  if (!act) { res.status(404).json({ error: "Activity not found." }); return; }
+  res.json({
+    activity: { id: act.id, title: act.title, status: act.status, buckets: act.buckets, tokens: act.tokens },
+    students: await progressFor(id, classId),
+    misses: await missesFor(id, classId),
+  });
+});
 
 app.get("/api/bank", requireAuth, async (req, res) => {
   const user = await currentUser(req);

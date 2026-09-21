@@ -1,0 +1,244 @@
+/**
+ * Leaderboard tests. The property that matters most is the first group: a
+ * teacher cash adjustment must not move a student's percent return, because
+ * the whole board is ranked on that number.
+ * Run: npm test
+ */
+import "./env.js";
+import os from "node:os";
+import path from "node:path";
+import { test, before } from "node:test";
+import assert from "node:assert";
+
+process.env["SIMLIFE_DB_PATH"] = path.join(os.tmpdir(), `simlife-leaderboard-test-${process.pid}.db`);
+// Never touch a real database from tests, even if .env sets SIMLIFE_DATABASE_URL.
+delete process.env["SIMLIFE_DATABASE_URL"];
+
+const { initSchema, run, one } = await import("./db.js");
+const { adjustCash, buy } = await import("./ledger.js");
+const { MockQuoteProvider, CachedQuotes } = await import("./quotes.js");
+const lb = await import("./leaderboard.js");
+
+let n = 0;
+const uid = () => `t_lb_${process.pid}_${++n}`;
+const mock = new MockQuoteProvider();
+const quotes = new CachedQuotes(mock, 0);
+
+/**
+ * One source of truth for price. Trades execute against the quote provider and
+ * snapshots value holdings through priceOf; if those two disagree even slightly
+ * the assertions drift by a few basis points and stop meaning anything, so both
+ * are driven from here.
+ */
+const prices = new Map<string, number>();
+const priceOf = (ticker: string) => prices.get(ticker) ?? null;
+function setPrice(ticker: string, cents: number): void {
+  mock.setPrice(ticker, cents);
+  prices.set(ticker, cents);
+}
+
+async function quoteFor(ticker: string) {
+  const { quote } = await quotes.getQuote(ticker);
+  return { priceCents: quote.priceCents, quoteTs: quote.asOf, quoteSource: quote.source };
+}
+
+before(async () => {
+  await initSchema();
+  await run(`INSERT INTO users (id, email, name, role, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ["lbteacher", "t@example.school", "Teacher", "teacher", new Date().toISOString()]);
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ["lbclass", "Test Period", "LBTEST", 0, new Date().toISOString()]);
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ["lbclass2", "Other Period", "LBTST2", 0, new Date().toISOString()]);
+});
+
+async function student(classId = "lbclass", funded = 100_000, name = "Stu"): Promise<string> {
+  const id = uid();
+  await run(`INSERT INTO users (id, email, name, role, class_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, `${id}@example.school`, name, "student", classId, new Date().toISOString()]);
+  if (funded) {
+    await adjustCash({ userId: id, actorId: "lbteacher", amountCents: funded, reason: "Opening balance", idempotencyKey: uid() });
+  }
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// The core property
+// ---------------------------------------------------------------------------
+
+test("pure arithmetic: a sub-period return ignores money added at the end", () => {
+  // Started at $1,000, ended at $1,600, but $500 of that was a deposit.
+  // The earned part is $1,100 on $1,000 = +10%, not +60%.
+  assert.equal(lb.subPeriodReturnBp(100_000, 160_000, 50_000), 1000);
+  // Same growth with no deposit.
+  assert.equal(lb.subPeriodReturnBp(100_000, 110_000, 0), 1000);
+  // A withdrawal is a negative flow and is likewise removed.
+  assert.equal(lb.subPeriodReturnBp(100_000, 60_000, -50_000), 1000);
+});
+
+test("a start value of zero yields no return rather than infinity", () => {
+  assert.equal(lb.subPeriodReturnBp(0, 50_000, 50_000), 0);
+  assert.equal(lb.subPeriodReturnBp(0, 0, 0), 0);
+});
+
+test("a mid-window deposit does not change the student's percent return", async () => {
+  setPrice("AAA", 100);
+  const a = await student("lbclass", 100_000, "NoDeposit");
+  const b = await student("lbclass", 100_000, "GetsDeposit");
+  for (const s of [a, b]) {
+    await buy({ userId: s, ticker: "AAA", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("AAA")) });
+  }
+  // $1,000 buys exactly 1,000 shares at $1.00, so each starts at exactly $1,000.
+  for (const s of [a, b]) await lb.writeSnapshot(await lb.buildSnapshot(s, "2026-09-21", priceOf));
+
+  // The market rises 20% overnight; B also receives a $500 teacher deposit.
+  setPrice("AAA", 120);
+  await adjustCash({ userId: b, actorId: "lbteacher", amountCents: 50_000, reason: "Extra funding", idempotencyKey: uid() });
+  for (const s of [a, b]) await lb.writeSnapshot(await lb.buildSnapshot(s, "2026-09-22", priceOf));
+
+  const rowA = await one<any>(`SELECT twr_bp, value_cents FROM leaderboard_snapshots WHERE user_id = ? AND as_of_date = ?`, [a, "2026-09-22"]);
+  const rowB = await one<any>(`SELECT twr_bp, value_cents FROM leaderboard_snapshots WHERE user_id = ? AND as_of_date = ?`, [b, "2026-09-22"]);
+
+  assert.equal(rowA.twr_bp, 2000, "A should be up 20%");
+  assert.equal(rowB.twr_bp, 2000, "B got a deposit but earned the same 20%");
+  // B does have more money - the deposit is real, it just is not performance.
+  assert.ok(rowB.value_cents > rowA.value_cents, "the deposit shows up in dollars");
+});
+
+// ---------------------------------------------------------------------------
+// Chaining and windows
+// ---------------------------------------------------------------------------
+
+test("chaining compounds rather than adding", () => {
+  // +10% then +10% is +21%, not +20%.
+  assert.equal(lb.chainBp(1000, 1000), 2100);
+  assert.equal(lb.chainBp(0, 1000), 1000);
+  // +25% then -20% is flat.
+  assert.equal(lb.chainBp(2500, -2000), 0);
+});
+
+test("a competition window measures only the window", () => {
+  // Already up 40% before the event; up 68% by the end. The event return is 20%.
+  assert.equal(lb.returnBetweenBp(4000, 6800), 2000);
+  // Everyone starts an event at zero regardless of prior gains.
+  assert.equal(lb.returnBetweenBp(4000, 4000), 0);
+  assert.equal(lb.returnBetweenBp(0, 1500), 1500);
+});
+
+test("leaderboard since a baseline date neutralizes prior gains", async () => {
+  // Separate tickers so each student can have their own price path.
+  setPrice("BBX", 100);
+  setPrice("BBY", 100);
+  const early = await student("lbclass2", 100_000, "EarlyBird");
+  const late = await student("lbclass2", 100_000, "Latecomer");
+  await buy({ userId: early, ticker: "BBX", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("BBX")) });
+  await buy({ userId: late, ticker: "BBY", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("BBY")) });
+  await lb.writeSnapshot(await lb.buildSnapshot(early, "2026-09-01", priceOf));
+  await lb.writeSnapshot(await lb.buildSnapshot(late, "2026-09-01", priceOf));
+
+  // EarlyBird's stock doubles BEFORE the competition starts; Latecomer's is flat.
+  setPrice("BBX", 200);
+  await lb.writeSnapshot(await lb.buildSnapshot(early, "2026-09-25", priceOf));
+  await lb.writeSnapshot(await lb.buildSnapshot(late, "2026-09-25", priceOf));
+
+  // During the competition both rise exactly 10%.
+  setPrice("BBX", 220);
+  setPrice("BBY", 110);
+  await lb.writeSnapshot(await lb.buildSnapshot(early, "2026-10-17", priceOf));
+  await lb.writeSnapshot(await lb.buildSnapshot(late, "2026-10-17", priceOf));
+
+  const all = await lb.leaderboardFor("lbclass2");
+  const early_all = all.entries.find((e) => e.name === "EarlyBird")!;
+  assert.ok(early_all.returnBp > 10_000, "all-time, EarlyBird is far ahead");
+
+  const event = await lb.leaderboardFor("lbclass2", { since: "2026-09-25" });
+  const e = event.entries.find((x) => x.name === "EarlyBird")!;
+  const l = event.entries.find((x) => x.name === "Latecomer")!;
+  assert.equal(e.returnBp, 1000, "within the window EarlyBird earned 10%");
+  assert.equal(l.returnBp, 1000, "and so did Latecomer");
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot mechanics
+// ---------------------------------------------------------------------------
+
+test("re-running a day updates it instead of double-counting the chain", async () => {
+  setPrice("CCC", 100);
+  const s = await student("lbclass", 100_000, "Rerun");
+  await buy({ userId: s, ticker: "CCC", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("CCC")) });
+  await lb.writeSnapshot(await lb.buildSnapshot(s, "2026-09-21", priceOf));
+
+  setPrice("CCC", 110);
+  await lb.writeSnapshot(await lb.buildSnapshot(s, "2026-09-22", priceOf));
+  await lb.writeSnapshot(await lb.buildSnapshot(s, "2026-09-22", priceOf)); // again, same day
+
+  const rows = await (await import("./db.js")).q<any>(
+    `SELECT as_of_date, twr_bp FROM leaderboard_snapshots WHERE user_id = ? ORDER BY as_of_date`, [s]);
+  assert.equal(rows.length, 2, "one row per date");
+  assert.equal(rows[1].twr_bp, 1000, "still +10%, not +21%");
+});
+
+test("snapshotAll writes a row per student in a class", async () => {
+  await student("lbclass", 50_000, "Bulk1");
+  await student("lbclass", 50_000, "Bulk2");
+  const written = await lb.snapshotAll("2026-09-30", priceOf, { classId: "lbclass" });
+  assert.ok(written >= 2);
+  const row = await one<any>(
+    `SELECT COUNT(*) AS n FROM leaderboard_snapshots WHERE as_of_date = ? AND class_id = ?`,
+    ["2026-09-30", "lbclass"]);
+  assert.equal(Number(row.n), written);
+});
+
+test("an uninvested student is flat, not errored", async () => {
+  const s = await student("lbclass", 100_000, "AllCash");
+  const snap = await lb.buildSnapshot(s, "2026-10-01", priceOf);
+  assert.equal(snap.holdingsCount, 0);
+  assert.equal(snap.valueCents, 100_000);
+  assert.equal(snap.topPositionBp, null, "no positions means no largest position");
+});
+
+// ---------------------------------------------------------------------------
+// The board itself
+// ---------------------------------------------------------------------------
+
+test("board ranks by percent descending and hides dollars by default", async () => {
+  const { entries } = await lb.leaderboardFor("lbclass");
+  for (let i = 1; i < entries.length; i++) {
+    assert.ok(entries[i - 1]!.returnBp >= entries[i]!.returnBp, "sorted descending");
+  }
+  assert.ok(entries.every((e) => e.valueCents === undefined),
+    "a student client must never receive another student's dollar balance");
+
+  const teacher = await lb.leaderboardFor("lbclass", { includeDollars: true });
+  assert.ok(teacher.entries.every((e) => typeof e.valueCents === "number"), "teacher view has dollars");
+});
+
+test("concentration is reported beside the return, not folded into it", async () => {
+  setPrice("DDD", 100);
+  const s = await student("lbclass", 100_000, "AllIn");
+  await buy({ userId: s, ticker: "DDD", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("DDD")) });
+  const snap = await lb.buildSnapshot(s, "2026-10-02", priceOf);
+  assert.equal(snap.topPositionBp, 10_000, "100% of the account is one position");
+});
+
+test("median is used for the team score so one lucky student cannot carry a class", () => {
+  assert.equal(lb.medianBp([100, 200, 300]), 200);
+  assert.equal(lb.medianBp([100, 200, 300, 400]), 250);
+  // One student up 500% barely moves the median; it would dominate a mean.
+  assert.equal(lb.medianBp([0, 100, 200, 300, 50_000]), 200);
+  assert.equal(lb.medianBp([]), null);
+});
+
+test("class standings report participation alongside the median", async () => {
+  const standings = await lb.classStandings(["lbclass"], {});
+  const c = standings[0]!;
+  assert.equal(c.name, "Test Period");
+  assert.ok(c.enrolled >= c.participants, "not everyone enrolled is necessarily competing");
+  assert.ok(c.participants > 0);
+});
+
+test("formatBp reads as a percentage", () => {
+  assert.equal(lb.formatBp(1234), "+12.34%");
+  assert.equal(lb.formatBp(-500), "-5.00%");
+  assert.equal(lb.formatBp(0), "+0.00%");
+});
