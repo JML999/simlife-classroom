@@ -96,3 +96,47 @@ anything under `server/sorting.ts` or the Class parts of `src/App.tsx`.
 
 Related design docs: `CLASS_TAB_PLAN.md`, `MODULE_WEEK2_BALANCED_PORTFOLIO.md`,
 `LEADERBOARD_PLAN.md`.
+
+---
+
+## Update 2026-09-22 — submit model, drafts, Modules + Module 2 live
+
+Commits on `origin/main` (all pushed, Render auto-deploys):
+`17b97be` class tab + sector data · `92ad5ba` drag-drop sort + teacher
+dashboard · `726f01f` submit-for-teacher-check (no scores shown to students)
+· `137469b` Save-for-later draft next to Submit · `6115741` dynamic class
+feed + portfolio mission · `5848fb8` "Your field guide" → "Modules",
+Module 2 mission seed, per-class hide checkboxes.
+
+Student model now: **Save** (partial OK, server draft, "Draft saved" badge,
+resume across devices) → **Submit** (requires all placed, teacher checks it).
+Grading never leaves the server for students; drafts are never submissions and
+never shown on the teacher portal. Submit clears the draft.
+
+Teacher model: Class page has **"Modules shown to this class"** — per-class
+checkbox grid (CodeWorld pattern: store hidden set, save whole state at once,
+Show all / Hide all). Hidden = presentation-only; progress + submissions kept.
+Module numbers are chronological and stable when something is hidden.
+
+Live prod state (verified 2026-09-22 via read-only query + seed runs):
+- Module 1: sector sort `sact_gVYh5qvdjwnv_IHs` (published, class=null).
+- Module 2: "Build a five-sector portfolio" `cpost_QnyDY8gXb8gPpQsK`
+  (published, class=null) — seeded with `npm run seed:mission`. Pushing code
+  does NOT create it; the seed must be run against the target DB (idempotent).
+- `class_hidden_modules` exists live, hidden set empty (nothing hidden).
+- `npm run seed:sort` was run against prod 2026-09-21; `seed:mission` 2026-09-22.
+
+Health: **91/91 tests pass**, client + server typecheck clean, `npm run build`
+clean. Working tree clean.
+
+Still open:
+1. Browser check for hide/unhide (interrupted by usage limit): untick Module 2
+   for one class, confirm student loses it, re-tick, confirm it returns as
+   Module 2 (not renumbered).
+2. `CLASS_MODULE_STATUS.md` is stale (says 81 tests, Module 2 "not built").
+   Update or delete it.
+3. `npm run dev` reads/writes PROD Supabase (`.env` sets
+   `SIMLIFE_DATABASE_URL`). Unset it for a local SQLite sandbox.
+4. Old browser-verified gaps in `CLASS_MODULE_STATUS.md` (drag over empty
+   space, reload mid-sort with drafts now, no-class student, teacher class
+   filter, concurrent submits) — still unverified against production.

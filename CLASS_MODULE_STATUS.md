@@ -1,5 +1,12 @@
 # Class module — status, verified / not verified
 
+> UPDATE 2026-09-22: partly stale. Suite is 91/91 (not 81). Module 2 IS built
+> ("Build a five-sector portfolio", `npm run seed:mission`, published live
+> 2026-09-22) and per-class hide checkboxes exist (`server/class-modules.ts`).
+> Student model is now Save-draft → Submit-for-teacher-check (`137469b`,
+> `726f01f`). See `SESSION_HANDOFF.md` (2026-09-22 section) for current state.
+> The "NOT verified" list below is still unverified against production.
+
 Sector sort is the first Class-tab module. This file is the handoff: what is
 built, what was actually tested, and what is still missing. Companion docs:
 `CLASS_TAB_PLAN.md` (the wider design), `MODULE_WEEK2_BALANCED_PORTFOLIO.md`
