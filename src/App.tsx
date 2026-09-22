@@ -906,7 +906,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [query, setQuery] = useState("");
   const [freezeConfirm, setFreezeConfirm] = useState<any>(null);
   const [auditOpen, setAuditOpen] = useState(false);
-  const [moduleProgress, setModuleProgress] = useState<{ modules: any[]; students: Record<string, { started: number; completed: number }> }>({ modules: [], students: {} });
+  const [moduleProgress, setModuleProgress] = useState<{ modules: any[]; students: Record<string, { assigned: number; started: number; completed: number }> }>({ modules: [], students: {} });
   const [tsection, setTsection] = useState<"brokerage" | "banking" | "class">("banking");
   const cashKey = useRef(uid());
   const bankKey = useRef(uid());
@@ -943,7 +943,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         api<{ students: any[] }>(`/api/teacher/roster${qs}`),
         api<{ entries: any[] }>(`/api/teacher/audit${qs}`),
         cid ? api<{ students: any[] }>(`/api/teacher/reference?classId=${cid}`).catch(() => ({ students: [] })) : Promise.resolve({ students: [] }),
-        api<{ modules: any[]; students: Record<string, { started: number; completed: number }> }>(`/api/teacher/module-progress${qs}`),
+        api<{ modules: any[]; students: Record<string, { assigned: number; started: number; completed: number }> }>(`/api/teacher/module-progress${qs}`),
       ]);
       setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students); setModuleProgress(mp);
     } catch (e: any) { setErr(e.message); }
@@ -977,8 +977,10 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const sorted = [...filtered].sort((a, b) => {
     const val = (s: any) => sortKey === "last" ? (s.last_active_at || "")
       : sortKey === "class" ? (s.class_name || "")
-      : sortKey === "started" ? (moduleProgress.students[s.id]?.started ?? 0)
-      : sortKey === "completed" ? (moduleProgress.students[s.id]?.completed ?? 0)
+      : sortKey === "portfolio" ? (s.portfolioCents ?? 0)
+      : sortKey === "invested" ? (s.investedCents ?? 0)
+      : sortKey === "return" ? (s.gainLossCents ?? 0)
+      : sortKey === "trades" ? (s.trades ?? 0)
       : (s.name || "");
     const av = val(a), bv = val(b);
     return (typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv))) * sortDir;
@@ -1225,7 +1227,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   </div>
                 )}
                 {tsection === "brokerage" && cashAdjustPanel}
-                {(() => {
+                {tsection === "class" && (() => {
                   const mods = profile.modules || [];
                   const started = mods.filter((m: any) => m.status !== "not_started").length;
                   const done = mods.filter((m: any) => m.status === "submitted").length;
@@ -1326,13 +1328,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                     </div>
                   );
                 })()}
-                <div className="stat-grid">
-                  <div className="stat"><div className="label">Brokerage cash</div><div className="value">{money(profile.portfolio.cashCents)}</div></div>
-                  <div className="stat"><div className="label">Portfolio</div><div className="value">{money(profile.portfolio.portfolioCents)}</div></div>
-                  <div className="stat"><div className="label">Brokerage cash added</div><div className="value">{money(profile.totals?.added ?? 0)}</div></div>
-                  <div className="stat"><div className="label">Brokerage cash removed</div><div className="value">{money(profile.totals?.removed ?? 0)}</div></div>
-                </div>
-                {cashAdjustPanel}
                 {profile.bank && <div className="panel">
                   <h2>Banking</h2>
                   <p className="hint">Checking {money(profile.bank.checkingCents)} · savings {money(profile.bank.savingsCents)} · {((profile.bank.savingsInterest?.apy || 0) * 100).toFixed(2)}% APY{profile.bankInvariant && !profile.bankInvariant.ok ? " · INVARIANT BROKEN" : ""}</p>
@@ -1357,28 +1352,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                     </tbody></table>
                   )}
                 </div>}
-                <div className="panel">
-                  <h2>Activity</h2>
-                  <p className="hint">
-                    {(profile.counts || []).map((c: any) => `${c.n}× ${c.kind}`).join(" · ") || "No ledger entries yet."}
-                    {profile.portfolio.holdings.length > 0 && ` · holds ${profile.portfolio.holdings.map((h: any) => `${h.shares.toFixed(2)} ${h.ticker}`).join(", ")}`}
-                  </p>
-                </div>
-                <div className="panel">
-                  <h2>History</h2>
-                  <table>
-                    <thead><tr><th>When</th><th>What</th><th>Cash effect</th></tr></thead>
-                    <tbody>
-                      {profile.history.map((e: any) => (
-                        <tr key={e.id}>
-                          <td className="small">{new Date(e.created_at).toLocaleString()}</td>
-                          <td>{describeEntry(e)}<br /><span className="small">{entryDetail(e)}</span></td>
-                          <td className={e.amount_cents >= 0 ? "up" : "down"}>{money(e.amount_cents)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
                 </>)}
                 <div className="panel danger-zone">
                   <h2>Delete unused account</h2>
@@ -1398,7 +1371,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     return (
       <>
         {workspaceTabs}
-        <TeacherClass classes={classes} classId={classId} periodBar={periodBar} />
+        <TeacherClass classes={classes} classId={classId} periodBar={periodBar} roster={roster} moduleProgress={moduleProgress} onOpenStudent={(id) => void openProfile(id)} onDashboardChanged={load} />
+        {profileDrawer}
       </>
     );
   }
@@ -1432,24 +1406,24 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       <div className="panel">
-        <h2>Roster — modules at a glance</h2>
-        <p className="hint">Click a student for their portfolio, investment history, and module progress.</p>
+        <h2>Roster — portfolios at a glance</h2>
+        <p className="hint">See who has invested and how each account is doing. Click a student for holdings and investment history.</p>
         <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
         <div className="table-wrap"><table>
-          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Last active", "last")}{th("Modules started", "started")}{th("Modules completed", "completed")}</tr></thead>
+          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Portfolio", "portfolio")}{th("Invested", "invested")}{th("Return", "return")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
           <tbody>
             {sorted.map((s) => {
               const ref = refById[s.id];
               const jobLabel = s.job_title || ref?.job;
-              const mp = moduleProgress.students[s.id];
-              const total = moduleProgress.modules.length;
               return (
                 <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
                   <td><strong>{s.name}</strong><br /><span className="small">{jobLabel || s.email || "no email yet"}{jobLabel && s.email ? ` · ${s.email}` : ""}</span></td>
                   <td className="small">{s.class_name || "—"}</td>
+                  <td><strong>{money(s.portfolioCents ?? 0)}</strong></td>
+                  <td>{money(s.investedCents ?? 0)}</td>
+                  <td className={(s.gainLossCents ?? 0) >= 0 ? "up" : "down"}>{money(s.gainLossCents ?? 0)}</td>
+                  <td>{s.trades ?? 0}</td>
                   <td className="small">{fmtWhen(s.last_active_at)}</td>
-                  <td>{total ? `${mp?.started ?? 0}/${total}` : "—"}</td>
-                  <td>{total ? `${mp?.completed ?? 0}/${total}` : "—"}</td>
                 </tr>
               );
             })}
@@ -2571,7 +2545,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
 
 // ---------------- teacher: class activity results ----------------
 
-function TeacherModuleVisibility({ classId, refreshKey }: { classId: string; refreshKey: number }) {
+function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: string; refreshKey: number; onChanged: () => void }) {
   const [modules, setModules] = useState<any[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -2592,7 +2566,7 @@ function TeacherModuleVisibility({ classId, refreshKey }: { classId: string; ref
       const result = await api<any>(`/api/teacher/classes/${classId}/modules`, {
         method: "PUT", body: JSON.stringify({ hidden: [...next] }),
       });
-      setHidden(new Set(result.hidden)); setSaved(true);
+      setHidden(new Set(result.hidden)); setSaved(true); onChanged();
       window.setTimeout(() => setSaved(false), 1600);
     } catch (e: any) { setHidden(previous); setErr(e.message); }
     finally { setBusy(false); }
@@ -2670,7 +2644,15 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
   </div>;
 }
 
-function TeacherClass({ classes, classId, periodBar }: { classes: any[]; classId: string; periodBar: React.ReactNode }) {
+function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onOpenStudent, onDashboardChanged }: {
+  classes: any[];
+  classId: string;
+  periodBar: React.ReactNode;
+  roster: any[];
+  moduleProgress: { modules: any[]; students: Record<string, { assigned: number; started: number; completed: number }> };
+  onOpenStudent: (id: string) => void;
+  onDashboardChanged: () => void;
+}) {
   const [activities, setActivities] = useState<any[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [data, setData] = useState<any>(null);
@@ -2687,6 +2669,7 @@ function TeacherClass({ classes, classId, periodBar }: { classes: any[]; classId
   ].join("\n"));
   const [tickersText, setTickersText] = useState("NKE\nSBUX\nCOST\nPG\nNVDA\nAAPL\nAMZN\nJNJ\nJPM\nBAC\nNEE\nDUK");
   const [moduleRevision, setModuleRevision] = useState(0);
+  const [studentQuery, setStudentQuery] = useState("");
 
   const loadActivities = useCallback(async (preferId?: string) => {
     const r = await api<any>("/api/teacher/activities");
@@ -2733,7 +2716,7 @@ function TeacherClass({ classes, classId, periodBar }: { classes: any[]; classId
       await api(`/api/teacher/activities/${selected}/status`, {
         method: "POST", body: JSON.stringify({ status }),
       });
-      await loadActivities(selected); await load(); setModuleRevision((value) => value + 1);
+      await loadActivities(selected); await load(); setModuleRevision((value) => value + 1); onDashboardChanged();
       setNotice(status === "published" ? "Activity published to students." : status === "archived" ? "Activity archived." : "Activity returned to draft.");
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -2784,10 +2767,31 @@ function TeacherClass({ classes, classId, periodBar }: { classes: any[]; classId
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
 
-      {/* Top to bottom: what this period can see, then what you are posting to
-          it, then how the selected activity is going. */}
-      <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} />
-      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => setModuleRevision((value) => value + 1)} />
+      <div className="panel class-module-roster">
+        <div className="panel-heading"><div><h2>{classId ? `${classes.find((c) => c.id === classId)?.name || "Class"} students` : "All students"}</h2><p className="hint">Assigned respects the modules currently checked for each student’s class. Click a student for the per-module submission and evidence breakdown.</p></div><div className="teacher-summary"><strong>{roster.length}</strong><span>students</span></div></div>
+        <div className="roster-tools"><div className="field"><label htmlFor="class-roster-search">Find a student</label><input id="class-roster-search" value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} placeholder="Search name or email" /></div></div>
+        <div className="table-wrap"><table>
+          <thead><tr><th>Student</th><th>Class</th><th>Assigned</th><th>Started</th><th>Submitted</th><th>Last active</th></tr></thead>
+          <tbody>
+            {roster.filter((student) => `${student.name} ${student.email || ""}`.toLowerCase().includes(studentQuery.trim().toLowerCase())).map((student) => {
+              const progress = moduleProgress.students[student.id] ?? { assigned: 0, started: 0, completed: 0 };
+              return <tr key={student.id} className="clickable-row" onClick={() => onOpenStudent(student.id)}>
+                <td><strong>{student.name}</strong><br /><span className="small">{student.email || "no email yet"}</span></td>
+                <td className="small">{student.class_name || "—"}</td>
+                <td><strong>{progress.assigned}</strong></td>
+                <td>{progress.started}/{progress.assigned}</td>
+                <td><span className={progress.completed === progress.assigned && progress.assigned > 0 ? "badge-paid" : "badge-due"}>{progress.completed}/{progress.assigned}</span></td>
+                <td className="small">{fmtWhen(student.last_active_at)}</td>
+              </tr>;
+            })}
+            {roster.length === 0 && <tr><td colSpan={6} className="small">No students in this view.</td></tr>}
+          </tbody>
+        </table></div>
+      </div>
+
+      {/* The selected period controls both the roster above and visibility. */}
+      <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} onChanged={onDashboardChanged} />
+      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => { setModuleRevision((value) => value + 1); onDashboardChanged(); }} />
 
       {composing && (
         <div className="panel activity-composer">

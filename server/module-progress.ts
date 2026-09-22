@@ -38,10 +38,12 @@ export interface ModuleSummary {
   detail?: Record<string, any>;
 }
 
-async function studentsIn(classId: string | null): Promise<{ id: string }[]> {
+interface StudentRef { id: string; classId: string | null }
+
+async function studentsIn(classId: string | null): Promise<StudentRef[]> {
   return classId
-    ? q<{ id: string }>(`SELECT id FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId])
-    : q<{ id: string }>(`SELECT id FROM users WHERE role = 'student' ORDER BY name`);
+    ? q<any>(`SELECT id, class_id AS classId FROM users WHERE role = 'student' AND class_id = ? ORDER BY name`, [classId])
+    : q<any>(`SELECT id, class_id AS classId FROM users WHERE role = 'student' ORDER BY name`);
 }
 
 /** Modules the students of this class actually see (hidden ones excluded). */
@@ -59,14 +61,13 @@ function missionGoalsMet(checks: Record<string, boolean>): number {
  * Batched: two grouped queries for sorts, one for missions, and live mission
  * state only for students who have not submitted (the ledger read per student).
  */
-export async function moduleProgress(classId: string | null): Promise<{
+async function progressForGroup(classId: string | null, students: StudentRef[]): Promise<{
   modules: { key: string; title: string; moduleNumber: number; kind: string }[];
-  students: Record<string, { started: number; completed: number }>;
+  students: Record<string, { assigned: number; started: number; completed: number }>;
 }> {
   const modules = await visibleCatalog(classId);
-  const students = await studentsIn(classId);
-  const out: Record<string, { started: number; completed: number }> = {};
-  for (const s of students) out[s.id] = { started: 0, completed: 0 };
+  const out: Record<string, { assigned: number; started: number; completed: number }> = {};
+  for (const s of students) out[s.id] = { assigned: modules.length, started: 0, completed: 0 };
 
   const sortIds = modules.filter((m) => m.kind === "sort").map((m) => m.id);
   const postIds = modules.filter((m) => m.kind === "post").map((m) => m.id);
@@ -131,6 +132,34 @@ export async function moduleProgress(classId: string | null): Promise<{
   return {
     modules: modules.map((m) => ({ key: m.key, title: m.title, moduleNumber: m.moduleNumber, kind: m.kind })),
     students: out,
+  };
+}
+
+export async function moduleProgress(classId: string | null): Promise<{
+  modules: { key: string; title: string; moduleNumber: number; kind: string }[];
+  students: Record<string, { assigned: number; started: number; completed: number }>;
+}> {
+  const students = await studentsIn(classId);
+  if (classId) return progressForGroup(classId, students);
+
+  // “All students” still respects each student's own period visibility. A
+  // global catalog would over-count modules hidden from one class and miss
+  // modules published only to another, so calculate once per class group.
+  const groups = new Map<string | null, StudentRef[]>();
+  for (const student of students) {
+    const group = groups.get(student.classId) ?? [];
+    group.push(student); groups.set(student.classId, group);
+  }
+  const allModules = new Map<string, { key: string; title: string; moduleNumber: number; kind: string }>();
+  const progress: Record<string, { assigned: number; started: number; completed: number }> = {};
+  for (const [groupClassId, groupStudents] of groups) {
+    const group = await progressForGroup(groupClassId, groupStudents);
+    for (const module of group.modules) allModules.set(module.key, module);
+    Object.assign(progress, group.students);
+  }
+  return {
+    modules: [...allModules.values()].sort((a, b) => a.moduleNumber - b.moduleNumber || a.key.localeCompare(b.key)),
+    students: progress,
   };
 }
 
