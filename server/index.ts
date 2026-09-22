@@ -42,6 +42,7 @@ import {
 import {
   classModuleCatalog, classModuleKey, hiddenClassModuleKeys, replaceHiddenClassModules,
 } from "./class-modules.js";
+import { moduleProgress, studentModuleDetail } from "./module-progress.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -566,7 +567,13 @@ app.get("/api/teacher/student", requireCurrentTeacher, async (req, res) => {
             COALESCE(SUM(CASE WHEN l.amount_cents < 0 AND l.kind IN ('cash_adjust','cash_reversal') THEN -l.amount_cents ELSE 0 END), 0) AS removed
      FROM ledger l JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ?`, [studentId],
   );
-  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId), bank: await bankSummaryFor(studentId), bankInvariant: await checkBankInvariant(studentId), deletion: await deletionStatus(studentId) });
+  res.json({ student, counts, totals, portfolio: await portfolioFor(studentId), history: await historyFor(studentId), invariant: await checkInvariant(studentId), bank: await bankSummaryFor(studentId), bankInvariant: await checkBankInvariant(studentId), deletion: await deletionStatus(studentId), modules: await studentModuleDetail(studentId) });
+});
+
+// Roster feed for the main dashboard: started / submitted counts per student.
+app.get("/api/teacher/module-progress", requireCurrentTeacher, async (req, res) => {
+  const classId = typeof req.query["classId"] === "string" && req.query["classId"] ? String(req.query["classId"]) : null;
+  res.json(await moduleProgress(classId));
 });
 
 app.patch("/api/teacher/student", requireCurrentTeacher, async (req, res) => {

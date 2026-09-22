@@ -567,6 +567,31 @@ table.sort-grid td.cell { width: 34px; font-family: var(--mono); font-size: 14px
 table.sort-grid td.cell-ok { color: #3B4622; background: #EFF2E6; }
 table.sort-grid td.cell-bad { color: #A8524B; background: #F8EEED; }
 table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f3ee, #f4f3ee 4px, #fbfaf6 4px, #fbfaf6 8px); }
+/* Teacher drawer: collapsible per-module rows (CodeWorld-style). Collapsed =
+   status badge + N/M parts; expanded = submission evidence. */
+.module-breakdown .module-row { border-top: 1px solid var(--line); }
+.module-row summary { display: flex; align-items: center; gap: 10px; padding: 10px 2px; cursor: pointer; list-style: none; }
+.module-row summary::-webkit-details-marker { display: none; }
+.module-row summary::after { content: "▸"; margin-left: auto; color: var(--muted); font-size: 11px; transition: transform 150ms; }
+.module-row[open] summary::after { content: "▾"; }
+.module-row summary:hover .module-row-name { color: var(--olive); }
+.module-row-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+.module-row-parts { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.module-row-body { padding: 2px 2px 14px; }
+.module-row-body .table-wrap { overflow-x: auto; }
+.module-goals { margin: 8px 0; }
+.module-goal { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 13px; }
+.module-goal .goal-mark { color: var(--muted); font-weight: 700; }
+.module-goal.met .goal-mark { color: var(--up, #3B4622); }
+.module-goal .small { color: var(--muted); }
+.module-misses { margin-top: 10px; padding: 10px; background: #f8f1ef; border: 1px solid #e5c9c4; border-radius: 8px; }
+.module-misses .label { color: #8a4a42; font-family: var(--mono); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 4px; }
+.module-misses .small { margin: 3px 0; }
+.module-pick { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.module-pick p { margin: 2px 0 0; }
+.module-reflection { margin-top: 10px; padding: 10px; background: var(--olive-pale, #EFF2E6); border: 1px solid #cfd2bc; border-radius: 8px; }
+.module-reflection .label { color: var(--olive); font-family: var(--mono); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.module-reflection p { margin: 4px 0 0; white-space: pre-wrap; }
 @media (max-width: 520px) {
   .activity-publish-bar { align-items: flex-start; flex-direction: column; }
   .module-grid { grid-template-columns: 1fr; }

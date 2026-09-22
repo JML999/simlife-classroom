@@ -792,6 +792,95 @@ function entryDetail(e: any): string {
 
 // ---------------- teacher ----------------
 
+// Expanded body of a sort module row in the student drawer: best-attempt
+// ticker grid (✓ correct · ✕ wrong bucket) plus a plain-text miss list.
+function TeacherSortDetail({ mod }: { mod: any }) {
+  const d = mod.detail || {};
+  if (mod.status === "not_started") return <p className="small">Not started — no draft and no submission yet.</p>;
+  if (mod.status === "in_progress") return <p className="small">Draft saved · {d.draftPlaced}/{(d.tokens || []).length} placed · not submitted yet. Drafts are never shown as a submission.</p>;
+  const tokens: string[] = d.tokens || [];
+  const missList = tokens.filter((t) => {
+    const placed = d.bestPlacements?.[t];
+    return placed && placed !== d.answerKey[t];
+  });
+  return (
+    <>
+      <p className="small">{d.attempts} submission{d.attempts === 1 ? "" : "s"} · best {d.bestCorrect}/{tokens.length} correct · last submitted {d.lastAt ? new Date(d.lastAt).toLocaleString() : "—"}</p>
+      <div className="table-wrap"><table className="sort-grid">
+        <thead><tr><th>Best attempt</th>{tokens.map((t) => <th key={t} className="tick-col">{t}</th>)}</tr></thead>
+        <tbody><tr>
+          <td className="small">Placed</td>
+          {tokens.map((t) => {
+            const placed = d.bestPlacements?.[t];
+            const correct = placed && placed === d.answerKey[t];
+            return (
+              <td
+                key={t}
+                className={`cell ${!placed ? "cell-none" : correct ? "cell-ok" : "cell-bad"}`}
+                title={!placed ? `${t}: not placed` : correct ? `${t}: ${placed} ✓` : `${t}: they put ${placed} — should be ${d.answerKey[t]}`}
+              >
+                {!placed ? "" : correct ? "✓" : "✕"}
+              </td>
+            );
+          })}
+        </tr></tbody>
+      </table></div>
+      <p className="hint">✓ correct · ✕ wrong category (hover a cell for what they put) · hatched = never placed.</p>
+      {missList.length > 0 && (
+        <div className="module-misses">
+          <div className="label">Missed {missList.length}</div>
+          {missList.map((t) => (
+            <div key={t} className="small"><strong className="ticker">{t}</strong> → they put <strong>{d.bestPlacements[t]}</strong> · should be <strong>{d.answerKey[t]}</strong></div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// Expanded body of a mission module row: the five-goal checklist with counts,
+// then the submitted write-up (picks + reflection) when there is one.
+function TeacherMissionDetail({ mod }: { mod: any }) {
+  const d = mod.detail || {};
+  if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
+  const t = d.targets;
+  const baseline: string[] = d.baselineTickers || [];
+  const goals = [
+    { done: d.checks?.baselineReady, label: "Start with three companies", note: baseline.length >= 3 ? baseline.join(" · ") : `${baseline.length} of 3 first buys` },
+    { done: d.checks?.companies, label: `Hold ${t.minCompanies} companies`, note: `${d.counts.companies} of ${t.minCompanies} held` },
+    { done: d.checks?.newCompanies, label: `Add ${t.minNewCompanies} past your first three`, note: `${d.counts.newCompanies} of ${t.minNewCompanies} added` },
+    { done: d.checks?.newSectorCompanies, label: "Put some additions in new industries", note: `${d.counts.newSectorCompanies} of ${t.minNewSectorCompanies} in new industries` },
+    { done: d.checks?.sectors, label: `Cover ${t.minSectors} sectors`, note: `${d.counts.sectors} of ${t.minSectors} sectors` },
+  ];
+  const met = goals.filter((g) => g.done).length;
+  return (
+    <>
+      <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : `In progress — ${met} of ${goals.length} goals met, nothing submitted yet`}</p>
+      <div className="module-goals">
+        {goals.map((g) => (
+          <div key={g.label} className={`module-goal${g.done ? " met" : ""}`}>
+            <span className="goal-mark" aria-hidden="true">{g.done ? "✓" : "○"}</span>
+            <span><strong>{g.label}</strong><span className="small"> — {g.note}</span></span>
+          </div>
+        ))}
+      </div>
+      {d.submittedAt && (
+        <div className="module-submission">
+          {(d.picks || []).map((p: any, i: number) => (
+            <div key={p.ticker || i} className="module-pick">
+              <strong className="ticker">{p.ticker}</strong>
+              <p className="small">{p.thesis}</p>
+            </div>
+          ))}
+          {d.reflection && (
+            <div className="module-reflection"><div className="label">Final reflection</div><p className="small">{d.reflection}</p></div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   void refresh;
   const [classes, setClasses] = useState<any[]>([]);
@@ -817,6 +906,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [query, setQuery] = useState("");
   const [freezeConfirm, setFreezeConfirm] = useState<any>(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [moduleProgress, setModuleProgress] = useState<{ modules: any[]; students: Record<string, { started: number; completed: number }> }>({ modules: [], students: {} });
   const [tsection, setTsection] = useState<"brokerage" | "banking" | "class">("banking");
   const cashKey = useRef(uid());
   const bankKey = useRef(uid());
@@ -848,13 +938,14 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     try {
       const cid = classId || "";
       const qs = cid ? `?classId=${cid}` : "";
-      const [c, r, a, ref] = await Promise.all([
+      const [c, r, a, ref, mp] = await Promise.all([
         api<{ classes: any[] }>("/api/teacher/classes"),
         api<{ students: any[] }>(`/api/teacher/roster${qs}`),
         api<{ entries: any[] }>(`/api/teacher/audit${qs}`),
         cid ? api<{ students: any[] }>(`/api/teacher/reference?classId=${cid}`).catch(() => ({ students: [] })) : Promise.resolve({ students: [] }),
+        api<{ modules: any[]; students: Record<string, { started: number; completed: number }> }>(`/api/teacher/module-progress${qs}`),
       ]);
-      setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students);
+      setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students); setModuleProgress(mp);
     } catch (e: any) { setErr(e.message); }
     finally { setUpdating(false); }
   }, [classId]);
@@ -884,11 +975,10 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
 
   const filtered = roster.filter((s) => `${s.name} ${s.email || ""}`.toLowerCase().includes(query.trim().toLowerCase()));
   const sorted = [...filtered].sort((a, b) => {
-    const val = (s: any) => sortKey === "trades" ? Number(s.trades || 0)
-      : sortKey === "last" ? (s.last_active_at || "")
+    const val = (s: any) => sortKey === "last" ? (s.last_active_at || "")
       : sortKey === "class" ? (s.class_name || "")
-      : sortKey === "invested" ? s.investedCents : sortKey === "portfolio" ? s.portfolioCents
-      : sortKey === "gain" ? s.gainLossCents : sortKey === "cash" ? s.cash_cents
+      : sortKey === "started" ? (moduleProgress.students[s.id]?.started ?? 0)
+      : sortKey === "completed" ? (moduleProgress.students[s.id]?.completed ?? 0)
       : (s.name || "");
     const av = val(a), bv = val(b);
     return (typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv))) * sortDir;
@@ -1061,6 +1151,31 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   {profile.student.email || "no email yet"} · {roster.find((s) => s.id === profileId)?.class_name || "no class"}<br />
                   joined {fmtWhen(profile.student.created_at)} · last active {fmtWhen(profile.student.last_active_at)}
                 </p>
+                {(() => {
+                  const mods = profile.modules || [];
+                  const started = mods.filter((m: any) => m.status !== "not_started").length;
+                  const done = mods.filter((m: any) => m.status === "submitted").length;
+                  return (
+                    <div className="panel module-breakdown">
+                      <div className="panel-heading"><div><h2>Modules</h2><p className="hint">{started} started · {done} of {mods.length} submitted</p></div></div>
+                      {mods.length === 0 && <p className="small">No published modules for this class yet.</p>}
+                      {mods.map((mod: any) => (
+                        <details className="module-row" key={mod.key}>
+                          <summary>
+                            <span className="module-row-name">Module {mod.moduleNumber} · {mod.title}</span>
+                            <span className="module-row-parts">{mod.partsDone}/{mod.partsTotal} {mod.partsLabel}</span>
+                            <span className={mod.status === "submitted" ? "badge-paid" : mod.status === "in_progress" ? "badge-ready" : "badge-due"}>
+                              {mod.status === "submitted" ? "Submitted" : mod.status === "in_progress" ? "In progress" : "Not started"}
+                            </span>
+                          </summary>
+                          <div className="module-row-body">
+                            {mod.kind === "sort" ? <TeacherSortDetail mod={mod} /> : <TeacherMissionDetail mod={mod} />}
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <div className="panel">
                   <h2>Student details</h2>
                   <div className="row"><div className="field grow"><label>Name</label><input value={editName} onChange={(e) => setEditName(e.target.value)} /></div><div className="field grow"><label>Class</label><select value={editClass} onChange={(e) => setEditClass(e.target.value)}><option value="">No class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div><button disabled={busy || editName.trim().length < 2} onClick={saveStudent}>Save details</button></div>
@@ -1252,26 +1367,24 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       <div className="panel">
-        <h2>Roster — simulated brokerage accounts</h2>
-        <p className="hint">Click a student to open their account profile, review activity, and adjust banking or brokerage balances.</p>
+        <h2>Roster — modules at a glance</h2>
+        <p className="hint">Click a student to open their profile: module progress, job, and balances.</p>
         <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
         <div className="table-wrap"><table>
-          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Brokerage cash", "cash")}{th("Invested", "invested")}{th("Portfolio", "portfolio")}{th("Total return", "gain")}{th("Trades", "trades")}{th("Last active", "last")}</tr></thead>
+          <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Last active", "last")}{th("Modules started", "started")}{th("Modules completed", "completed")}</tr></thead>
           <tbody>
             {sorted.map((s) => {
               const ref = refById[s.id];
-              const funded = ref && (ref.checking != null || ref.savings != null);
               const jobLabel = s.job_title || ref?.job;
+              const mp = moduleProgress.students[s.id];
+              const total = moduleProgress.modules.length;
               return (
                 <tr key={s.id} className={selected?.id === s.id ? "selected-row" : "clickable-row"} onClick={() => openProfile(s.id)}>
-                  <td><strong>{s.name}</strong><br /><span className="small">{jobLabel || s.email || "no email yet"}{jobLabel && s.email ? ` · ${s.email}` : ""}{funded && Number(s.cash_cents) === 0 ? " · awaiting funding" : ""}</span></td>
+                  <td><strong>{s.name}</strong><br /><span className="small">{jobLabel || s.email || "no email yet"}{jobLabel && s.email ? ` · ${s.email}` : ""}</span></td>
                   <td className="small">{s.class_name || "—"}</td>
-                  <td>{money(s.cash_cents)}</td>
-                  <td>{money(s.investedCents)}</td>
-                  <td>{money(s.portfolioCents)}</td>
-                  <td className={s.gainLossCents >= 0 ? "up" : "down"}>{money(s.gainLossCents)}</td>
-                  <td>{s.trades}</td>
                   <td className="small">{fmtWhen(s.last_active_at)}</td>
+                  <td>{total ? `${mp?.started ?? 0}/${total}` : "—"}</td>
+                  <td>{total ? `${mp?.completed ?? 0}/${total}` : "—"}</td>
                 </tr>
               );
             })}

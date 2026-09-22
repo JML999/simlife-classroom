@@ -192,3 +192,64 @@ Still open (in addition to the four above):
 5. Commit + push these three modified files when the user says go
    (Render auto-deploys; run `npm run seed:mission` against prod after
    deploy to refresh the mission copy).
+
+## Update 2026-09-22 (night) — teacher dashboard: module stats + drawer Modules panel
+
+Changes (working tree, not yet committed at time of writing):
+- `server/module-progress.ts` (NEW): per-student module aggregation.
+  Status = `not_started` / `in_progress` / `submitted` (sort draft or any
+  mission goal → started; only an explicit sort submission or mission
+  submission → completed; drafts never count as submitted).
+  - `moduleProgress(classId)` — batched roster feed:
+    `GET /api/teacher/module-progress?classId=` → `{ modules: [...],
+    students: { id: { started, completed } } }` (hidden modules excluded;
+    live `portfolioMissionState` only for mission-not-submitted students).
+  - `studentModuleDetail(userId)` — drawer feed with full evidence detail
+    (sort: answerKey + bestPlacements + attempts + draft flag; mission:
+    checks/counts/evidence vs live, picks, reflection, submittedAt).
+- `server/index.ts`: new `GET /api/teacher/module-progress` route;
+  `GET /api/teacher/student` now also returns `modules: await
+  studentModuleDetail(studentId)`.
+- `src/App.tsx`:
+  - Roster (Brokerage tab) simplified to **Student / Class / Last active /
+    Modules started (n/N) / Modules completed (n/N)** — money columns
+    removed (detail lives in the drawer); `val()` sort keys updated
+    (`started`/`completed` from module-progress state); heading/hint copy
+    updated.
+  - New `TeacherSortDetail` + `TeacherMissionDetail` components: expanded
+    drawer content — best-attempt ticker grid (✓/✕/hatched + hover titles),
+    attempts/best/last-submitted line, plain-text "Missed N" list
+    (`they put X · should be Y`), draft-only note; mission five-goal
+    checklist with labels+counts (evidence snapshot if submitted, live
+    state otherwise), picks theses + final reflection when submitted.
+  - Drawer gets a **Modules** panel right under the student header:
+    `{started} started · {done} of {n} submitted` hint + one `<details>`
+    row per module (collapsed: `Module N · title` + `N/M parts` mono +
+    badge Submitted/In progress/Not started; chevron ▸/▾).
+- `src/styles.css`: `.module-breakdown`, `.module-row` (+summary/parts/
+  chevron), `.module-row-body`, `.module-goal(s)` + `.goal-mark`,
+  `.module-misses`, `.module-pick`, `.module-reflection` (reuses olive
+  tokens; `.badge-due/ready/paid` for statuses).
+
+Verification (sandbox, fresh SQLite, mock quotes — never prod):
+- `npm run typecheck` clean; `npm test` **91/91**; `npm run build` ok.
+- Seeds: `seed` + `seed:sort` + `seed:mission`. Student activity via API:
+  Ava submitted sort 2-right/2-wrong/8-unplaced + bought AAPL/NKE/KO
+  (mission 1/5 goals); Ben draft-only (3 placed).
+- Playwright check `/tmp/simlife-ui-check/check.mjs`: **16/16 PASS** —
+  roster headers (no money cols), counts Ava 2/2+1/2, Ben 1/2+0/2,
+  Chloe 0/2; drawer 2 rows collapsed by default; summaries `2/12 correct
+  SUBMITTED` + `1/5 goals IN PROGRESS`; expanded sort grid + MISSED 2
+  (AMZN/WMT wrong buckets) + hover titles; expanded mission 5-goal
+  checklist; wrong-cell title `they put … should be …`.
+- Screenshots reviewed (fresh unique names — stale-read gotcha again:
+  a reused path showed a phantom "collapsed" expanded shot; DOM probes
+  confirmed both `<details>` stayed open): `fresh-teach-roster-1.png`,
+  `fresh-teach-drawer-collapsed-2.png`, `fresh-teach-drawer-expanded-3b.png`.
+- Gotchas reconfirmed: workspace lands on **Banking** tab after login
+  (click `role=tab` "Brokerage"); demo login button text is the user
+  name (Ms. Rivera); `innerText` uppercases `.label` (MISSED 2).
+
+Still open:
+5. Commit + push when the user says go (Render auto-deploys; no prod
+   seed needed for this feature — endpoints derive from existing data).
