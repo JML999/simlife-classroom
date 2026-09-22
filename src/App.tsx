@@ -2630,8 +2630,12 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
-  return <div className="panel class-post-desk">
-    <div className="panel-heading"><div><h2>Class feed</h2><p className="hint">Post a quick announcement or a portfolio-linked mission. Drafts stay invisible until you publish.</p></div><div className="row"><button className="ghost" onClick={() => start("announcement")}>Announcement</button><button onClick={() => start("portfolio_mission")}>Portfolio mission</button></div></div>
+  const published = posts.filter((post) => post.status === "published").length;
+  const drafts = posts.filter((post) => post.status === "draft").length;
+  return <details className="panel class-post-desk">
+    <summary className="class-post-summary"><span><strong>Create & publish</strong><small>Announcements and portfolio assignments</small></span><span className="small">{published} live · {drafts} draft</span></summary>
+    <div className="class-post-body">
+    <div className="panel-heading"><div><h2>Assignments & announcements</h2><p className="hint"><strong>Announcements</strong> are messages only. <strong>Portfolio assignments</strong> become numbered modules with completion evidence.</p></div><div className="row"><button className="ghost" onClick={() => start("announcement")}>New announcement</button><button onClick={() => start("portfolio_mission")}>New portfolio assignment</button></div></div>
     {err && <div className="error">{err}</div>}{notice && <div className="notice">{notice}</div>}
     {open && <div className="class-post-form">
       <div className="grid2"><div className="field"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} /></div><div className="field"><label>Who gets it</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div></div>
@@ -2640,8 +2644,9 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       {open === "portfolio_mission" && <p className="hint">Built-in evidence: original three stock buys · 6 current companies · 5 sectors · 3 additions outside the original sectors · three research explanations · final reflection.</p>}
       <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
     </div>}
-    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement" : "Portfolio mission"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
-  </div>;
+    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
+    </div>
+  </details>;
 }
 
 function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onOpenStudent, onDashboardChanged }: {
@@ -2753,8 +2758,8 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
       <div className="page-intro">
         <div>
           <div className="eyebrow">Teacher desk</div>
-          <h2>Class activities</h2>
-          <p>Pick a period, choose what it sees, then read who has done it.</p>
+          <h2>Class progress</h2>
+          <p>Choose a period, set its modules, then scan student progress.</p>
         </div>
         <div className="row">
           {data && <div className="teacher-summary"><strong>{started.length}</strong><span>of {data.students.length} started</span></div>}
@@ -2767,8 +2772,10 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
 
+      <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} onChanged={onDashboardChanged} />
+
       <div className="panel class-module-roster">
-        <div className="panel-heading"><div><h2>{classId ? `${classes.find((c) => c.id === classId)?.name || "Class"} students` : "All students"}</h2><p className="hint">Assigned respects the modules currently checked for each student’s class. Click a student for the per-module submission and evidence breakdown.</p></div><div className="teacher-summary"><strong>{roster.length}</strong><span>students</span></div></div>
+        <div className="panel-heading"><div><h2>Student progress</h2><p className="hint">{classId ? `${classes.find((c) => c.id === classId)?.name || "This period"} students only.` : "All periods."} Click a student to see every module, submission, and piece of evidence.</p></div><div className="teacher-summary"><strong>{roster.length}</strong><span>students</span></div></div>
         <div className="roster-tools"><div className="field"><label htmlFor="class-roster-search">Find a student</label><input id="class-roster-search" value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} placeholder="Search name or email" /></div></div>
         <div className="table-wrap"><table>
           <thead><tr><th>Student</th><th>Class</th><th>Assigned</th><th>Started</th><th>Submitted</th><th>Last active</th></tr></thead>
@@ -2789,10 +2796,6 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
         </table></div>
       </div>
 
-      {/* The selected period controls both the roster above and visibility. */}
-      <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} onChanged={onDashboardChanged} />
-      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => { setModuleRevision((value) => value + 1); onDashboardChanged(); }} />
-
       {composing && (
         <div className="panel activity-composer">
           <div className="panel-heading"><div><h2>New sector sort</h2><p className="hint">The answer key comes from the ticker directory. New activities stay private until you publish them.</p></div><span className="badge-due">Draft</span></div>
@@ -2808,6 +2811,12 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
           <div className="row"><button disabled={busy || title.trim().length < 2 || lines(bucketsText).length < 2 || lines(tickersText).length < 2} onClick={create}>{busy ? "Saving…" : "Save draft"}</button><span className="small">You can publish it from the activity controls below.</span></div>
         </div>
       )}
+
+      <div className="module-results-heading">
+        <div className="section-kicker">One module at a time</div>
+        <h2>Sector-sort results</h2>
+        <p className="hint">This section is the class-wide breakdown for the selected sector-sort assignment. Portfolio-assignment evidence is in each student's progress drawer above.</p>
+      </div>
 
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
         <div className="field grow">
@@ -2894,6 +2903,8 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
           </div>
         </>
       )}
+
+      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => { setModuleRevision((value) => value + 1); onDashboardChanged(); }} />
     </div>
   );
 }
