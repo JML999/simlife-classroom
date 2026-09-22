@@ -1776,11 +1776,48 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
 // keyboard and screen-reader users. Pick a ticker, pick a bucket. Less code,
 // works everywhere, and is undoable.
 
-function classPostHeroUrl(heroUrl?: string | null) {
-  return heroUrl === "/module-art/balanced-portfolio.png"
-    ? "/module-art/balanced-portfolio.svg"
-    : heroUrl;
+// Shared cover for every module card: same frame, palette, and line style —
+// only the motif changes with the activity (dropping a coin into sector trays
+// vs. a five-slice portfolio pie). Inline SVG so both cards read as one family
+// instead of one stock illustration + one ad-hoc chip collage.
+function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
+  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio";
+}) {
+  return (
+    <div className="module-cover">
+      <span className="module-kind">{moduleNumber ? `Module ${moduleNumber} · ${kindLabel}` : kindLabel}</span>
+      {submitted && <span className="module-complete">Submitted ✓</span>}
+      <div className="module-cover-art" aria-hidden="true">
+        {art === "sort" ? (
+          <svg viewBox="0 0 280 132" fill="none">
+            <circle cx="140" cy="32" r="18" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
+            <text x="140" y="39" textAnchor="middle" fontSize="20" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
+            <path d="M140 54v14m0 0-5-5m5 5 5-5" stroke="#585a3a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            <rect x="48" y="74" width="52" height="50" rx="10" fill="#eeefe5" stroke="#585a3a" strokeWidth="2.5" />
+            <rect x="114" y="74" width="52" height="50" rx="10" fill="#f4e7c4" stroke="#585a3a" strokeWidth="2.5" />
+            <rect x="180" y="74" width="52" height="50" rx="10" fill="#f5e9e6" stroke="#585a3a" strokeWidth="2.5" />
+            <circle cx="74" cy="99" r="7" stroke="#585a3a" strokeWidth="2.5" />
+            <path d="M140 92l8 14h-16z" stroke="#585a3a" strokeWidth="2.5" strokeLinejoin="round" />
+            <rect x="200" y="92" width="14" height="14" rx="2" stroke="#585a3a" strokeWidth="2.5" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 280 132" fill="none">
+            <path d="M140 66 140 16A50 50 0 0 1 187.55 50.55Z" fill="#f4e7c4" stroke="#585a3a" strokeWidth="2.5" strokeLinejoin="round" />
+            <path d="M140 66 187.55 50.55A50 50 0 0 1 169.39 106.45Z" fill="#eeefe5" stroke="#585a3a" strokeWidth="2.5" strokeLinejoin="round" />
+            <path d="M140 66 169.39 106.45A50 50 0 0 1 110.61 106.45Z" fill="#f5e9e6" stroke="#585a3a" strokeWidth="2.5" strokeLinejoin="round" />
+            <path d="M140 66 110.61 106.45A50 50 0 0 1 92.45 50.55Z" fill="#e3e8d4" stroke="#585a3a" strokeWidth="2.5" strokeLinejoin="round" />
+            <path d="M140 66 92.45 50.55A50 50 0 0 1 140 16Z" fill="#e8dfc8" stroke="#585a3a" strokeWidth="2.5" strokeLinejoin="round" />
+            <circle cx="196" cy="98" r="16" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
+            <text x="196" y="104" textAnchor="middle" fontSize="17" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
+            <circle cx="140" cy="66" r="6" fill="#fffefb" stroke="#585a3a" strokeWidth="2.5" />
+          </svg>
+        )}
+      </div>
+    </div>
+  );
 }
+
+const wordCount = (value: string): number => value.trim().split(/\s+/).filter(Boolean).length;
 
 // Shared chrome for every Class-tab detail page: back link, mono eyebrow with
 // the stable module number, serif title, one-line description. Module 1 (sort)
@@ -1799,8 +1836,6 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
     </header>
   );
 }
-
-const wordCount = (value: string): number => value.trim().split(/\s+/).filter(Boolean).length;
 
 function WordCount({ value, min }: { value: string; min: number }) {
   const n = wordCount(value);
@@ -1862,10 +1897,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : goalsMet === 0 ? "Not started" : "In progress";
           return (
           <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "mission", id: post.id, moduleNumber: post.moduleNumber })}>
-            <div className="module-cover" style={{ backgroundImage: post.heroUrl ? `url(${classPostHeroUrl(post.heroUrl)})` : undefined }}>
-              <span className="module-kind">Module {post.moduleNumber} · Portfolio mission</span>
-              {post.submittedAt && <span className="module-complete">Submitted ✓</span>}
-            </div>
+            <ModuleCover moduleNumber={post.moduleNumber} kindLabel="Portfolio mission" submitted={!!post.submittedAt} art="portfolio" />
             <div className="module-card-body">
               <h3>{post.title}</h3><p>{post.summary}</p>
               <div className="module-progress-line">
@@ -1878,13 +1910,13 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
           </button>
         ); })() : (() => { const a = module.data; return (
           <button key={`sort:${a.id}`} className="module-card" onClick={() => setOpen({ kind: "sort", id: a.id, moduleNumber: a.moduleNumber })}>
-            <div className="module-cover sort-cover">
-              <span className="module-kind">Module {a.moduleNumber} · Sector practice</span>
-              <div className="sort-cover-chips" aria-hidden="true"><i>NKE</i><i>AAPL</i><i>KO</i><i>JPM</i></div>
-              {a.attempts > 0 && <span className="module-complete">Submitted ✓</span>}
-            </div>
+            <ModuleCover moduleNumber={a.moduleNumber} kindLabel="Sector practice" submitted={a.attempts > 0} art="sort" />
             <div className="module-card-body">
-              <h3>{a.title}</h3><p>{a.tokenCount} companies · {a.bucketCount} sectors · sort every ticker into its sector.</p>
+              <h3>{a.title}</h3><p>Sort every ticker into the sector its business belongs to.</p>
+              <div className="module-progress-line">
+                <span>{a.tokenCount} companies</span>
+                <span>{a.bucketCount} sectors</span>
+              </div>
               {a.attempts === 0
                 ? (a.hasDraft
                   ? <span className="badge-due">Draft saved</span>
