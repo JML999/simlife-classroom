@@ -412,7 +412,7 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .module-cover { position: relative; height: 178px; background-color: #d6d3c6; background-position: center; background-size: cover; border-bottom: 1px solid var(--line); }
 .module-kind, .module-complete { position: absolute; top: 12px; padding: 5px 8px; background: rgba(253,253,249,.9); border: 1px solid rgba(80,80,65,.25); border-radius: 999px; font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .module-kind { left: 12px; }.module-complete { right: 12px; color: var(--olive); border-color: var(--olive); }
-.module-card-body { padding: 17px; }
+.module-card-body { padding: 17px; font-family: var(--sans); }
 .module-card-body h3 { margin: 0 0 6px; font-family: var(--serif); font-size: 19px; }
 .module-card-body p { min-height: 38px; margin: 0 0 13px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .module-progress-line { display: flex; gap: 12px; margin-bottom: 11px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
@@ -449,8 +449,6 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 @media (max-width: 900px) {
   .student-nav-foot { margin-top: 0; margin-left: auto; padding-top: 0; padding-left: 9px; border-top: 0; border-left: 1px solid var(--line); }
   .bucket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .mission-layout { grid-template-columns: 1fr; }
-  .sticky-card { position: static; }
 }
 @media (max-width: 520px) {
   .bucket-grid { grid-template-columns: 1fr; }
@@ -458,9 +456,10 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
   .activity-status { align-items: flex-start; }
   .module-grid { grid-template-columns: 1fr; }
   .module-cover { height: 150px; }
-  .mission-hero { min-height: 360px; padding: 18px; background-position: 63% center; }
-  .research-pick { grid-template-columns: 1fr; }
-  .mission-submit-bar { align-items: stretch; flex-direction: column; }
+  .module-action-bar { align-items: stretch; flex-direction: column; }
+  .module-action-bar .row { justify-content: stretch; }
+  .module-action-bar .row button { flex: 1; }
+  .goal-sectors { grid-template-columns: 1fr; }
 }
 
 /* Drag: pointer-events based, so it works with a mouse and a finger alike.
@@ -472,27 +471,65 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .bucket.over, .sort-tray.over { background: var(--olive-pale); border-color: var(--olive); }
 .sort-tray { min-height: 110px; }
 
-.mission-hero { min-height: 300px; margin-bottom: 16px; padding: 26px; background-color: #eee8da; background-position: center; background-size: cover; border: 1px solid var(--line); border-radius: 16px; }
-.mission-hero h2 { max-width: 520px; margin: 25px 0 8px; font-family: var(--serif); font-size: clamp(32px, 5vw, 54px); font-style: italic; line-height: 1; }
-.mission-hero > p { max-width: 500px; color: var(--muted); font-size: 15px; line-height: 1.5; }
-.mission-submitted { display: flex; flex-direction: column; width: fit-content; max-width: 480px; margin-top: 20px; padding: 10px 12px; color: #29463b; background: rgba(235,245,239,.92); border: 1px solid #8eae9d; border-radius: 10px; }
-.mission-submitted span { margin-top: 2px; font-size: 12px; }
-.mission-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
-.mission-step { display: flex; gap: 16px; margin-bottom: 12px; }
-.mission-step h3 { margin: 0 0 7px; font-family: var(--serif); font-size: 21px; }
-.mission-step p { color: var(--muted); line-height: 1.5; }
-.step-no { flex: 0 0 auto; color: var(--olive); font-family: var(--mono); font-size: 11px; font-weight: 700; }
+/* ---- Class tab: shared module detail chrome -------------------------------
+   Every module detail page opens the same way — back link, mono eyebrow with
+   the stable module number, serif title, one-line description — so Module 1
+   and Module 2 read as one product rather than two apps. */
+.module-head { padding-top: 14px; margin-bottom: 10px; }
+.class-back { display: inline-block; margin-bottom: 16px; padding: 0; color: var(--muted); background: none; border: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .05em; }
+.class-back:hover:not(:disabled) { color: var(--olive-dark); background: none; transform: none; }
+.module-head h2 { margin: 5px 0 7px; font-family: var(--serif); font-size: clamp(28px, 3.6vw, 40px); font-weight: 550; letter-spacing: -.03em; }
+.module-detail { margin: 0; max-width: 720px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.module-page { max-width: 880px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Sticky action bar shared by both modules: status on the left, actions on
+   the right. Same shape on a phone (stacked). */
+.module-action-bar { position: sticky; bottom: 10px; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 13px 16px; background: rgba(250,249,244,.96); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(30,30,25,.12); backdrop-filter: blur(8px); }
+.module-action-bar strong { font-size: 13px; }
+.module-action-bar > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.module-action-bar span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+
+/* Module 2 — portfolio mission: assignment, then live goals, then the
+   write-up (locked until the goals are met). */
+.mission-brief-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.mission-basket { display: flex; flex-direction: column; gap: 7px; margin-top: 13px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.mission-basket .small, .goal-sectors .small { color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+
+.goals-card .panel-heading h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 21px; font-weight: 550; }
+.goals-score { flex: none; text-align: right; }
+.goals-score strong { display: block; color: var(--olive-dark); font-family: var(--serif); font-size: 30px; font-weight: 550; font-variant-numeric: tabular-nums; line-height: 1; }
+.goals-score span { color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.goal-bar { height: 8px; margin: 2px 0 14px; overflow: hidden; background: #eceadf; border: 1px solid #e0dfd4; border-radius: 999px; }
+.goal-bar > div { height: 100%; background: var(--olive); border-radius: 999px; transition: width 320ms ease; }
+.goal-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.goal-item { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 11px; align-items: start; padding: 11px 12px; background: #f7f6f1; border: 1px solid var(--line); border-radius: 10px; }
+.goal-item.done { background: #eef2e9; border-color: #adb99f; }
+.goal-tick { width: 26px; height: 26px; display: grid; place-items: center; color: var(--muted); background: #fff; border: 1px solid var(--line-dark); border-radius: 50%; font-family: var(--mono); font-size: 12px; }
+.goal-item.done .goal-tick { color: #fff; background: var(--olive); border-color: var(--olive); }
+.goal-label { font-size: 13px; font-weight: 650; }
+.goal-item.done .goal-label { color: #34432c; }
+.goal-detail { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.goal-item.done .goal-detail { color: #5a6653; }
+.goal-sectors { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; padding-top: 13px; border-top: 1px dashed var(--line); }
+.goal-sectors > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.goals-actions { align-items: center; margin-top: 15px; }
+.goals-actions .small { color: var(--muted); font-size: 11px; }
 .sector-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .sector-chip { padding: 5px 8px; color: #42483b; background: #eef0e8; border: 1px solid #c9cdbd; border-radius: 999px; font-size: 10px; }
-.research-pick { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(240px, 1.5fr); gap: 10px; margin: 12px 0; padding-top: 12px; border-top: 1px solid var(--line); }
-.mission-evidence { position: relative; }
-.sticky-card { position: sticky; top: 12px; }
-.mission-check { display: flex; gap: 9px; margin: 8px 0; padding: 9px; color: var(--muted); background: #f7f6f1; border: 1px solid var(--line); border-radius: 9px; }
-.mission-check.done { color: #34432c; background: #eef2e9; border-color: #adb99f; }
-.mission-check > span { font-family: var(--mono); font-weight: 700; }.mission-check div { display: flex; flex-direction: column; }.mission-check small { margin-top: 2px; font-size: 10px; }
-.wide { width: 100%; margin-top: 15px; }
-.mission-submit-bar { position: sticky; bottom: 10px; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 14px; padding: 14px 16px; background: rgba(250,249,244,.96); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(30,30,25,.12); backdrop-filter: blur(8px); }
-.mission-submit-bar div { display: flex; flex-direction: column; }.mission-submit-bar span { color: var(--muted); font-size: 11px; }
+.sector-chip.now { color: #34432c; background: var(--olive-pale); border-color: #adb99f; }
+
+.explain-lock { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding: 18px; color: var(--muted); background: repeating-linear-gradient(45deg, #f4f3ee, #f4f3ee 6px, #faf9f4 6px, #faf9f4 12px); border: 1px dashed var(--line-dark); border-radius: 10px; }
+.explain-lock p { margin: 0; font-size: 13px; line-height: 1.55; }
+.explain-lock strong { color: var(--ink); }
+.explain-pick { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.explain-pick:first-of-type { margin-top: 6px; padding-top: 0; border-top: 0; }
+.pick-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; margin-bottom: 8px; }
+.pick-no { width: 26px; height: 26px; display: grid; place-items: center; color: var(--olive-dark); background: var(--olive-pale); border: 1px solid #c5c9ae; border-radius: 50%; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.explain-pick textarea, .reflect-field textarea { width: 100%; resize: vertical; }
+.reflect-field { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.word-count { display: block; margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: right; }
+.word-count.met { color: var(--up); }
 
 /* Teacher results grid. Status never rides on color alone — every cell also
    carries a ✓ or ✕ glyph, for colorblind teachers and for a projector. */
@@ -525,13 +562,6 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
   .activity-publish-bar { align-items: flex-start; flex-direction: column; }
   .module-grid { grid-template-columns: 1fr; }
   .module-cover { height: 150px; }
-  .mission-hero { min-height: 360px; padding: 18px; background-position: 63% center; }
-  .research-pick { grid-template-columns: 1fr; }
-  .mission-submit-bar { align-items: stretch; flex-direction: column; }
   .class-post-row { grid-template-columns: 1fr; }
   .module-visibility-grid { grid-template-columns: 1fr; }
-}
-@media (max-width: 900px) {
-  .mission-layout { grid-template-columns: 1fr; }
-  .sticky-card { position: static; }
 }

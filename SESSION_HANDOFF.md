@@ -140,3 +140,55 @@ Still open:
 4. Old browser-verified gaps in `CLASS_MODULE_STATUS.md` (drag over empty
    space, reload mid-sort with drafts now, no-class student, teacher class
    filter, concurrent submits) — still unverified against production.
+
+---
+
+## Update 2026-09-22 (evening) — Module 2 guided flow, Class tab polish
+
+Changes (working tree, not yet committed at time of writing):
+- `src/App.tsx`: shared `ModuleHead` chrome (back link, mono eyebrow
+  "Module N · kind", serif title); ClassSection opens modules via
+  `{kind, id, moduleNumber}`; module cards unified (both `.module-card`,
+  mission card shows `{goalsMet}/{goalCount} goals` + status badge).
+- `PortfolioMission` rewritten as goals-first guided flow: assignment
+  panel → "Where you stand" 5-goal checklist (plain-English next actions,
+  progress bar, start-vs-now sector chips, Open Investing / Refresh) →
+  write-up locked until `mission.met` → sticky `.module-action-bar`.
+  Mission now allows resubmission (consistent with Module 1). Targets /
+  evidence spec unchanged — pedagogy kept.
+- `SortActivity` takes `moduleNumber`, uses `ModuleHead`, sticky action
+  bar with "N of 12 placed / Draft saved / Submitted" status copy.
+- `src/styles.css`: retired `.mission-hero`, `.mission-layout`,
+  `.mission-step`, `.step-no`, `.research-pick`, `.mission-evidence`,
+  `.sticky-card`, `.mission-check`, `.wide`, `.mission-submit-bar`;
+  added `.module-head`, `.class-back`, `.module-detail`, `.module-page`,
+  `.module-action-bar`, `.mission-brief-body`, `.mission-basket`,
+  `.goals-*`, `.sector-chip` (+`.now`), `.explain-lock`, `.explain-pick`,
+  `.pick-*`, `.reflect-field`, `.word-count`, `.sr-only`.
+  `.module-card-body` set to `var(--sans)` (was inheriting mono from
+  global `button` rule).
+- `server/seed-portfolio-mission.ts`: now an **upsert** keyed on title —
+  UPDATE summary/body/spec/hero_url if the row exists (never touches
+  status/class scope/submissions), else create. Run against prod DB to
+  ship the new copy: `npm run seed:mission`.
+
+Verification (sandbox, local SQLite, mock quotes — never prod):
+- `SIMLIFE_DATABASE_URL=` empty forces SQLite; port 3199/4199 to avoid
+  the user's dev server on 3100/4101. Background processes do NOT survive
+  between tool calls — servers + Playwright must run in one bash call.
+- Playwright chromium check: **26/26 PASS** — module list numbering,
+  Module 1 header/action bar/tap-to-place/draft save, Module 2 locked
+  state (5 goals, no empty textareas, disabled submit), 6 buys meeting
+  all goals, unlocked form, dropdown options, submit + notice.
+  Screenshots: `/tmp/simlife-ui-check/{1-list,2-sort,3-mission-locked,
+  4-mission-unlocked,5-mission-submitted}.png` — all reviewed, correct.
+- Playwright gotchas: Chrome `innerText` uppercases `text-transform`
+  (compare `.toLowerCase()`); use `allTextContents()` not
+  `allTextValues()`; `page.reload()` resets SPA to dashboard (re-click
+  Class nav).
+- `npm test` (91), client + server typecheck, `npm run build` all clean.
+
+Still open (in addition to the four above):
+5. Commit + push these three modified files when the user says go
+   (Render auto-deploys; run `npm run seed:mission` against prod after
+   deploy to refresh the mission copy).
