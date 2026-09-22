@@ -443,7 +443,7 @@ app.get("/api/teacher/roster", requireCurrentTeacher, async (req, res) => {
 });
 
 app.get("/api/teacher/classes", requireCurrentTeacher, async (_req, res) => {
-  res.json({ classes: await q(`SELECT * FROM classes ORDER BY created_at`) });
+  res.json({ classes: await q(`SELECT c.*, (SELECT COUNT(*) FROM users u WHERE u.class_id = c.id AND u.role = 'student') AS students FROM classes c ORDER BY c.created_at`) });
 });
 
 app.get("/api/teacher/onboarding", requireCurrentTeacher, async (req, res) => {

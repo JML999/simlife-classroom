@@ -186,6 +186,15 @@ th.sortable:hover { color: var(--olive-dark); }
 @media (max-width: 400px) { .cards, .stat-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
 .section-tabs { margin: 18px 0 4px; }
+/* Shared period filter (CodeWorld pattern): kicker + pill row + join-code
+   strip. Sits under the workspace tabs on every teacher tab — pick once,
+   everything below follows. */
+.period-bar { margin: 14px 0 16px; }
+.period-bar .section-kicker { margin: 0 0 9px; }
+.period-bar .pills { margin-bottom: 0; }
+.pill-count { opacity: .7; }
+.join-codes { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.join-codes strong { color: var(--ink); font-family: var(--mono); font-size: 11px; letter-spacing: .15em; }
 .investing-section { display: contents; }
 
 .student-shell { display: grid; grid-template-columns: 155px minmax(0, 1fr); gap: 24px; padding-top: 18px; }

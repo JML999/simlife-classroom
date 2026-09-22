@@ -1023,6 +1023,29 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     </div>
   );
 
+  // Shared period filter (CodeWorld pattern): one pill row under the workspace
+  // tabs, used by every tab — pick a period once, and roster, banking, module
+  // visibility, and activity results below all follow it top to bottom.
+  const periodBar = (
+    <div className="period-bar">
+      <div className="section-kicker">Periods</div>
+      <div className="pills">
+        <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => setClassId("")}>All students</button>
+        {classes.map((c) => (
+          <button key={c.id} title={`Join code: ${c.join_code}`} className={`pill${classId === c.id ? " active" : ""}`} onClick={() => setClassId(c.id)}>
+            {c.name}<span className="pill-count"> · {c.students ?? 0}</span>{c.trading_frozen ? " — frozen" : ""}
+          </button>
+        ))}
+        {updating && <span className="small" style={{ alignSelf: "center" }}>Updating…</span>}
+      </div>
+      {classes.length > 0 && (
+        <div className="join-codes">
+          {classes.map((c) => <span key={c.id}>{c.name} code <strong>{c.join_code}</strong></span>)}
+        </div>
+      )}
+    </div>
+  );
+
   const profileDrawer = (
     <>
       {profileId && (
@@ -1195,7 +1218,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     return (
       <>
         {workspaceTabs}
-        <TeacherClass classes={classes} classId={classId} onClassChange={setClassId} />
+        <TeacherClass classes={classes} classId={classId} periodBar={periodBar} />
       </>
     );
   }
@@ -1206,7 +1229,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         {workspaceTabs}
         {err && <div className="error" role="alert">{err}</div>}
         {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
-        <div className="banking-experience teacher-banking-experience"><TeacherBanking classId={classId} classes={classes} onClassChange={setClassId} onChanged={load} onOpenStudent={(id) => void openProfile(id)} /></div>
+        <div className="banking-experience teacher-banking-experience"><TeacherBanking periodBar={periodBar} classId={classId} classes={classes} onChanged={load} onOpenStudent={(id) => void openProfile(id)} /></div>
         {profileDrawer}
       </>
     );
@@ -1219,19 +1242,11 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         <div><div className="eyebrow">Teacher desk</div><h2>Brokerage classroom</h2><p>Fund accounts, monitor participation, and control when students may trade.</p></div>
         <div className="teacher-summary"><strong>{roster.length}</strong><span>students shown</span></div>
       </div>
-      <div className="pills">
-        <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => setClassId("")}>All students</button>
-        {classes.map((c) => (
-          <button key={c.id} className={`pill${classId === c.id ? " active" : ""}`} onClick={() => setClassId(c.id)}>
-            {c.name}{c.trading_frozen ? " — frozen" : ""}
-          </button>
-        ))}
-        {updating && <span className="small" style={{ alignSelf: "center" }}>Updating…</span>}
-      </div>
-      <div className="row" style={{ marginTop: 8 }}>
-        {cls && <button className={cls.trading_frozen ? "" : "danger"} onClick={() => setFreezeConfirm(cls)}>{cls.trading_frozen ? "Reopen trading" : "Close trading"}</button>}
-        <span className="small">Join code{classId ? "" : "s"}: {classId ? cls?.join_code : classes.map((c) => `${c.name.split(" ")[0]} ${c.join_code}`).join(" · ")}</span>
-      </div>
+      {periodBar}
+      {cls && <div className="row" style={{ marginTop: -4, marginBottom: 12 }}>
+        <button className={cls.trading_frozen ? "" : "danger"} onClick={() => setFreezeConfirm(cls)}>{cls.trading_frozen ? "Reopen trading" : "Close trading"}</button>
+        <span className="small">{cls.name} · {cls.trading_frozen ? "trading closed" : "trading open"}</span>
+      </div>}
       {freezeConfirm && <div className="confirm" role="dialog" aria-modal="true" aria-labelledby="freeze-title"><h3 id="freeze-title">{freezeConfirm.trading_frozen ? "Reopen" : "Close"} trading?</h3><p>{freezeConfirm.name} students {freezeConfirm.trading_frozen ? "will be able to buy and sell again" : "will immediately be blocked from buying and selling"}.</p><div className="row"><button className={freezeConfirm.trading_frozen ? "" : "danger-solid"} disabled={busy} onClick={() => toggleFreeze(freezeConfirm)}>Yes, {freezeConfirm.trading_frozen ? "reopen" : "close"} trading</button><button className="ghost" onClick={() => setFreezeConfirm(null)}>Cancel</button></div></div>}
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
@@ -1287,8 +1302,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   );
 }
 
-function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStudent }: {
-  classId: string; classes: any[]; onClassChange: (id: string) => void; onChanged: () => void; onOpenStudent: (id: string) => void;
+function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent }: {
+  periodBar: React.ReactNode; classId: string; classes: any[]; onChanged: () => void; onOpenStudent: (id: string) => void;
 }) {
   const [summary, setSummary] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
@@ -1580,15 +1595,10 @@ function TeacherBanking({ classId, classes, onClassChange, onChanged, onOpenStud
         <div><div className="eyebrow">Teacher desk</div><h2>Banking classroom</h2><p>Issue paychecks and bills, then watch students take responsibility for paying.</p></div>
         <div className="teacher-summary"><strong>{summary.length}</strong><span>students · {dueCount} unpaid · {lateCount} late</span></div>
       </div>
-      <div className="pills">
-        <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => onClassChange("")}>All students</button>
-        {classes.map((c) => (
-          <button key={c.id} className={`pill${classId === c.id ? " active" : ""}`} onClick={() => onClassChange(c.id)}>{c.name}</button>
-        ))}
-      </div>
+      {periodBar}
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
-      {!classId && <div className="notice">Choose a class above to issue paychecks or bills. Issuance is always scoped to one class.</div>}
+      {!classId && <div className="notice">Choose a period above to issue paychecks or bills. Issuance is always scoped to one period.</div>}
 
       <div className="panel">
         <h2>Class accounts</h2>
@@ -2417,8 +2427,8 @@ function TeacherModuleVisibility({ classId, refreshKey }: { classId: string; ref
   const setAll = (show: boolean) => void save(show ? new Set() : new Set(modules.map((module) => module.key)));
 
   return <div className="panel module-visibility-desk">
-    <div className="panel-heading"><div><h2>Modules shown to this class</h2><p className="hint">Untick a module to remove it from the student Class page. Their saved work and submissions stay intact.</p></div>{classId && <div className="row"><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(true)}>Show all</button><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(false)}>Hide all</button></div>}</div>
-    {!classId && <p className="small">Choose one class below to manage what its students can see.</p>}
+    <div className="panel-heading"><div><h2>Modules shown to this period</h2><p className="hint">Untick a module to remove it from those students' Class page. Their saved work and submissions stay intact.</p></div>{classId && <div className="row"><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(true)}>Show all</button><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(false)}>Hide all</button></div>}</div>
+    {!classId && <p className="small">Choose a period above to manage what its students can see.</p>}
     {err && <div className="error" role="alert">{err}</div>}
     {classId && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or portfolio mission first.</p>}
     {classId && modules.length > 0 && <div className="module-visibility-grid">{modules.map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : "Portfolio mission"}</small></span></label>)}</div>}
@@ -2482,7 +2492,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
   </div>;
 }
 
-function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; classId: string; onClassChange: (id: string) => void }) {
+function TeacherClass({ classes, classId, periodBar }: { classes: any[]; classId: string; periodBar: React.ReactNode }) {
   const [activities, setActivities] = useState<any[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [data, setData] = useState<any>(null);
@@ -2583,7 +2593,7 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
         <div>
           <div className="eyebrow">Teacher desk</div>
           <h2>Class activities</h2>
-          <p>Who has done it, and which companies the room is getting wrong.</p>
+          <p>Pick a period, choose what it sees, then read who has done it.</p>
         </div>
         <div className="row">
           {data && <div className="teacher-summary"><strong>{started.length}</strong><span>of {data.students.length} started</span></div>}
@@ -2591,11 +2601,15 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
         </div>
       </div>
 
+      {periodBar}
+
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
 
-      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => setModuleRevision((value) => value + 1)} />
+      {/* Top to bottom: what this period can see, then what you are posting to
+          it, then how the selected activity is going. */}
       <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} />
+      <TeacherClassPosts classes={classes} defaultClassId={classId} onModulesChanged={() => setModuleRevision((value) => value + 1)} />
 
       {composing && (
         <div className="panel activity-composer">
@@ -2619,13 +2633,6 @@ function TeacherClass({ classes, classId, onClassChange }: { classes: any[]; cla
           <select id="act-pick" value={selected} onChange={(e) => setSelected(e.target.value)}>
             {activities.length === 0 && <option value="">No activities yet — run npm run seed:sort</option>}
             {activities.map((a) => <option key={a.id} value={a.id}>{a.title}{a.status !== "published" ? ` (${a.status})` : ""}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="act-class">Class</label>
-          <select id="act-class" value={classId} onChange={(e) => onClassChange(e.target.value)}>
-            <option value="">All students</option>
-            {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         {data && <button className="ghost" onClick={csv} style={{ alignSelf: "end" }}>Export CSV</button>}
