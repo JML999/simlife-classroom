@@ -100,6 +100,8 @@ export const SECURITY_DIRECTORY: SecurityInfo[] = [
   { ticker: "DIS", name: "Walt Disney Co." },
   { ticker: "GME", name: "GameStop Corp." },
   { ticker: "BBW", name: "Build-A-Bear Workshop Inc." },
+  { ticker: "TM", name: "Toyota Motor Corp." },
+  { ticker: "ADDYY", name: "adidas AG" },
   { ticker: "VOO", name: "Vanguard S&P 500 ETF" },
   { ticker: "VTI", name: "Vanguard Total Stock Market ETF" },
   { ticker: "QQQ", name: "Invesco QQQ (Nasdaq 100) ETF" },
@@ -113,7 +115,7 @@ export class MockQuoteProvider implements QuoteProvider {
   private prices = new Map<string, number>([
     ["AAPL", 23250], ["MSFT", 42800], ["NVDA", 13100], ["AMZN", 19700],
     ["TSLA", 24800], ["GOOGL", 17800], ["META", 58500], ["JNJ", 15400],
-    ["KO", 6400], ["DIS", 11400], ["GME", 2250], ["BBW", 4525], ["VOO", 58500], ["VTI", 28900],
+    ["KO", 6400], ["DIS", 11400], ["GME", 2250], ["BBW", 4525], ["TM", 19800], ["ADDYY", 11250], ["VOO", 58500], ["VTI", 28900],
     ["QQQ", 51200], ["SCHD", 2820], ["BND", 7300],
   ]);
 

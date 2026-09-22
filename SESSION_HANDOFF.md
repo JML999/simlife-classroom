@@ -253,3 +253,53 @@ Verification (sandbox, fresh SQLite, mock quotes — never prod):
 Still open:
 5. Commit + push when the user says go (Render auto-deploys; no prod
    seed needed for this feature — endpoints derive from existing data).
+
+## Update 2026-09-22 (late night) — drawer content splits by tab
+
+Change (working tree, not yet committed at time of writing):
+- `src/App.tsx` — the shared student profile drawer now branches on
+  `tsection`:
+  - **Brokerage pill**: Portfolio panel (stat grid: Brokerage cash /
+    Invested / Account value / Total return + holdings table ticker,
+    shares, avg cost, price, value, gain-loss $ and % + "Prices delayed ·
+    {quoteSource}" hint; empty-holdings message) → Investment history
+    (full brokerage ledger: When / What / Cash effect) → Adjust
+    brokerage cash → Modules → Student details → Delete zone.
+    No Job / Recurring expenses / ClassBank / Banking / Activity /
+    History panels on this tab.
+  - **Banking pill**: exactly the previous drawer, unchanged (Modules,
+    Student details, Job, Recurring expenses, ClassBank ref, stat grid,
+    Adjust cash, Banking, Activity, History, Delete) — implemented by
+    wrapping the Job→History block in `{tsection === "banking" && <>…</>}`.
+  - Shared: `cashAdjustPanel` extracted to a const (used by both
+    branches); Modules + Student details + Delete zone render on both.
+  - Brokerage roster hint → "Click a student for their portfolio,
+    investment history, and module progress."
+
+Verification (sandbox, same seeded DB as the module-stats run):
+- `npm run typecheck` clean; `npm test` 91/91; `npm run build` ok.
+- Playwright `/tmp/simlife-ui-check/check.mjs` regression: **16/16**
+  (modules panel still works when opened from Brokerage).
+- Playwright `check2.mjs`: **10/10** — brokerage drawer headings =
+  [Portfolio, Investment history, Adjust cash, Modules, Student
+  details, Delete] and NO job/bank/history panels; holdings AAPL/NKE/KO;
+  stats text has $700 cash + $300 invested; investment history ≥3 rows;
+  banking drawer headings = [Modules, Student details, Job, Recurring
+  expenses, Adjust cash, Banking, Activity, History, Delete] and NO
+  Portfolio / Investment history. Sidecars:
+  `fresh-teach-drawer-{brokerage-4,banking-5}.json`.
+- `check3.mjs` re-confirmed banking headings live in a separate run.
+- Screenshots: brokerage drawer visually reviewed (correct). Banking
+  drawer could NOT be visually reviewed — the image-read tool served
+  wrong/stale pixels for every fresh path/md5/dimension this session
+  (even a `.drawer`-element-only screenshot returned a full-page image).
+  DOM headings + zero `pageErrors` are the evidence; banking markup is
+  the pre-existing drawer only wrapped in a conditional.
+- Roster hint text confirmed in the brokerage screenshot.
+
+Still open:
+6. Commit + push when the user says go — note the working tree ALSO has
+   unrelated edits (server/quotes.ts, server/quotes.test.ts,
+   server/ticker-directory.json, scripts/build-ticker-directory.mjs)
+   made outside this session; ask whether to include them or stage only
+   src/App.tsx + this handoff.

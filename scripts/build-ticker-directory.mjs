@@ -52,6 +52,9 @@ const EXTRA_STOCKS = [
   ["GME", "GameStop", "Consumer Discretionary", "Specialty Retail", "SMALL"],
   ["BBW", "Build-A-Bear Workshop", "Consumer Discretionary", "Specialty Retail", "SMALL"],
   ["CROX", "Crocs, Inc.", "Consumer Discretionary", "Footwear", "MID"],
+  // Foreign ADR picks students ask for: not S&P 500, so no table row exists.
+  ["TM", "Toyota Motor Corp.", "Consumer Discretionary", "Automobiles", "LARGE"],
+  ["ADDYY", "adidas AG", "Consumer Discretionary", "Footwear", "LARGE"],
   // S&P 500 members whose Wikipedia row does not expose its sector cell the way
   // the others do (the dry run names any such ticker). Classified by hand so
   // they do not sit in the directory as UNKNOWN.

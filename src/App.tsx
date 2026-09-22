@@ -1136,6 +1136,23 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     </div>
   );
 
+  // Shared between the Brokerage and Banking drawer views (same panel,
+  // rendered once per tab branch).
+  const cashAdjustPanel = profile && selected ? (
+    <div className="panel cash-panel">
+      <h2>Adjust brokerage cash</h2>
+      <p className="hint">Current brokerage cash: {money(profile.portfolio.cashCents)}. This is uninvested money inside the student's brokerage account—not checking or savings. Removing it never sells shares; if brokerage cash is short, the student must sell first.</p>
+      <div className="row">
+        <div className="field"><label>Brokerage action</label><select value={direction} onChange={(e) => { setDirection(e.target.value as any); setConfirming(false); }}><option value="add">Add brokerage cash</option><option value="remove">Remove brokerage cash</option></select></div>
+        <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirming(false); }} placeholder="50.00" inputMode="decimal" /></div>
+      </div>
+      <div className="field" style={{ marginTop: 9 }}><label>Reason (required — student can see this)</label><textarea value={reason} onChange={(e) => { setReason(e.target.value); setConfirming(false); }} rows={2} placeholder="e.g. Transferred from ClassBank per student's signed slip." /></div>
+      {!confirming
+        ? <div className="row" style={{ marginTop: 9 }}><button disabled={!(Number(dollars) > 0) || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review brokerage {direction === "add" ? "deposit" : "withdrawal"}</button></div>
+        : <div className="confirm"><p><strong>Confirm:</strong> {direction === "add" ? "add" : "remove"} <strong>{money(Math.round(Number(dollars) * 100))}</strong> {direction === "add" ? "to" : "from"} <strong>{selected.name}</strong>?</p><p className="small">Reason: {reason}</p><div className="row"><button disabled={busy} onClick={submitCash}>Yes, record it</button><button className="ghost" onClick={() => setConfirming(false)}>Cancel</button></div></div>}
+    </div>
+  ) : null;
+
   const profileDrawer = (
     <>
       {profileId && (
@@ -1151,6 +1168,63 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   {profile.student.email || "no email yet"} · {roster.find((s) => s.id === profileId)?.class_name || "no class"}<br />
                   joined {fmtWhen(profile.student.created_at)} · last active {fmtWhen(profile.student.last_active_at)}
                 </p>
+                {tsection === "brokerage" && (
+                  <div className="panel">
+                    <div className="panel-heading"><div><h2>Portfolio</h2><p className="hint">Cash, holdings, and what the account is worth right now.</p></div></div>
+                    <div className="stat-grid">
+                      <div className="stat"><div className="label">Brokerage cash</div><div className="value">{money(profile.portfolio.cashCents)}</div></div>
+                      <div className="stat"><div className="label">Invested</div><div className="value">{money(profile.portfolio.investedCents)}</div></div>
+                      <div className="stat"><div className="label">Account value</div><div className="value">{money(profile.portfolio.portfolioCents)}</div></div>
+                      <div className="stat"><div className="label">Total return</div><div className={`value ${profile.portfolio.gainLossCents >= 0 ? "up" : "down"}`}>{money(profile.portfolio.gainLossCents)}</div></div>
+                    </div>
+                    {profile.portfolio.holdings.length === 0 ? (
+                      <p className="small">No holdings yet — {money(profile.portfolio.cashCents)} in cash is ready to invest.</p>
+                    ) : (
+                      <div className="table-wrap"><table>
+                        <thead><tr><th>Ticker</th><th>Shares</th><th>Avg cost</th><th>Price</th><th>Value</th><th>Gain/loss</th></tr></thead>
+                        <tbody>
+                          {profile.portfolio.holdings.map((h: any) => {
+                            const pct = h.costBasisCents > 0 ? (h.gainLossCents / h.costBasisCents) * 100 : 0;
+                            return (
+                              <tr key={h.ticker}>
+                                <td><strong className="ticker">{h.ticker}</strong></td>
+                                <td>{h.shares.toFixed(4)}</td>
+                                <td>{money(h.avgCostCents)}</td>
+                                <td>{h.priceCents == null ? "—" : money(h.priceCents)}</td>
+                                <td>{money(h.marketCents)}</td>
+                                <td className={h.gainLossCents >= 0 ? "up" : "down"}>{money(h.gainLossCents)} <span className="small">({pct >= 0 ? "+" : ""}{pct.toFixed(1)}%)</span></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table></div>
+                    )}
+                    <p className="hint">Prices delayed · {profile.portfolio.quoteSource}</p>
+                  </div>
+                )}
+                {tsection === "brokerage" && (
+                  <div className="panel">
+                    <h2>Investment history</h2>
+                    <p className="hint">Every buy, sell, and cash adjustment on this account — newest first.</p>
+                    {profile.history.length === 0 ? (
+                      <p className="small">No activity yet.</p>
+                    ) : (
+                      <table>
+                        <thead><tr><th>When</th><th>What</th><th>Cash effect</th></tr></thead>
+                        <tbody>
+                          {profile.history.map((e: any) => (
+                            <tr key={e.id}>
+                              <td className="small">{new Date(e.created_at).toLocaleString()}</td>
+                              <td>{describeEntry(e)}<br /><span className="small">{entryDetail(e)}</span></td>
+                              <td className={e.amount_cents >= 0 ? "up" : "down"}>{money(e.amount_cents)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+                {tsection === "brokerage" && cashAdjustPanel}
                 {(() => {
                   const mods = profile.modules || [];
                   const started = mods.filter((m: any) => m.status !== "not_started").length;
@@ -1181,6 +1255,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <div className="row"><div className="field grow"><label>Name</label><input value={editName} onChange={(e) => setEditName(e.target.value)} /></div><div className="field grow"><label>Class</label><select value={editClass} onChange={(e) => setEditClass(e.target.value)}><option value="">No class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div><button disabled={busy || editName.trim().length < 2} onClick={saveStudent}>Save details</button></div>
                   <p className="hint">Email is tied to Google sign-in and cannot be edited here.</p>
                 </div>
+                {tsection === "banking" && (<>
                 <div className="panel">
                   <h2>Job</h2>
                   <p className="hint">
@@ -1257,18 +1332,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   <div className="stat"><div className="label">Brokerage cash added</div><div className="value">{money(profile.totals?.added ?? 0)}</div></div>
                   <div className="stat"><div className="label">Brokerage cash removed</div><div className="value">{money(profile.totals?.removed ?? 0)}</div></div>
                 </div>
-                {selected && <div className="panel cash-panel">
-                  <h2>Adjust brokerage cash</h2>
-                  <p className="hint">Current brokerage cash: {money(profile.portfolio.cashCents)}. This is uninvested money inside the student's brokerage account—not checking or savings. Removing it never sells shares; if brokerage cash is short, the student must sell first.</p>
-                  <div className="row">
-                    <div className="field"><label>Brokerage action</label><select value={direction} onChange={(e) => { setDirection(e.target.value as any); setConfirming(false); }}><option value="add">Add brokerage cash</option><option value="remove">Remove brokerage cash</option></select></div>
-                    <div className="field"><label>Dollars</label><input value={dollars} onChange={(e) => { setDollars(e.target.value); setConfirming(false); }} placeholder="50.00" inputMode="decimal" /></div>
-                  </div>
-                  <div className="field" style={{ marginTop: 9 }}><label>Reason (required — student can see this)</label><textarea value={reason} onChange={(e) => { setReason(e.target.value); setConfirming(false); }} rows={2} placeholder="e.g. Transferred from ClassBank per student's signed slip." /></div>
-                  {!confirming
-                    ? <div className="row" style={{ marginTop: 9 }}><button disabled={!(Number(dollars) > 0) || reason.trim().length < 3} onClick={() => setConfirming(true)}>Review brokerage {direction === "add" ? "deposit" : "withdrawal"}</button></div>
-                    : <div className="confirm"><p><strong>Confirm:</strong> {direction === "add" ? "add" : "remove"} <strong>{money(Math.round(Number(dollars) * 100))}</strong> {direction === "add" ? "to" : "from"} <strong>{selected.name}</strong>?</p><p className="small">Reason: {reason}</p><div className="row"><button disabled={busy} onClick={submitCash}>Yes, record it</button><button className="ghost" onClick={() => setConfirming(false)}>Cancel</button></div></div>}
-                </div>}
+                {cashAdjustPanel}
                 {profile.bank && <div className="panel">
                   <h2>Banking</h2>
                   <p className="hint">Checking {money(profile.bank.checkingCents)} · savings {money(profile.bank.savingsCents)} · {((profile.bank.savingsInterest?.apy || 0) * 100).toFixed(2)}% APY{profile.bankInvariant && !profile.bankInvariant.ok ? " · INVARIANT BROKEN" : ""}</p>
@@ -1315,6 +1379,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                     </tbody>
                   </table>
                 </div>
+                </>)}
                 <div className="panel danger-zone">
                   <h2>Delete unused account</h2>
                   <p className="hint">Deletion is only available when there are no transactions, bills, payments, disputes, or paychecks. This prevents accidental loss of financial history.</p>
@@ -1368,7 +1433,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
 
       <div className="panel">
         <h2>Roster — modules at a glance</h2>
-        <p className="hint">Click a student to open their profile: module progress, job, and balances.</p>
+        <p className="hint">Click a student for their portfolio, investment history, and module progress.</p>
         <div className="roster-tools"><div className="field"><label htmlFor="roster-search">Find a student</label><input id="roster-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" /></div><span className="small">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span></div>
         <div className="table-wrap"><table>
           <thead><tr>{th("Student", "name")}{th("Class", "class")}{th("Last active", "last")}{th("Modules started", "started")}{th("Modules completed", "completed")}</tr></thead>
