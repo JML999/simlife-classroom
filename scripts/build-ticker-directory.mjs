@@ -52,6 +52,7 @@ const EXTRA_STOCKS = [
   ["GME", "GameStop", "Consumer Discretionary", "Specialty Retail", "SMALL"],
   ["BBW", "Build-A-Bear Workshop", "Consumer Discretionary", "Specialty Retail", "SMALL"],
   ["CROX", "Crocs, Inc.", "Consumer Discretionary", "Footwear", "MID"],
+  ["CHYM", "Chime Financial, Inc.", "Financials", "Consumer Finance", "LARGE"],
   // Foreign ADR picks students ask for: not S&P 500, so no table row exists.
   ["TM", "Toyota Motor Corp.", "Consumer Discretionary", "Automobiles", "LARGE"],
   ["ADDYY", "adidas AG", "Consumer Discretionary", "Footwear", "LARGE"],

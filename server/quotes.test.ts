@@ -70,6 +70,17 @@ test("classroom ADR picks: TM + ADDYY are searchable with fixed mock prices", as
   assert.equal((await m.getQuote("ADDYY")).priceCents, 11250);
 });
 
+test("Chime is searchable and classified as a Financials stock", async () => {
+  const { MockQuoteProvider, searchDirectory } = await import("./quotes.js");
+  const fs = await import("node:fs");
+  const directory = JSON.parse(fs.readFileSync(new URL("./ticker-directory.json", import.meta.url), "utf8"));
+  assert.ok(searchDirectory("CHYM").some((s) => s.ticker === "CHYM"));
+  assert.ok(searchDirectory("Chime Financial").some((s) => s.ticker === "CHYM"));
+  assert.deepEqual(directory.rows.find((row: string[]) => row[0] === "CHYM"), ["CHYM", "Chime Financial, Inc.", "STOCK"]);
+  assert.equal(directory.meta.CHYM.sector, "Financials");
+  assert.ok((await new MockQuoteProvider().getQuote("CHYM")).priceCents > 0);
+});
+
 test("finnhub adapter parses live quotes and handles gaps", async () => {
   const { FinnhubQuoteProvider } = await import("./quotes.js");
   const originalFetch = globalThis.fetch;
