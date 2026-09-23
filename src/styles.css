@@ -612,3 +612,11 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
   .class-post-row { grid-template-columns: 1fr; }
   .module-visibility-grid { grid-template-columns: 1fr; }
 }
+
+/* ---- Student leaderboard (Class tab) -------------------------------- */
+.class-leaderboard { margin-top: 26px; }
+.leaderboard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.leaderboard-head .small { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+.leaderboard-table .lb-return { font-family: var(--mono); font-weight: 700; }
+.leaderboard-table tr.is-self td { background: var(--olive-pale); font-weight: 600; }
+.leaderboard-table tbody tr.is-self:hover td { background: var(--olive-pale); }

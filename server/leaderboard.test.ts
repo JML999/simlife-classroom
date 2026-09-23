@@ -242,3 +242,63 @@ test("formatBp reads as a percentage", () => {
   assert.equal(lb.formatBp(-500), "-5.00%");
   assert.equal(lb.formatBp(0), "+0.00%");
 });
+
+// ---------------------------------------------------------------------------
+// Stable gains sort
+// ---------------------------------------------------------------------------
+
+test("stable gains: only >=6% gainers, steadiest daily path first", async () => {
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+    ["lbclass3", "Stable Period", "LBST1", new Date().toISOString()]);
+  setPrice("SXX", 100);
+  setPrice("VXX", 100);
+  setPrice("LXX", 100);
+  const steady = await student("lbclass3", 100_000, "SteadyEddie");
+  const wild = await student("lbclass3", 100_000, "WildCard");
+  const low = await student("lbclass3", 100_000, "SlowLoader");
+  for (const [s, t] of [[steady, "SXX"], [wild, "VXX"], [low, "LXX"]] as const) {
+    await buy({ userId: s, ticker: t, dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor(t)) });
+  }
+  // Four daily snapshots with controlled paths:
+  //   Steady: ~+3%/day every day        -> ~+9% total, tiny vol
+  //   Wild:   +25% / -15% / +20%        -> ~+27% total, enormous vol
+  //   Low:    ~+1%/day                  -> ~+3% total, below the 6% bar
+  const days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
+  const paths: Record<string, number[]> = { SXX: [100, 103, 106, 109], VXX: [100, 125, 106, 127], LXX: [100, 101, 102, 103] };
+  for (let d = 0; d < days.length; d++) {
+    setPrice("SXX", paths.SXX[d]!);
+    setPrice("VXX", paths.VXX[d]!);
+    setPrice("LXX", paths.LXX[d]!);
+    for (const s of [steady, wild, low]) await lb.writeSnapshot(await lb.buildSnapshot(s, days[d]!, priceOf));
+  }
+
+  const pct = await lb.leaderboardFor("lbclass3", { sort: "percent" });
+  assert.equal(pct.entries.length, 3, "percent gain shows everyone");
+  assert.equal(pct.entries[0]!.name, "WildCard", "the wild path tops percent");
+
+  const stable = await lb.leaderboardFor("lbclass3", { sort: "stable" });
+  assert.equal(stable.entries.length, 2, "SlowLoader is out — under the 6% bar");
+  assert.equal(stable.entries[0]!.name, "SteadyEddie", "least volatile qualifies first");
+  assert.equal(stable.entries[1]!.name, "WildCard");
+  assert.ok(stable.entries[0]!.volBp! < stable.entries[1]!.volBp!, "ordered by volatility ascending");
+  assert.ok(stable.entries.every((e) => e.returnBp >= 600), "nobody below the bar appears");
+});
+
+test("stable gains: legitimately empty when nobody qualifies", async () => {
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+    ["lbclass4", "Quiet Period", "LBST2", new Date().toISOString()]);
+  setPrice("QXX", 100);
+  const dull = await student("lbclass4", 100_000, "DullButSteady");
+  await buy({ userId: dull, ticker: "QXX", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("QXX")) });
+  const days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
+  const prices = [100, 101, 102, 103]; // ~+3% total — steady, but under 6%
+  for (let d = 0; d < days.length; d++) {
+    setPrice("QXX", prices[d]!);
+    await lb.writeSnapshot(await lb.buildSnapshot(dull, days[d]!, priceOf));
+  }
+  const stable = await lb.leaderboardFor("lbclass4", { sort: "stable" });
+  assert.equal(stable.entries.length, 0, "nobody qualifies — empty is the correct answer");
+  assert.ok(stable.asOfDate, "the board still reports as-of; empty, not broken");
+  const pct = await lb.leaderboardFor("lbclass4", { sort: "percent" });
+  assert.equal(pct.entries.length, 1, "percent view still shows the student");
+});

@@ -344,3 +344,46 @@ Still open:
    `npm run seed:mission` against prod after Render deploys to refresh
    the stored spec/summary/body.
 2. Sandbox re-seed + check.mjs/check2.mjs run not yet done this round.
+
+## Update 2026-09-23 (midday) — 3-goal mission verified + class leaderboard
+
+### Mission simplification (pushed `c430e16` earlier today)
+- Three goals only (baseline / hold 6 / cover 5); pick rule = any holding
+  added after the first three. Prod spec refreshed via `npm run seed:mission`
+  (id `cpost_QnyDY8gXb8gPpQsK`).
+- Root cause of "refresh doesn't update the stocks for module 2" (user
+  report): the PUSHED code filtered the write-up dropdown and one goal by
+  `newSectorCompanies`, so buys in an original sector never appeared and
+  refresh changed nothing. Fixed by the 3-goal work (options =
+  `mission.newCompanies`). Verified in sandbox: buy MSFT (tech, same as
+  baseline AAPL) → pick options `["JNJ","MSFT"]`, checks = the new three.
+  Full-refresh repro (buy JNJ → reload) also clean: API 3→4 companies,
+  DOM "4 of 6 held", no cache headers, zero pageErrors.
+- Playwright: `check.mjs` 16/16 (rewritten for the Class-workspace
+  `Student progress` roster + drawer Modules only under `tsection==="class"`
+  per commits `2cd8ecf`/`cbca9b1`), `check4.mjs` 14/14.
+
+### Class leaderboard (Percent gain + Stable gains) — built this session
+- `server/leaderboard.ts`: `stdevBp()` daily-volatility, entries carry
+  `volBp`/`days`; `leaderboardFor(..., { sort })` — `"percent"` (everyone,
+  return desc) and `"stable"` (ONLY ≥ +6.00% with ≥3 snapshot days, least
+  volatile first; empty is valid). Constants `STABLE_MIN_RETURN_BP=600`,
+  `STABLE_MIN_DAYS=3`.
+- Route `GET /api/class/leaderboard?sort=` — own class only, explicit field
+  map: no `valueCents`, no other students' `userId`s, `self` flag.
+- UI: Class tab second section (`.class-leaderboard`) — Percent/Stable
+  pills, as-of date, quiet table (# / Student / Return / Volatility /
+  Sectors / Largest position / Holdings), self-row highlighted, stable
+  empty-state copy. CSS `.leaderboard-*` in styles.css.
+- Tests: +2 (stable keeps only ≥6% steadiest-first; legitimately-empty
+  board) → 94/94, typecheck + build green.
+- Sandbox seeded with 4 days synthetic snapshots (Ava steady +6.96%,
+  Ben wild +41.44%): percent → Ben first; stable → Ava first (±0.99 vs
+  ±19.02 /day). Screenshot `fresh-lb-stable-2.png` visually verified.
+
+Still open:
+1. Prod snapshot accumulation unknown (count query script aborted by user).
+   Run `npm run snapshot` against prod after deploy — daily, after close;
+   no cron exists yet (Render cron or manual).
+2. Teacher-side leaderboard view + competitions (plan §6-7) not built.
+3. These changes NOT pushed yet at time of writing — push on user go.

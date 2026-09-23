@@ -43,6 +43,7 @@ import {
   classModuleCatalog, classModuleKey, hiddenClassModuleKeys, replaceHiddenClassModules,
 } from "./class-modules.js";
 import { moduleProgress, studentModuleDetail } from "./module-progress.js";
+import { leaderboardFor, STABLE_MIN_RETURN_BP } from "./leaderboard.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -934,6 +935,35 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
   const submission = post.kind === "portfolio_mission" ? await latestClassPostSubmission(post.id, user.id) : null;
   const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : null;
   res.json({ ...post, submission, mission });
+});
+
+// ---- Leaderboard: percent-only, own class, never another student's dollars --
+
+app.get("/api/class/leaderboard", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  if (!user.class_id) {
+    res.json({ asOfDate: null, sort: "percent", stableMinReturnBp: STABLE_MIN_RETURN_BP, entries: [] });
+    return;
+  }
+  const sort = req.query.sort === "stable" ? "stable" as const : "percent" as const;
+  const board = await leaderboardFor(user.class_id, { sort });
+  // Map explicitly: valueCents and userIds of other students never leave here.
+  res.json({
+    asOfDate: board.asOfDate,
+    sort: board.sort,
+    stableMinReturnBp: board.stableMinReturnBp,
+    entries: board.entries.map((e) => ({
+      name: e.name,
+      returnBp: e.returnBp,
+      volBp: e.volBp,
+      days: e.days,
+      sectorsHeld: e.sectorsHeld,
+      topPositionBp: e.topPositionBp,
+      holdingsCount: e.holdingsCount,
+      self: e.userId === user.id,
+    })),
+  });
 });
 
 app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {

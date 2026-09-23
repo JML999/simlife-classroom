@@ -248,12 +248,36 @@ export interface LeaderboardEntry {
   sectorsHeld: number | null;
   topPositionBp: number | null;
   holdingsCount: number;
+  /** Population stdev of daily period returns (bp), null with fewer than 2 days. */
+  volBp: number | null;
+  /** Snapshot days backing the volatility figure. */
+  days: number;
   /** Teacher views only. Never serialized to a student client. */
   valueCents?: number;
 }
 
+/** Stable-gains bar: up at least this much, over at least this many snapshot days. */
+export const STABLE_MIN_RETURN_BP = 600; // +6.00%
+export const STABLE_MIN_DAYS = 3;
+
 /**
- * Ranked board for a class, by percent return descending.
+ * Population stdev of a daily-return series, in bp. Null below two points —
+ * one day of no movement must never read as "perfectly stable".
+ */
+export function stdevBp(values: number[]): number | null {
+  if (values.length < 2) return null;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length;
+  return Math.round(Math.sqrt(variance));
+}
+
+/**
+ * Ranked board for a class.
+ *
+ * `sort: "percent"` (default) — percent return descending, everyone included.
+ * `sort: "stable"` — the Stable-gains view: ONLY students at or above the
+ * gain bar (6%) with enough history to measure, ordered least volatile first.
+ * Empty is a valid answer; nobody qualifying is not an error.
  *
  * `since` scopes it to a competition window: the return becomes the change
  * between that date's cumulative figure and the latest one, so a student who
@@ -266,14 +290,21 @@ export interface LeaderboardEntry {
  */
 export async function leaderboardFor(
   classId: string,
-  opts: { since?: string; asOf?: string; includeDollars?: boolean } = {},
-): Promise<{ asOfDate: string | null; entries: LeaderboardEntry[] }> {
+  opts: {
+    since?: string; asOf?: string; includeDollars?: boolean;
+    sort?: "percent" | "stable";
+    stableMinReturnBp?: number; stableMinDays?: number;
+  } = {},
+): Promise<{ asOfDate: string | null; entries: LeaderboardEntry[]; sort: "percent" | "stable"; stableMinReturnBp: number }> {
+  const sort = opts.sort ?? "percent";
+  const stableMinReturnBp = opts.stableMinReturnBp ?? STABLE_MIN_RETURN_BP;
+  const stableMinDays = opts.stableMinDays ?? STABLE_MIN_DAYS;
   const latest = opts.asOf
     ?? (await one<{ d: string }>(
       `SELECT MAX(as_of_date) AS d FROM leaderboard_snapshots WHERE class_id = ?`, [classId],
     ))?.d
     ?? null;
-  if (!latest) return { asOfDate: null, entries: [] };
+  if (!latest) return { asOfDate: null, entries: [], sort, stableMinReturnBp };
 
   const rows = await q<{
     user_id: string; name: string; twr_bp: number; value_cents: number;
@@ -294,21 +325,48 @@ export async function leaderboardFor(
     for (const b of base) baselines.set(b.user_id, b.twr_bp);
   }
 
+  // Daily period-return series per student, for the volatility column. Windowed
+  // the same way the return is: all history by default, since `since` when set.
+  const daily = new Map<string, number[]>();
+  const seriesRows = await q<{ user_id: string; period_return_bp: number }>(
+    `SELECT user_id, period_return_bp FROM leaderboard_snapshots
+      WHERE class_id = ? AND as_of_date <= ?${opts.since ? " AND as_of_date >= ?" : ""}
+      ORDER BY as_of_date`,
+    opts.since ? [classId, latest, opts.since] : [classId, latest],
+  );
+  for (const r of seriesRows) {
+    const series = daily.get(r.user_id);
+    if (series) series.push(r.period_return_bp);
+    else daily.set(r.user_id, [r.period_return_bp]);
+  }
+
   const entries: LeaderboardEntry[] = rows.map((r) => {
     const returnBp = opts.since
       ? returnBetweenBp(baselines.get(r.user_id) ?? 0, r.twr_bp)
       : r.twr_bp;
+    const series = daily.get(r.user_id) ?? [];
     const e: LeaderboardEntry = {
       userId: r.user_id, name: r.name, returnBp,
       sectorsHeld: r.sectors_held, topPositionBp: r.top_position_bp,
       holdingsCount: r.holdings_count,
+      volBp: stdevBp(series), days: series.length,
     };
     if (opts.includeDollars) e.valueCents = r.value_cents;
     return e;
   });
 
+  if (sort === "stable") {
+    // Stable gains: over the bar AND measured over enough days, steadiest
+    // first. Below the bar or too little history = not on this board at all.
+    const qualified = entries.filter(
+      (e) => e.returnBp >= stableMinReturnBp && e.days >= stableMinDays && e.volBp != null,
+    );
+    qualified.sort((a, b) => (a.volBp! - b.volBp!) || (b.returnBp - a.returnBp) || a.name.localeCompare(b.name));
+    return { asOfDate: latest, entries: qualified, sort, stableMinReturnBp };
+  }
+
   entries.sort((a, b) => b.returnBp - a.returnBp || a.name.localeCompare(b.name));
-  return { asOfDate: latest, entries };
+  return { asOfDate: latest, entries, sort, stableMinReturnBp };
 }
 
 /**

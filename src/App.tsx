@@ -2007,6 +2007,9 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [posts, setPosts] = useState<any[] | null>(null);
   const [open, setOpen] = useState<{ kind: "sort" | "mission"; id: string; moduleNumber?: number } | null>(null);
   const [err, setErr] = useState("");
+  const [board, setBoard] = useState<any | null>(null);
+  const [boardErr, setBoardErr] = useState("");
+  const [boardSort, setBoardSort] = useState<"percent" | "stable">("percent");
 
   const load = useCallback(async () => {
     try {
@@ -2018,6 +2021,15 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
     catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // The board re-fetches per sort — server-side ordering is the source of truth
+  // for both views, so the page can never disagree with the ranking.
+  useEffect(() => {
+    let cancelled = false;
+    api<any>(`/api/class/leaderboard?sort=${boardSort}`)
+      .then((b) => { if (!cancelled) { setBoard(b); setBoardErr(""); } })
+      .catch((e: any) => { if (!cancelled) setBoardErr(e.message); });
+    return () => { cancelled = true; };
+  }, [boardSort]);
 
   const close = useCallback(() => { setOpen(null); void load(); }, [load]);
   if (open?.kind === "sort") return <SortActivity id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
@@ -2084,9 +2096,77 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
                 : <span className="badge-paid">Submitted</span>}
             </div>
           </button>
-        ); })())}
+          ); })())}
       </div>
+      <Leaderboard
+        board={board}
+        err={boardErr}
+        sort={boardSort}
+        onSort={setBoardSort}
+      />
     </div>
+  );
+}
+
+// Second section of the Class tab: the standing board. Quiet table, percent
+// only, sectors and largest position beside the return so concentration is
+// visible at a glance (LEADERBOARD_PLAN.md §4). Stable gains is a filter+sort:
+// only students up at least the bar with enough history, steadiest first —
+// an empty answer is fine and says so without drama.
+function Leaderboard({ board, err, sort, onSort }: {
+  board: any | null; err: string;
+  sort: "percent" | "stable"; onSort: (s: "percent" | "stable") => void;
+}) {
+  const fmtBp = (bp: number) => `${bp >= 0 ? "+" : "-"}${(Math.abs(bp) / 100).toFixed(2)}%`;
+  const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "6.00";
+  return (
+    <section className="class-leaderboard" aria-label="Leaderboard">
+      <div className="section-kicker">Leaderboard</div>
+      <div className="leaderboard-head">
+        <div className="pills" role="group" aria-label="Sort the leaderboard">
+          <button className={`pill${sort === "percent" ? " active" : ""}`} aria-pressed={sort === "percent"} onClick={() => onSort("percent")}>Percent gain</button>
+          <button className={`pill${sort === "stable" ? " active" : ""}`} aria-pressed={sort === "stable"} onClick={() => onSort("stable")}>Stable gains</button>
+        </div>
+        {board?.asOfDate && <span className="small">As of {board.asOfDate}</span>}
+      </div>
+      {err && <div className="error" role="alert">{err}</div>}
+      {!board && !err && <p className="hint">Loading standings…</p>}
+      {board && !board.asOfDate && (
+        <div className="panel"><p className="hint" style={{ margin: 0 }}>No snapshots yet — standings start accumulating with the daily snapshot.</p></div>
+      )}
+      {board?.asOfDate && sort === "stable" && (
+        <p className="hint">Gainers of at least {barPct}% with 3+ days of history, steadiest daily path first. Not everyone makes the bar.</p>
+      )}
+      {board?.asOfDate && sort === "stable" && board.entries.length === 0 && (
+        <div className="panel"><p className="hint" style={{ margin: 0 }}>Nobody qualifies yet — nobody is up at least {barPct}% over enough days. That's fine; check back after the next snapshot.</p></div>
+      )}
+      {board?.asOfDate && board.entries.length > 0 && (
+        <div className="table-wrap">
+          <table className="leaderboard-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Student</th><th>Return</th>
+                {sort === "stable" && <th>Volatility</th>}
+                <th>Sectors</th><th>Largest position</th><th>Holdings</th>
+              </tr>
+            </thead>
+            <tbody>
+              {board.entries.map((e: any, i: number) => (
+                <tr key={`${e.name}:${i}`} className={e.self ? "is-self" : undefined}>
+                  <td>{i + 1}</td>
+                  <td>{e.name}{e.self ? " (you)" : ""}</td>
+                  <td className={`lb-return ${e.returnBp >= 0 ? "up" : "down"}`}>{fmtBp(e.returnBp)}</td>
+                  {sort === "stable" && <td>{e.volBp == null ? "—" : `±${(e.volBp / 100).toFixed(2)}%/day`}</td>}
+                  <td>{e.sectorsHeld ?? "—"}</td>
+                  <td>{e.topPositionBp == null ? "—" : `${Math.round(e.topPositionBp / 100)}%`}</td>
+                  <td>{e.holdingsCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2270,7 +2350,24 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
         <div className="section-kicker">Explain what you built</div>
         {!mission.met ? (
           <div className="explain-lock">
-            <p><strong>The write-up opens once every goal above is checked.</strong><br />Do the trading first — you cannot answer “why does this diversify you?” before you own it. Your teacher checks the holdings snapshot against what you write.</p>
+            <p><strong>The write-up opens once every goal above is checked.</strong>{" "}
+              {!mission.checks.companies && `Buy ${t.minCompanies - mission.counts.companies} more ${t.minCompanies - mission.counts.companies === 1 ? "company" : "companies"}${
+                !mission.checks.sectors ? ` and reach ${t.minSectors} sectors (you're at ${mission.counts.sectors})` : ""
+              }.`}
+              {mission.checks.companies && !mission.checks.sectors && `Cover ${t.minSectors - mission.counts.sectors} more sector${t.minSectors - mission.counts.sectors === 1 ? "" : "s"} — you're at ${mission.counts.sectors}.`}
+              {" "}Do the trading first — your teacher checks the holdings snapshot against what you write.</p>
+            {options.length > 0 && (
+              <>
+                <span className="small">Your additions so far — these become your write-up picks</span>
+                <div className="sector-chip-row">
+                  {options.map((ticker) => (
+                    <span className="sector-chip now" key={ticker}>
+                      <strong>{ticker}</strong> {mission.companies.find((c: any) => c.ticker === ticker)?.sector || "company"}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
             <button onClick={onOpenInvesting}>Open Investing →</button>
           </div>
         ) : (
