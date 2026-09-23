@@ -68,7 +68,7 @@ test("portfolio mission derives the first three stocks and live sector targets",
   assert.equal((await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response, idempotencyKey: "mission-submit-one" })).deduped, true);
 });
 
-test("mission rejects a claimed pick from an original sector", async () => {
+test("mission rejects a pick that was not added after the first three", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   await assert.rejects(() => posts.submitPortfolioMission({
     post: mission, userId: STUDENT, response: {
@@ -79,5 +79,5 @@ test("mission rejects a claimed pick from an original sector", async () => {
       ],
       reflection: "This reflection has enough words to pass the length rule, but the first claimed company is still one of the original holdings. The server should reject the response because portfolio evidence, not a student's typed claim, decides whether each selected company actually diversifies the original basket.",
     },
-  }), /must be a current company holding from outside your original sectors/);
+  }), /must be a current company holding you added after your first three/);
 });

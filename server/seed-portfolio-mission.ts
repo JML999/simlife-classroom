@@ -12,7 +12,7 @@ import { createClassPost, listClassPosts, setClassPostStatus } from "./class-pos
 const TITLE = "Build a five-sector portfolio";
 const SUMMARY = "Your first three picks were probably one bet. Add companies in new industries, then explain what each one changes.";
 const BODY = "Do not sell your first three — you are adding to them. Buy three more companies in industries your first three did not cover, so one bad year in one industry cannot take your whole account down. Aim for six companies across five sectors. ETFs do not count toward the six-company target.";
-const SPEC = { minCompanies: 6, minSectors: 5, minNewCompanies: 3, minNewSectorCompanies: 3, pickThesisMinWords: 12, reflectionMinWords: 40 };
+const SPEC = { minCompanies: 6, minSectors: 5, pickThesisMinWords: 12, reflectionMinWords: 40 };
 
 await initSchema();
 const existing = (await listClassPosts({})).find((post) => post.kind === "portfolio_mission" && post.title === TITLE);

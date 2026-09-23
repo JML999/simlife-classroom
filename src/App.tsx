@@ -838,7 +838,7 @@ function TeacherSortDetail({ mod }: { mod: any }) {
   );
 }
 
-// Expanded body of a mission module row: the five-goal checklist with counts,
+// Expanded body of a mission module row: the three-goal checklist with counts,
 // then the submitted write-up (picks + reflection) when there is one.
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
@@ -848,8 +848,6 @@ function TeacherMissionDetail({ mod }: { mod: any }) {
   const goals = [
     { done: d.checks?.baselineReady, label: "Start with three companies", note: baseline.length >= 3 ? baseline.join(" · ") : `${baseline.length} of 3 first buys` },
     { done: d.checks?.companies, label: `Hold ${t.minCompanies} companies`, note: `${d.counts.companies} of ${t.minCompanies} held` },
-    { done: d.checks?.newCompanies, label: `Add ${t.minNewCompanies} past your first three`, note: `${d.counts.newCompanies} of ${t.minNewCompanies} added` },
-    { done: d.checks?.newSectorCompanies, label: "Put some additions in new industries", note: `${d.counts.newSectorCompanies} of ${t.minNewSectorCompanies} in new industries` },
     { done: d.checks?.sectors, label: `Cover ${t.minSectors} sectors`, note: `${d.counts.sectors} of ${t.minSectors} sectors` },
   ];
   const met = goals.filter((g) => g.done).length;
@@ -2142,7 +2140,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
 
   const mission = post.mission;
   const t = mission.targets;
-  const options = mission.newSectorCompanies as string[];
+  const options = mission.newCompanies as string[];
   const updatePick = (index: number, changes: any) => setPicks(picks.map((pick, i) => i === index ? { ...pick, ...changes } : pick));
 
   // Plain-English goals, in the order a student actually works through them.
@@ -2163,18 +2161,6 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
         : `${mission.counts.companies} of ${t.minCompanies} held — buy ${t.minCompanies - mission.counts.companies} more individual companies.`,
     },
     {
-      done: mission.checks.newCompanies,
-      label: `Add ${t.minNewCompanies} past your first three`,
-      detail: `${mission.counts.newCompanies} of ${t.minNewCompanies} added. Your first three stay put — this mission is about adding, not selling.`,
-    },
-    {
-      done: mission.checks.newSectorCompanies,
-      label: "Put some additions in new industries",
-      detail: mission.checks.newSectorCompanies
-        ? `${mission.counts.newSectorCompanies} of ${t.minNewSectorCompanies} additions are in industries your first basket never touched.`
-        : `${mission.counts.newSectorCompanies} of ${t.minNewSectorCompanies} so far — not different brands, different industries from ${mission.baselineSectors.length ? mission.baselineSectors.join(", ") : "your originals"}.`,
-    },
-    {
       done: mission.checks.sectors,
       label: `Cover ${t.minSectors} sectors`,
       detail: mission.checks.sectors
@@ -2189,7 +2175,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   if (!mission.met) problems.push("Meet every goal above — the write-up unlocks when your portfolio evidence is complete.");
   const chosen = picks.map((pick) => pick.ticker.trim().toUpperCase()).filter(Boolean);
   if (new Set(chosen).size !== 3 || chosen.some((ticker) => !options.includes(ticker))) {
-    problems.push("Choose three different holdings from your new-industry buys.");
+    problems.push("Choose three different holdings from the companies you added.");
   }
   picks.forEach((pick, index) => {
     if (wordCount(pick.thesis) < t.pickThesisMinWords) problems.push(`Addition ${index + 1} needs at least ${t.pickThesisMinWords} words.`);
@@ -2289,13 +2275,13 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
           </div>
         ) : (
           <>
-            <p className="hint">For each new-industry addition: what does the business do, and why is it a different bet from your first three?</p>
+            <p className="hint">For each company you added: what does the business do, and why is it a different bet from your first three?</p>
             {picks.map((pick, index) => (
               <div className="explain-pick" key={index}>
                 <div className="pick-head">
                   <span className="pick-no" aria-hidden="true">{index + 1}</span>
                   <select value={pick.ticker} onChange={(e) => updatePick(index, { ticker: e.target.value })} aria-label={`Addition ${index + 1} holding`}>
-                    <option value="">Choose one of your new-industry holdings…</option>
+                    <option value="">Choose one of the companies you added…</option>
                     {options.map((ticker) => (
                       <option key={ticker} value={ticker} disabled={chosen.includes(ticker) && pick.ticker !== ticker}>
                         {ticker} · {mission.companies.find((c: any) => c.ticker === ticker)?.sector}
@@ -2616,7 +2602,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       const created = await api<any>("/api/teacher/class-posts", { method: "POST", body: JSON.stringify({
         kind: open, classId: scope || null, title, summary, body,
         heroUrl: open === "portfolio_mission" ? "/module-art/balanced-portfolio.svg" : null,
-        spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5, minNewCompanies: 3, minNewSectorCompanies: 3, pickThesisMinWords: 12, reflectionMinWords: 40 } : {},
+        spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5, pickThesisMinWords: 12, reflectionMinWords: 40 } : {},
       }) });
       setOpen(""); await load(); onModulesChanged(); setNotice(`Draft “${created.title}” created.`);
     } catch (e: any) { setErr(e.message); }
@@ -2641,7 +2627,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       <div className="grid2"><div className="field"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} /></div><div className="field"><label>Who gets it</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div></div>
       {open === "portfolio_mission" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
       <div className="field"><label>{open === "announcement" ? "Message" : "Mission brief"}</label><textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)} /></div>
-      {open === "portfolio_mission" && <p className="hint">Built-in evidence: original three stock buys · 6 current companies · 5 sectors · 3 additions outside the original sectors · three research explanations · final reflection.</p>}
+      {open === "portfolio_mission" && <p className="hint">Built-in evidence: original three stock buys · 6 current companies · 5 sectors · three research explanations · final reflection.</p>}
       <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
     </div>}
     {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}

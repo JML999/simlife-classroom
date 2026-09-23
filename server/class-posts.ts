@@ -35,8 +35,6 @@ export interface ClassPost {
 const DEFAULT_MISSION_SPEC = {
   minCompanies: 6,
   minSectors: 5,
-  minNewCompanies: 3,
-  minNewSectorCompanies: 3,
   pickThesisMinWords: 12,
   reflectionMinWords: 40,
 };
@@ -160,8 +158,6 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
     baselineReady: baselineTickers.length >= 3,
     companies: companies.length >= spec.minCompanies,
     sectors: sectors.length >= spec.minSectors,
-    newCompanies: newCompanies.length >= spec.minNewCompanies,
-    newSectorCompanies: newSectorCompanies.length >= spec.minNewSectorCompanies,
   };
   return {
     baselineTickers, baselineSectors, companies, sectors, newCompanies: newCompanies.map((holding) => holding.ticker),
@@ -198,7 +194,7 @@ export async function submitPortfolioMission(opts: {
   const cleanPicks = picks.map((pick: any) => ({ ticker: String(pick?.ticker || "").trim().toUpperCase(), thesis: String(pick?.thesis || "").trim() }));
   if (new Set(cleanPicks.map((pick: any) => pick.ticker)).size !== 3) throw new ClassPostError("INVALID_INPUT", "Choose three different tickers.");
   for (const pick of cleanPicks) {
-    if (!state.newSectorCompanies.includes(pick.ticker)) throw new ClassPostError("INVALID_INPUT", `${pick.ticker || "Each pick"} must be a current company holding from outside your original sectors.`);
+    if (!state.newCompanies.includes(pick.ticker)) throw new ClassPostError("INVALID_INPUT", `${pick.ticker || "Each pick"} must be a current company holding you added after your first three.`);
     if (wordCount(pick.thesis) < state.targets.pickThesisMinWords) throw new ClassPostError("INVALID_INPUT", `Explain ${pick.ticker} in at least ${state.targets.pickThesisMinWords} words.`);
   }
   const reflection = String(opts.response?.reflection || "").trim();
