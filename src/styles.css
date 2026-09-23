@@ -405,11 +405,10 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .question-a { background: #eef6f3; border: 1px solid #bcd8d0; }
 .question-answered { font-size: 12px; color: var(--pine-dark, #0a463f); margin-top: 4px; }
 
-/* ---- Class tab: sector sort ---------------------------------------------
-   The Class button sits at the BOTTOM of the rail, under a divider: the three
-   above it are places money lives, and this is a different kind of thing. */
-.student-nav-foot { margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); }
+/* ---- Class modules and leaderboard -------------------------------------- */
+.student-nav-foot { display: flex; flex-direction: column; gap: 7px; margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); }
 .class-section .page-intro { padding-top: 14px; }
+.leaderboard-section .page-intro { padding-top: 14px; }
 .section-kicker { margin: 18px 0 9px; color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
 .class-announcements { margin-bottom: 24px; }
 .class-announcement { display: flex; gap: 12px; margin-bottom: 8px; padding: 13px 15px; background: #f3ead8; border: 1px solid #d9c9a8; border-radius: 12px; }
@@ -456,7 +455,9 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .bucket-head h3 { margin: 0; font-size: 15px; }
 .bucket.targetable .bucket-head { background: var(--olive-pale); border-radius: 8px; cursor: pointer; }
 @media (max-width: 900px) {
-  .student-nav-foot { margin-top: 0; margin-left: auto; padding-top: 0; padding-left: 9px; border-top: 0; border-left: 1px solid var(--line); }
+  .student-nav { overflow-x: auto; }
+  .student-nav button { flex: 0 0 auto; width: auto; }
+  .student-nav-foot { flex: 0 0 auto; flex-direction: row; margin-top: 0; margin-left: auto; padding-top: 0; padding-left: 9px; border-top: 0; border-left: 1px solid var(--line); }
   .bucket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 520px) {
@@ -622,8 +623,8 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
   .module-visibility-grid { grid-template-columns: 1fr; }
 }
 
-/* ---- Student leaderboard (Class tab) -------------------------------- */
-.class-leaderboard { margin-top: 26px; }
+/* ---- Student leaderboard -------------------------------------------- */
+.class-leaderboard { margin-top: 8px; }
 .leaderboard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .leaderboard-head .small { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
 .leaderboard-table .lb-return { font-family: var(--mono); font-weight: 700; }

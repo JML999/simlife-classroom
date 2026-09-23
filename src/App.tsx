@@ -162,7 +162,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   // One idempotency key per form submission; reused across retries.
   const buyKey = useRef(uid());
   const sellKey = useRef(uid());
-  const [section, setSection] = useState<"dashboard" | "banking" | "investing" | "class">("dashboard");
+  const [section, setSection] = useState<"dashboard" | "banking" | "investing" | "class" | "leaderboard">("dashboard");
   const [onboarding, setOnboarding] = useState<any>(null);
 
   const load = useCallback(async () => {
@@ -249,6 +249,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
         <button aria-current={section === "investing" ? "page" : undefined} className={section === "investing" ? "active" : ""} onClick={() => setSection("investing")}><span>↗</span>Investing</button>
         <div className="student-nav-foot">
           <button aria-current={section === "class" ? "page" : undefined} className={section === "class" ? "active" : ""} onClick={() => setSection("class")}><span>◆</span>Class</button>
+          <button aria-current={section === "leaderboard" ? "page" : undefined} className={section === "leaderboard" ? "active" : ""} onClick={() => setSection("leaderboard")}><span>▤</span>Leaderboard</button>
         </div>
       </nav>
       <main className="student-content">
@@ -256,6 +257,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       {section === "dashboard" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} onChanged={load} />}
       {section === "class" && <ClassSection onOpenInvesting={() => setSection("investing")} />}
+      {section === "leaderboard" && <LeaderboardSection />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
         <div>
@@ -2008,9 +2010,6 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [posts, setPosts] = useState<any[] | null>(null);
   const [open, setOpen] = useState<{ kind: "sort" | "mission"; id: string; moduleNumber?: number } | null>(null);
   const [err, setErr] = useState("");
-  const [board, setBoard] = useState<any | null>(null);
-  const [boardErr, setBoardErr] = useState("");
-  const [boardSort, setBoardSort] = useState<"percent" | "stable">("percent");
 
   const load = useCallback(async () => {
     try {
@@ -2022,15 +2021,6 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
     catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  // The board re-fetches per sort — server-side ordering is the source of truth
-  // for both views, so the page can never disagree with the ranking.
-  useEffect(() => {
-    let cancelled = false;
-    api<any>(`/api/class/leaderboard?sort=${boardSort}`)
-      .then((b) => { if (!cancelled) { setBoard(b); setBoardErr(""); } })
-      .catch((e: any) => { if (!cancelled) setBoardErr(e.message); });
-    return () => { cancelled = true; };
-  }, [boardSort]);
 
   const close = useCallback(() => { setOpen(null); void load(); }, [load]);
   if (open?.kind === "sort") return <SortActivity id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
@@ -2099,17 +2089,38 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
           </button>
           ); })())}
       </div>
-      <Leaderboard
-        board={board}
-        err={boardErr}
-        sort={boardSort}
-        onSort={setBoardSort}
-      />
     </div>
   );
 }
 
-// Second section of the Class tab: the standing board. Quiet table, percent
+function LeaderboardSection() {
+  const [board, setBoard] = useState<any | null>(null);
+  const [err, setErr] = useState("");
+  const [sort, setSort] = useState<"percent" | "stable">("percent");
+  // Server-side ordering is the source of truth for each view.
+  useEffect(() => {
+    let cancelled = false;
+    setBoard(null);
+    api<any>(`/api/class/leaderboard?sort=${sort}`, { cache: "no-store" })
+      .then((result) => { if (!cancelled) { setBoard(result); setErr(""); } })
+      .catch((e: any) => { if (!cancelled) setErr(e.message); });
+    return () => { cancelled = true; };
+  }, [sort]);
+  return (
+    <div className="leaderboard-section">
+      <div className="page-intro">
+        <div>
+          <div className="eyebrow">Class</div>
+          <h2>Leaderboard</h2>
+          <p>See how portfolios in your class are performing.</p>
+        </div>
+      </div>
+      <Leaderboard board={board} err={err} sort={sort} onSort={setSort} />
+    </div>
+  );
+}
+
+// Quiet table, percent
 // only, sectors and largest position beside the return so concentration is
 // visible at a glance (LEADERBOARD_PLAN.md §4). Stable gains is a filter+sort:
 // only students up at least the bar with enough history, steadiest first —
@@ -2122,7 +2133,6 @@ function Leaderboard({ board, err, sort, onSort }: {
   const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "6.00";
   return (
     <section className="class-leaderboard" aria-label="Leaderboard">
-      <div className="section-kicker">Leaderboard</div>
       <div className="leaderboard-head">
         <div className="pills" role="group" aria-label="Sort the leaderboard">
           <button className={`pill${sort === "percent" ? " active" : ""}`} aria-pressed={sort === "percent"} onClick={() => onSort("percent")}>Percent gain</button>
