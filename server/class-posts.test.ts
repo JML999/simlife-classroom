@@ -81,3 +81,49 @@ test("mission rejects a pick that was not added after the first three", async ()
     },
   }), /must be a current company holding you added after your first three/);
 });
+
+test("mission shows added holdings but does not count sold starting stocks", async () => {
+  const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
+  await db.run(
+    `INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+     VALUES (?, 'post-account', 'sell', 1000, 'KO', -1000000, 1000, ?, ?)`,
+    ["post-sell-ko", "post-sell-ko-key", "2026-09-22T12:00:00.000Z"],
+  );
+  await addHolding("CVX", 7);
+  const state = await posts.portfolioMissionState(mission, STUDENT);
+  assert.equal(state.counts.companies, 6);
+  assert.equal(state.checks.companies, true);
+  assert.equal(state.checks.baselineReady, false);
+  assert.deepEqual(state.missingBaselineTickers, ["KO"]);
+  assert.ok(state.companies.some((holding: any) => holding.ticker === "CVX" && holding.sector === "Energy"));
+  assert.ok(state.newCompanies.includes("CVX"));
+  assert.equal(state.met, false);
+});
+
+test("mission explains the five-company four-sector portfolio shown by the student", async () => {
+  const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
+  await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES ('post-scenario', 'Scenario', 'student', 'post-class', ?)`, [new Date().toISOString()]);
+  await db.run(`INSERT INTO accounts (id, user_id, cash_cents, created_at) VALUES ('post-scenario-account', 'post-scenario', 0, ?)`, [new Date().toISOString()]);
+  const tickers = ["AAPL", "META", "CAT", "NKE", "SBAC", "CVX", "TM"];
+  for (const [i, ticker] of tickers.entries()) {
+    await db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+      VALUES (?, 'post-scenario-account', 'buy', -1000, ?, 1000000, 1000, ?, ?)`, [
+      `scenario-buy-${i}`, ticker, `scenario-buy-key-${i}`, `2026-09-21T12:${String(i).padStart(2, "0")}:00.000Z`,
+    ]);
+  }
+  for (const ticker of ["META", "CAT"]) {
+    await db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+      VALUES (?, 'post-scenario-account', 'sell', 1000, ?, -1000000, 1000, ?, ?)`, [
+      `scenario-sell-${ticker}`, ticker, `scenario-sell-key-${ticker}`, "2026-09-22T12:00:00.000Z",
+    ]);
+  }
+  const state = await posts.portfolioMissionState(mission, "post-scenario");
+  assert.deepEqual(state.baselineTickers, ["AAPL", "META", "CAT"]);
+  assert.deepEqual(state.missingBaselineTickers, ["META", "CAT"]);
+  assert.deepEqual(state.newCompanies.sort(), ["NKE", "SBAC", "CVX", "TM"].sort());
+  assert.equal(state.counts.companies, 5);
+  assert.equal(state.counts.sectors, 4);
+  assert.ok(state.companies.some((holding: any) => holding.ticker === "CVX" && holding.sector === "Energy"));
+  assert.ok(state.companies.some((holding: any) => holding.ticker === "TM" && holding.sector === "Consumer Discretionary"));
+  assert.deepEqual(state.checks, { baselineReady: false, companies: false, sectors: false });
+});

@@ -520,6 +520,14 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .goal-item.done .goal-label { color: #34432c; }
 .goal-detail { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .goal-item.done .goal-detail { color: #5a6653; }
+.mission-holdings { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.mission-holdings > strong { font-size: 13px; }
+.mission-holdings > .small { display: block; margin: 4px 0 10px; color: var(--muted); }
+.mission-holdings-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px; }
+.mission-holding { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: #faf9f5; }
+.mission-holding strong { color: var(--ink); font-family: var(--mono); font-size: 12px; }
+.mission-holding span { font-size: 11px; }
+.mission-holding small { color: var(--muted); font-size: 10px; }
 .goal-sectors { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; padding-top: 13px; border-top: 1px dashed var(--line); }
 .goal-sectors > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
 .goals-actions { align-items: center; margin-top: 15px; }
@@ -527,6 +535,7 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .sector-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .sector-chip { padding: 5px 8px; color: #42483b; background: #eef0e8; border: 1px solid #c9cdbd; border-radius: 999px; font-size: 10px; }
 .sector-chip.now { color: #34432c; background: var(--olive-pale); border-color: #adb99f; }
+.sector-chip.sold { color: #755645; background: #f8eee8; border-color: #dbbcac; }
 
 .explain-lock { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding: 18px; color: var(--muted); background: repeating-linear-gradient(45deg, #f4f3ee, #f4f3ee 6px, #faf9f4 6px, #faf9f4 12px); border: 1px dashed var(--line-dark); border-radius: 10px; }
 .explain-lock p { margin: 0; font-size: 13px; line-height: 1.55; }

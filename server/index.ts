@@ -926,6 +926,7 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
 });
 
 app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
   const post = await getClassPost(String(req.params.id));

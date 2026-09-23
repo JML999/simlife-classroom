@@ -151,16 +151,21 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
       isOriginal: baselineTickers.includes(holding.ticker),
     }));
   const sectors = [...new Set(companies.map((holding) => holding.sector).filter((sector) => sector !== "Unknown"))];
+  const baselineCompanies = baselineTickers.map((ticker) => ({
+    ticker, sector: tickerMeta(ticker)?.sector || "Unknown",
+    held: companies.some((holding) => holding.ticker === ticker),
+  }));
+  const missingBaselineTickers = baselineCompanies.filter((holding) => !holding.held).map((holding) => holding.ticker);
   const newCompanies = companies.filter((holding) => !holding.isOriginal);
   const newSectorCompanies = newCompanies.filter((holding) => !baselineSectors.includes(holding.sector));
   const spec = { ...DEFAULT_MISSION_SPEC, ...post.spec };
   const checks = {
-    baselineReady: baselineTickers.length >= 3,
+    baselineReady: baselineTickers.length >= 3 && missingBaselineTickers.length === 0,
     companies: companies.length >= spec.minCompanies,
     sectors: sectors.length >= spec.minSectors,
   };
   return {
-    baselineTickers, baselineSectors, companies, sectors, newCompanies: newCompanies.map((holding) => holding.ticker),
+    baselineTickers, baselineCompanies, missingBaselineTickers, baselineSectors, companies, sectors, newCompanies: newCompanies.map((holding) => holding.ticker),
     newSectorCompanies: newSectorCompanies.map((holding) => holding.ticker),
     counts: { companies: companies.length, sectors: sectors.length, newCompanies: newCompanies.length, newSectorCompanies: newSectorCompanies.length },
     targets: spec, checks, met: Object.values(checks).every(Boolean),
