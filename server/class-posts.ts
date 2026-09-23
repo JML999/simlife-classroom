@@ -2,9 +2,9 @@
  * Class feed: teacher announcements and portfolio-linked missions.
  *
  * Portfolio missions never trust a student-authored claim about holdings. The
- * server derives the original basket from the first three distinct stock buys
- * and the current basket from the ledger, then freezes that evidence alongside
- * an append-only submission.
+ * server derives the current basket from the ledger, then freezes that evidence
+ * alongside an append-only submission. Trade history is irrelevant to the
+ * mission's company and sector targets.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -120,25 +120,8 @@ export async function setClassPostStatus(id: string, status: "draft" | "publishe
   await run(`UPDATE class_posts SET status = ? WHERE id = ?`, [status, id]);
 }
 
-async function originalStockTickers(userId: string): Promise<string[]> {
-  const buys = await q<{ ticker: string }>(
-    `SELECT l.ticker FROM ledger l JOIN accounts a ON a.id = l.account_id
-      WHERE a.user_id = ? AND l.kind = 'buy' AND l.ticker IS NOT NULL
-      ORDER BY l.created_at, l.id`, [userId],
-  );
-  const distinct: string[] = [];
-  for (const row of buys) {
-    const ticker = String(row.ticker).toUpperCase();
-    if (tickerMeta(ticker)?.kind === "STOCK" && !distinct.includes(ticker)) distinct.push(ticker);
-    if (distinct.length === 3) break;
-  }
-  return distinct;
-}
-
 export async function portfolioMissionState(post: ClassPost, userId: string): Promise<any> {
   if (post.kind !== "portfolio_mission") throw new ClassPostError("INVALID_INPUT", "This post is not a portfolio mission.");
-  const baselineTickers = await originalStockTickers(userId);
-  const baselineSectors = [...new Set(baselineTickers.map((ticker) => tickerMeta(ticker)?.sector).filter(Boolean))] as string[];
   const { holdings } = await holdingsFor(userId, () => null);
   const companies = holdings
     .map((holding) => ({ ...holding, meta: tickerMeta(holding.ticker) }))
@@ -148,26 +131,16 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
       shares: holding.shares,
       sector: holding.meta.sector || "Unknown",
       subIndustry: holding.meta.subIndustry || "",
-      isOriginal: baselineTickers.includes(holding.ticker),
     }));
   const sectors = [...new Set(companies.map((holding) => holding.sector).filter((sector) => sector !== "Unknown"))];
-  const baselineCompanies = baselineTickers.map((ticker) => ({
-    ticker, sector: tickerMeta(ticker)?.sector || "Unknown",
-    held: companies.some((holding) => holding.ticker === ticker),
-  }));
-  const missingBaselineTickers = baselineCompanies.filter((holding) => !holding.held).map((holding) => holding.ticker);
-  const newCompanies = companies.filter((holding) => !holding.isOriginal);
-  const newSectorCompanies = newCompanies.filter((holding) => !baselineSectors.includes(holding.sector));
   const spec = { ...DEFAULT_MISSION_SPEC, ...post.spec };
   const checks = {
-    baselineReady: baselineTickers.length >= 3,
     companies: companies.length >= spec.minCompanies,
     sectors: sectors.length >= spec.minSectors,
   };
   return {
-    baselineTickers, baselineCompanies, missingBaselineTickers, baselineSectors, companies, sectors, newCompanies: newCompanies.map((holding) => holding.ticker),
-    newSectorCompanies: newSectorCompanies.map((holding) => holding.ticker),
-    counts: { companies: companies.length, sectors: sectors.length, newCompanies: newCompanies.length, newSectorCompanies: newSectorCompanies.length },
+    companies, sectors,
+    counts: { companies: companies.length, sectors: sectors.length },
     targets: spec, checks, met: Object.values(checks).every(Boolean),
   };
 }
@@ -195,11 +168,11 @@ export async function submitPortfolioMission(opts: {
   const state = await portfolioMissionState(opts.post, opts.userId);
   if (!state.met) throw new ClassPostError("NOT_READY", "Your live portfolio has not met every mission target yet.");
   const picks = Array.isArray(opts.response?.picks) ? opts.response.picks : [];
-  if (picks.length !== 3) throw new ClassPostError("INVALID_INPUT", "Explain exactly three new company picks.");
+  if (picks.length !== 3) throw new ClassPostError("INVALID_INPUT", "Explain exactly three current stock holdings.");
   const cleanPicks = picks.map((pick: any) => ({ ticker: String(pick?.ticker || "").trim().toUpperCase(), thesis: String(pick?.thesis || "").trim() }));
   if (new Set(cleanPicks.map((pick: any) => pick.ticker)).size !== 3) throw new ClassPostError("INVALID_INPUT", "Choose three different tickers.");
   for (const pick of cleanPicks) {
-    if (!state.newCompanies.includes(pick.ticker)) throw new ClassPostError("INVALID_INPUT", `${pick.ticker || "Each pick"} must be a current company holding you added after your first three.`);
+    if (!state.companies.some((holding: any) => holding.ticker === pick.ticker)) throw new ClassPostError("INVALID_INPUT", `${pick.ticker || "Each pick"} must be a current stock holding.`);
     if (wordCount(pick.thesis) < state.targets.pickThesisMinWords) throw new ClassPostError("INVALID_INPUT", `Explain ${pick.ticker} in at least ${state.targets.pickThesisMinWords} words.`);
   }
   const reflection = String(opts.response?.reflection || "").trim();

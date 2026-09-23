@@ -503,15 +503,18 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 /* Module 2 — portfolio mission: assignment, then live goals, then the
    write-up (locked until the goals are met). */
 .mission-brief-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.mission-basket { display: flex; flex-direction: column; gap: 7px; margin-top: 13px; padding-top: 12px; border-top: 1px dashed var(--line); }
-.mission-basket .small, .goal-sectors .small { color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+.goal-sectors .small { color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 
 .goals-card .panel-heading h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 21px; font-weight: 550; }
-.goals-score { flex: none; text-align: right; }
+.goals-score { display: flex; flex: none; gap: 18px; text-align: right; }
 .goals-score strong { display: block; color: var(--olive-dark); font-family: var(--serif); font-size: 30px; font-weight: 550; font-variant-numeric: tabular-nums; line-height: 1; }
 .goals-score span { color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
 .goal-bar { height: 8px; margin: 2px 0 14px; overflow: hidden; background: #eceadf; border: 1px solid #e0dfd4; border-radius: 999px; }
 .goal-bar > div { height: 100%; background: var(--olive); border-radius: 999px; transition: width 320ms ease; }
+@media (max-width: 520px) {
+  .goals-card .panel-heading { flex-direction: column; }
+  .goals-score { align-self: flex-start; text-align: left; }
+}
 .goal-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .goal-item { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 11px; align-items: start; padding: 11px 12px; background: #f7f6f1; border: 1px solid var(--line); border-radius: 10px; }
 .goal-item.done { background: #eef2e9; border-color: #adb99f; }
@@ -528,7 +531,6 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .mission-holding { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: #faf9f5; }
 .mission-holding strong { color: var(--ink); font-family: var(--mono); font-size: 12px; }
 .mission-holding span { font-size: 11px; }
-.mission-holding small { color: var(--muted); font-size: 10px; }
 .goal-sectors { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; padding-top: 13px; border-top: 1px dashed var(--line); }
 .goal-sectors > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
 .goals-actions { align-items: center; margin-top: 15px; }
@@ -536,7 +538,6 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .sector-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .sector-chip { padding: 5px 8px; color: #42483b; background: #eef0e8; border: 1px solid #c9cdbd; border-radius: 999px; font-size: 10px; }
 .sector-chip.now { color: #34432c; background: var(--olive-pale); border-color: #adb99f; }
-.sector-chip.sold { color: #755645; background: #f8eee8; border-color: #dbbcac; }
 
 .explain-lock { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding: 18px; color: var(--muted); background: repeating-linear-gradient(45deg, #f4f3ee, #f4f3ee 6px, #faf9f4 6px, #faf9f4 12px); border: 1px dashed var(--line-dark); border-radius: 10px; }
 .explain-lock p { margin: 0; font-size: 13px; line-height: 1.55; }

@@ -39,7 +39,7 @@ test("announcements and missions respect class scope", async () => {
   assert.ok(!visible.some((post) => post.id === other.id));
 });
 
-test("portfolio mission derives the first three stocks and live sector targets", async () => {
+test("portfolio mission uses only current stock and sector totals", async () => {
   for (const [i, ticker] of ["NKE", "AAPL", "KO", "JNJ", "JPM", "NEE"].entries()) await addHolding(ticker, i);
   const mission = await posts.createClassPost({
     kind: "portfolio_mission", classId: "post-class", title: "Build five sectors",
@@ -48,15 +48,14 @@ test("portfolio mission derives the first three stocks and live sector targets",
   await posts.setClassPostStatus(mission.id, "published");
   mission.status = "published";
   const state = await posts.portfolioMissionState(mission, STUDENT);
-  assert.deepEqual(state.baselineTickers, ["NKE", "AAPL", "KO"]);
   assert.equal(state.counts.companies, 6);
   assert.equal(state.counts.sectors, 6);
-  assert.deepEqual(state.newSectorCompanies, ["JNJ", "JPM", "NEE"]);
+  assert.deepEqual(state.checks, { companies: true, sectors: true });
   assert.equal(state.met, true);
 
   const response = {
     picks: [
-      { ticker: "JNJ", thesis: "Health care demand follows medical needs rather than discretionary shopping trends or changing fashion preferences." },
+      { ticker: "NKE", thesis: "Nike sells consumer products, so its demand can vary with household spending and changing fashion preferences." },
       { ticker: "JPM", thesis: "A bank earns from lending and financial services and responds to rates, credit, and business activity." },
       { ticker: "NEE", thesis: "A utility sells essential electric power, giving the portfolio customers with a very different spending pattern." },
     ],
@@ -68,21 +67,21 @@ test("portfolio mission derives the first three stocks and live sector targets",
   assert.equal((await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response, idempotencyKey: "mission-submit-one" })).deduped, true);
 });
 
-test("mission rejects a pick that was not added after the first three", async () => {
+test("mission rejects a pick that is not currently held", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   await assert.rejects(() => posts.submitPortfolioMission({
     post: mission, userId: STUDENT, response: {
       picks: [
-        { ticker: "NKE", thesis: "This is deliberately long enough but remains one of the original sector picks." },
+        { ticker: "TM", thesis: "This is deliberately long enough but is not one of the currently held stocks." },
         { ticker: "JPM", thesis: "This bank adds exposure to rates lending credit and financial services." },
         { ticker: "NEE", thesis: "This utility provides essential power demand rather than optional consumer products." },
       ],
-      reflection: "This reflection has enough words to pass the length rule, but the first claimed company is still one of the original holdings. The server should reject the response because portfolio evidence, not a student's typed claim, decides whether each selected company actually diversifies the original basket.",
+      reflection: "This reflection has enough words to pass the length rule, but the first claimed company is not currently held. The server should reject the response because live portfolio evidence, not a student's typed claim, decides whether each selected company qualifies for the assignment.",
     },
-  }), /must be a current company holding you added after your first three/);
+  }), /must be a current stock holding/);
 });
 
-test("mission records the first purchases without counting a sold stock as held", async () => {
+test("selling a stock and buying a replacement can still complete the mission", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   await db.run(
     `INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
@@ -93,10 +92,9 @@ test("mission records the first purchases without counting a sold stock as held"
   const state = await posts.portfolioMissionState(mission, STUDENT);
   assert.equal(state.counts.companies, 6);
   assert.equal(state.checks.companies, true);
-  assert.equal(state.checks.baselineReady, true);
-  assert.deepEqual(state.missingBaselineTickers, ["KO"]);
   assert.ok(state.companies.some((holding: any) => holding.ticker === "CVX" && holding.sector === "Energy"));
-  assert.ok(state.newCompanies.includes("CVX"));
+  assert.ok(!state.companies.some((holding: any) => holding.ticker === "KO"));
+  assert.deepEqual(state.checks, { companies: true, sectors: true });
   assert.equal(state.met, true);
 });
 
@@ -118,12 +116,22 @@ test("mission explains the five-company four-sector portfolio shown by the stude
     ]);
   }
   const state = await posts.portfolioMissionState(mission, "post-scenario");
-  assert.deepEqual(state.baselineTickers, ["AAPL", "META", "CAT"]);
-  assert.deepEqual(state.missingBaselineTickers, ["META", "CAT"]);
-  assert.deepEqual(state.newCompanies.sort(), ["NKE", "SBAC", "CVX", "TM"].sort());
+  assert.deepEqual(state.companies.map((holding: any) => holding.ticker).sort(), ["AAPL", "NKE", "SBAC", "CVX", "TM"].sort());
   assert.equal(state.counts.companies, 5);
   assert.equal(state.counts.sectors, 4);
   assert.ok(state.companies.some((holding: any) => holding.ticker === "CVX" && holding.sector === "Energy"));
   assert.ok(state.companies.some((holding: any) => holding.ticker === "TM" && holding.sector === "Consumer Discretionary"));
-  assert.deepEqual(state.checks, { baselineReady: true, companies: false, sectors: false });
+  assert.deepEqual(state.checks, { companies: false, sectors: false });
+});
+
+test("teacher progress ignores the removed historical goal in older submissions", async () => {
+  const { studentModuleDetail } = await import("./module-progress.js");
+  const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
+  const submission = await posts.latestClassPostSubmission(mission.id, STUDENT);
+  const evidence = { ...submission.evidence, checks: { baselineReady: true, companies: true, sectors: true } };
+  await db.run(`UPDATE class_post_submissions SET evidence = ? WHERE id = ?`, [JSON.stringify(evidence), submission.id]);
+  const detail = (await studentModuleDetail(STUDENT)).find((item) => item.id === mission.id)!;
+  assert.equal(detail.partsDone, 2);
+  assert.equal(detail.partsTotal, 2);
+  assert.deepEqual(detail.detail?.checks, { companies: true, sectors: true });
 });

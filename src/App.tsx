@@ -840,15 +840,13 @@ function TeacherSortDetail({ mod }: { mod: any }) {
   );
 }
 
-// Expanded body of a mission module row: the three-goal checklist with counts,
+// Expanded body of a mission module row: the two live portfolio goals with counts,
 // then the submitted write-up (picks + reflection) when there is one.
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   const t = d.targets;
-  const baseline: string[] = d.baselineTickers || [];
   const goals = [
-    { done: d.checks?.baselineReady, label: "Start with three companies", note: baseline.length >= 3 ? baseline.join(" · ") : `${baseline.length} of 3 first buys` },
     { done: d.checks?.companies, label: `Hold ${t.minCompanies} companies`, note: `${d.counts.companies} of ${t.minCompanies} held` },
     { done: d.checks?.sectors, label: `Cover ${t.minSectors} sectors`, note: `${d.counts.sectors} of ${t.minSectors} sectors` },
   ];
@@ -2054,16 +2052,13 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       {modules.length > 0 && <div className="section-kicker">Assignments and practice</div>}
       <div className="module-grid">
         {modules.map((module) => module.kind === "mission" ? (() => { const post = module.data; const m = post.mission;
-          const goalCount = Object.keys(m.checks).length;
-          const goalsMet = Object.values(m.checks).filter(Boolean).length;
-          const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : goalsMet === 0 ? "Not started" : "In progress";
+          const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.counts.companies === 0 ? "Not started" : "In progress";
           return (
           <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "mission", id: post.id, moduleNumber: post.moduleNumber })}>
             <ModuleCover moduleNumber={post.moduleNumber} kindLabel="Portfolio mission" submitted={!!post.submittedAt} art="portfolio" />
             <div className="module-card-body">
               <h3>{post.title}</h3><p>{post.summary}</p>
               <div className="module-progress-line">
-                <span>{goalsMet}/{goalCount} goals</span>
                 <span>{m.counts.companies}/{m.targets.minCompanies} companies</span>
                 <span>{m.counts.sectors}/{m.targets.minSectors} sectors</span>
               </div>
@@ -2180,7 +2175,7 @@ function Leaderboard({ board, err, sort, onSort }: {
   );
 }
 
-// Module 2 — portfolio mission, rebuilt 2026-09-21 as a guided flow.
+// Module 2 — portfolio mission, checked against current holdings only.
 //
 // The old page showed the whole assignment at once: a hero, three big steps,
 // a form full of empty dropdowns, and a cryptic evidence sidebar — a wall that
@@ -2230,19 +2225,11 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
 
   const mission = post.mission;
   const t = mission.targets;
-  const options = mission.newCompanies as string[];
+  const options = mission.companies.map((holding: any) => holding.ticker) as string[];
   const updatePick = (index: number, changes: any) => setPicks(picks.map((pick, i) => i === index ? { ...pick, ...changes } : pick));
 
-  // Plain-English goals, in the order a student actually works through them.
-  // Every line says what the server checks AND what to do next.
+  // Both goals use the live portfolio, regardless of earlier trades.
   const goals = [
-    {
-      done: mission.checks.baselineReady,
-      label: "Start with three companies",
-      detail: mission.baselineTickers.length >= 3
-        ? `Your first three purchases: ${mission.baselineTickers.join(" · ")}. This goal records what you started with.`
-        : `${mission.baselineTickers.length} of 3 first buys. Open Investing and buy three companies you believe in — these become the basket everything else is measured against.`,
-    },
     {
       done: mission.checks.companies,
       label: `Hold ${t.minCompanies} companies`,
@@ -2258,17 +2245,20 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
         : `${mission.counts.sectors} of ${t.minSectors} sectors. Look at which industries you already own, then buy where you have a gap.`,
     },
   ];
-  const goalsDone = goals.filter((goal) => goal.done).length;
+  const progress = (
+    Math.min(1, mission.counts.companies / t.minCompanies) +
+    Math.min(1, mission.counts.sectors / t.minSectors)
+  ) / 2;
 
   const submitted = !!post.submission;
   const problems: string[] = [];
   if (!mission.met) problems.push("Meet every goal above — the write-up unlocks when your portfolio evidence is complete.");
   const chosen = picks.map((pick) => pick.ticker.trim().toUpperCase()).filter(Boolean);
   if (new Set(chosen).size !== 3 || chosen.some((ticker) => !options.includes(ticker))) {
-    problems.push("Choose three different holdings from the companies you added.");
+    problems.push("Choose three different stocks you currently hold.");
   }
   picks.forEach((pick, index) => {
-    if (wordCount(pick.thesis) < t.pickThesisMinWords) problems.push(`Addition ${index + 1} needs at least ${t.pickThesisMinWords} words.`);
+    if (wordCount(pick.thesis) < t.pickThesisMinWords) problems.push(`Stock ${index + 1} needs at least ${t.pickThesisMinWords} words.`);
   });
   if (wordCount(reflection) < t.reflectionMinWords) problems.push(`The final reflection needs at least ${t.reflectionMinWords} words.`);
   const ready = problems.length === 0;
@@ -2313,14 +2303,6 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
             </div>
           ) : <p className="small">No individual company stocks held yet.</p>}
         </div>
-        <div className="mission-basket">
-          <span className="small">First three purchases · historical</span>
-          {mission.baselineTickers.length
-            ? <div className="sector-chip-row">{mission.baselineCompanies.map((holding: any) => (
-                <span className={`sector-chip${holding.held ? "" : " sold"}`} key={holding.ticker}><strong>{holding.ticker}</strong> {holding.sector}{holding.held ? "" : " · not held now"}</span>
-              ))}</div>
-            : <p className="small">Not bought yet — your first three stock purchases become the basket.</p>}
-        </div>
       </section>
 
       <section className="panel goals-card" aria-label="Where you stand">
@@ -2329,9 +2311,12 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
             <h3>Where you stand</h3>
             <p className="hint">Checked against your live SimLife portfolio — nothing on this list is typed in. Trade, then Refresh.</p>
           </div>
-          <div className="goals-score" aria-hidden="true"><strong>{goalsDone}/{goals.length}</strong><span>goals</span></div>
+          <div className="goals-score" aria-label={`${mission.counts.companies} of ${t.minCompanies} stocks and ${mission.counts.sectors} of ${t.minSectors} sectors`}>
+            <div><strong>{mission.counts.companies}/{t.minCompanies}</strong><span>stocks</span></div>
+            <div><strong>{mission.counts.sectors}/{t.minSectors}</strong><span>sectors</span></div>
+          </div>
         </div>
-        <div className="goal-bar"><div style={{ width: `${(goalsDone / goals.length) * 100}%` }} /></div>
+        <div className="goal-bar"><div style={{ width: `${progress * 100}%` }} /></div>
         <ol className="goal-list">
           {goals.map((goal) => (
             <li className={`goal-item${goal.done ? " done" : ""}`} key={goal.label}>
@@ -2343,22 +2328,12 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
             </li>
           ))}
         </ol>
-        {(mission.baselineSectors.length > 0 || mission.sectors.length > 0) && (
+        {mission.sectors.length > 0 && (
           <div className="goal-sectors">
-            <div>
-              <span className="small">Sectors you started with</span>
-              <div className="sector-chip-row">
-                {mission.baselineSectors.length
-                  ? mission.baselineSectors.map((sector: string) => <span className="sector-chip" key={sector}>{sector}</span>)
-                  : <span className="small">—</span>}
-              </div>
-            </div>
             <div>
               <span className="small">Sectors you hold now</span>
               <div className="sector-chip-row">
-                {mission.sectors.length
-                  ? mission.sectors.map((sector: string) => <span className="sector-chip now" key={sector}>{sector}</span>)
-                  : <span className="small">—</span>}
+                {mission.sectors.map((sector: string) => <span className="sector-chip now" key={sector}>{sector}</span>)}
               </div>
             </div>
           </div>
@@ -2382,7 +2357,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
               {" "}Do the trading first — your teacher checks the holdings snapshot against what you write.</p>
             {options.length > 0 && (
               <>
-                <span className="small">Your additions so far — these become your write-up picks</span>
+                <span className="small">Your current stocks — choose three to explain when the goals are met</span>
                 <div className="sector-chip-row">
                   {options.map((ticker) => (
                     <span className="sector-chip now" key={ticker}>
@@ -2396,13 +2371,13 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
           </div>
         ) : (
           <>
-            <p className="hint">For each company you added: what does the business do, and why is it a different bet from your first three?</p>
+            <p className="hint">Choose three stocks you currently hold. Explain what each business does and how the mix of sectors affects your risk.</p>
             {picks.map((pick, index) => (
               <div className="explain-pick" key={index}>
                 <div className="pick-head">
                   <span className="pick-no" aria-hidden="true">{index + 1}</span>
-                  <select value={pick.ticker} onChange={(e) => updatePick(index, { ticker: e.target.value })} aria-label={`Addition ${index + 1} holding`}>
-                    <option value="">Choose one of the companies you added…</option>
+                  <select value={pick.ticker} onChange={(e) => updatePick(index, { ticker: e.target.value })} aria-label={`Stock ${index + 1} holding`}>
+                    <option value="">Choose a stock you currently hold…</option>
                     {options.map((ticker) => (
                       <option key={ticker} value={ticker} disabled={chosen.includes(ticker) && pick.ticker !== ticker}>
                         {ticker} · {mission.companies.find((c: any) => c.ticker === ticker)?.sector}
@@ -2411,14 +2386,14 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
                   </select>
                 </div>
                 <textarea rows={3} value={pick.thesis} onChange={(e) => updatePick(index, { thesis: e.target.value })}
-                  placeholder="What does this business do, and why does it depend on different customers than your first three?" />
+                  placeholder="What does this business do, and how does its sector contribute to your portfolio?" />
                 <WordCount value={pick.thesis} min={t.pickThesisMinWords} />
               </div>
             ))}
             <div className="field reflect-field">
-              <label>What changed in your portfolio, and which risk does that address?</label>
+              <label>How does your current mix of sectors affect your risk?</label>
               <textarea rows={5} value={reflection} onChange={(e) => setReflection(e.target.value)}
-                placeholder={`Name the weakness in your first basket and what your additions do about it — at least ${t.reflectionMinWords} words…`} />
+                placeholder={`Explain how your current stocks spread risk across sectors — at least ${t.reflectionMinWords} words…`} />
               <WordCount value={reflection} min={t.reflectionMinWords} />
             </div>
           </>
@@ -2427,7 +2402,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
 
       <div className="module-action-bar">
         <div>
-          <strong>{mission.met ? (submitted ? "Update your submission" : "Evidence complete") : `${goalsDone} of ${goals.length} goals`}</strong>
+          <strong>{mission.met ? (submitted ? "Update your submission" : "Evidence complete") : `${mission.counts.companies}/${t.minCompanies} stocks · ${mission.counts.sectors}/${t.minSectors} sectors`}</strong>
           <span>{ready ? "Your teacher receives the holdings snapshot plus your write-up." : problems[0]}</span>
         </div>
         <button disabled={busy || !ready} onClick={submit}>
@@ -2713,8 +2688,8 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
     setOpen(kind); setErr(""); setNotice("");
     if (kind === "portfolio_mission") {
       setTitle("Build a five-sector portfolio");
-      setSummary("Your first three picks were probably one bet. Add companies in new industries, then explain what each one changes.");
-      setBody("Do not sell your first three — you are adding to them. Buy three more companies in industries your first three did not cover, so one bad year in one industry cannot take your whole account down. Aim for six companies across five sectors. ETFs do not count toward the six-company target.");
+      setSummary("Hold at least six individual stocks across at least five sectors, then explain how your portfolio is diversified.");
+      setBody("Build a portfolio that currently holds at least six individual stocks across at least five different sectors. You may buy and sell as you choose; only your current holdings count. Multiple stocks in the same sector count as one sector. ETFs do not count toward the six-stock target.");
     } else { setTitle(""); setSummary(""); setBody(""); }
   };
   const createPost = async () => {
@@ -2748,7 +2723,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       <div className="grid2"><div className="field"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} /></div><div className="field"><label>Who gets it</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div></div>
       {open === "portfolio_mission" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
       <div className="field"><label>{open === "announcement" ? "Message" : "Mission brief"}</label><textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)} /></div>
-      {open === "portfolio_mission" && <p className="hint">Built-in evidence: original three stock buys · 6 current companies · 5 sectors · three research explanations · final reflection.</p>}
+      {open === "portfolio_mission" && <p className="hint">Built-in evidence: 6 current stocks · 5 current sectors · three research explanations · final reflection.</p>}
       <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
     </div>}
     {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}

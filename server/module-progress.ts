@@ -95,8 +95,8 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     for (const r of subs) (submittedPosts[r.user_id] ??= new Set()).add(r.post_id);
   }
 
-  // Mission "started" without a submission: any goal already met in the live
-  // portfolio (first three buys = baselineReady flips on the first real work).
+  // Any current stock holding counts as work started, even before either
+  // threshold has been reached.
   const missionPosts = [];
   for (const id of postIds) missionPosts.push(await getClassPost(id));
   const liveMissionStarted: Record<string, Set<string>> = {};
@@ -105,7 +105,7 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     for (const s of students) {
       if (submittedPosts[s.id]?.has(post.id)) continue;
       const state = await portfolioMissionState(post, s.id);
-      if (missionGoalsMet(state.checks) > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+      if (state.counts.companies > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
     }
   }
 
@@ -201,13 +201,16 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       if (!post) continue;
       const submission = await latestClassPostSubmission(post.id, userId);
       const state = await portfolioMissionState(post, userId);
-      const evidence = submission ? JSON.parse(submission.evidence) : null;
-      const response = submission ? JSON.parse(submission.response) : null;
-      const checks = evidence?.checks ?? state.checks;
+      const evidence = submission?.evidence ?? null;
+      const response = submission?.response ?? null;
+      const checks = {
+        companies: evidence?.checks?.companies ?? state.checks.companies,
+        sectors: evidence?.checks?.sectors ?? state.checks.sectors,
+      };
       const counts = evidence?.counts ?? state.counts;
       const goalsTotal = Object.keys(state.checks).length;
       const goalsDone = missionGoalsMet(checks);
-      const status: ModuleStatus = submission ? "submitted" : missionGoalsMet(state.checks) > 0 ? "in_progress" : "not_started";
+      const status: ModuleStatus = submission ? "submitted" : state.counts.companies > 0 ? "in_progress" : "not_started";
       out.push({
         key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, title: mod.title,
         status,
@@ -215,8 +218,6 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
         detail: {
           submittedAt: submission?.createdAt ?? null,
           checks, counts,
-          baselineTickers: evidence?.baselineTickers ?? state.baselineTickers,
-          baselineSectors: evidence?.baselineSectors ?? state.baselineSectors,
           targets: state.targets,
           liveChecks: state.checks,
           liveCounts: state.counts,
