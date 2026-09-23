@@ -847,9 +847,8 @@ function TeacherMissionDetail({ mod }: { mod: any }) {
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   const t = d.targets;
   const baseline: string[] = d.baselineTickers || [];
-  const missingBaseline: string[] = d.missingBaselineTickers || [];
   const goals = [
-    { done: d.checks?.baselineReady, label: "Keep your first three companies", note: missingBaseline.length ? `Buy back ${missingBaseline.join(" and ")}` : baseline.length >= 3 ? baseline.join(" · ") : `${baseline.length} of 3 first buys` },
+    { done: d.checks?.baselineReady, label: "Start with three companies", note: baseline.length >= 3 ? baseline.join(" · ") : `${baseline.length} of 3 first buys` },
     { done: d.checks?.companies, label: `Hold ${t.minCompanies} companies`, note: `${d.counts.companies} of ${t.minCompanies} held` },
     { done: d.checks?.sectors, label: `Cover ${t.minSectors} sectors`, note: `${d.counts.sectors} of ${t.minSectors} sectors` },
   ];
@@ -2239,11 +2238,9 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   const goals = [
     {
       done: mission.checks.baselineReady,
-      label: "Keep your first three companies",
-      detail: mission.missingBaselineTickers?.length
-        ? `Your starting basket: ${mission.baselineTickers.join(" · ")}. Buy back ${mission.missingBaselineTickers.join(" and ")} to keep all three in your portfolio.`
-        : mission.baselineTickers.length >= 3
-        ? `Your starting basket: ${mission.baselineTickers.join(" · ")} — all still held.`
+      label: "Start with three companies",
+      detail: mission.baselineTickers.length >= 3
+        ? `Your first three purchases: ${mission.baselineTickers.join(" · ")}. This goal records what you started with.`
         : `${mission.baselineTickers.length} of 3 first buys. Open Investing and buy three companies you believe in — these become the basket everything else is measured against.`,
     },
     {
@@ -2302,11 +2299,25 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
       <section className="panel">
         <div className="section-kicker">The assignment</div>
         <p className="mission-brief-body">{post.body}</p>
+        <div className="mission-holdings" aria-label="Current stock holdings and sectors">
+          <strong>Stocks you hold now · {mission.counts.companies}</strong>
+          <p className="small">These are the stocks counted toward your goals. A sector counts once even when several stocks share it.</p>
+          {mission.companies.length ? (
+            <div className="mission-holdings-list">
+              {mission.companies.map((holding: any) => (
+                <div className="mission-holding" key={holding.ticker}>
+                  <strong>{holding.ticker}</strong>
+                  <span>{holding.sector}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="small">No individual company stocks held yet.</p>}
+        </div>
         <div className="mission-basket">
-          <span className="small">Starting basket</span>
+          <span className="small">First three purchases · historical</span>
           {mission.baselineTickers.length
             ? <div className="sector-chip-row">{mission.baselineCompanies.map((holding: any) => (
-                <span className={`sector-chip${holding.held ? "" : " sold"}`} key={holding.ticker}><strong>{holding.ticker}</strong> {holding.sector}{holding.held ? "" : " · sold"}</span>
+                <span className={`sector-chip${holding.held ? "" : " sold"}`} key={holding.ticker}><strong>{holding.ticker}</strong> {holding.sector}{holding.held ? "" : " · not held now"}</span>
               ))}</div>
             : <p className="small">Not bought yet — your first three stock purchases become the basket.</p>}
         </div>
@@ -2332,21 +2343,6 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
             </li>
           ))}
         </ol>
-        <div className="mission-holdings" aria-label="Current stock holdings and sectors">
-          <strong>Stocks you hold now</strong>
-          <p className="small">Each company counts once. A sector counts once even if you own several companies in it.</p>
-          {mission.companies.length ? (
-            <div className="mission-holdings-list">
-              {mission.companies.map((holding: any) => (
-                <div className="mission-holding" key={holding.ticker}>
-                  <strong>{holding.ticker}</strong>
-                  <span>{holding.sector}</span>
-                  <small>{holding.isOriginal ? "Starting basket" : "Added company"}</small>
-                </div>
-              ))}
-            </div>
-          ) : <p className="small">No individual company stocks held yet.</p>}
-        </div>
         {(mission.baselineSectors.length > 0 || mission.sectors.length > 0) && (
           <div className="goal-sectors">
             <div>
@@ -2379,11 +2375,10 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
         {!mission.met ? (
           <div className="explain-lock">
             <p><strong>The write-up opens once every goal above is checked.</strong>{" "}
-              {mission.missingBaselineTickers?.length > 0 && `Buy back ${mission.missingBaselineTickers.join(" and ")} from your starting basket, then check your company and sector totals. `}
-              {!mission.missingBaselineTickers?.length && !mission.checks.companies && `Buy ${t.minCompanies - mission.counts.companies} more ${t.minCompanies - mission.counts.companies === 1 ? "company" : "companies"}${
+              {!mission.checks.companies && `Buy ${t.minCompanies - mission.counts.companies} more ${t.minCompanies - mission.counts.companies === 1 ? "company" : "companies"}${
                 !mission.checks.sectors ? ` and reach ${t.minSectors} sectors (you're at ${mission.counts.sectors})` : ""
               }.`}
-              {!mission.missingBaselineTickers?.length && mission.checks.companies && !mission.checks.sectors && `Cover ${t.minSectors - mission.counts.sectors} more sector${t.minSectors - mission.counts.sectors === 1 ? "" : "s"} — you're at ${mission.counts.sectors}.`}
+              {mission.checks.companies && !mission.checks.sectors && `Cover ${t.minSectors - mission.counts.sectors} more sector${t.minSectors - mission.counts.sectors === 1 ? "" : "s"} — you're at ${mission.counts.sectors}.`}
               {" "}Do the trading first — your teacher checks the holdings snapshot against what you write.</p>
             {options.length > 0 && (
               <>

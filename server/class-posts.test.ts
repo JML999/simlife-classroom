@@ -82,7 +82,7 @@ test("mission rejects a pick that was not added after the first three", async ()
   }), /must be a current company holding you added after your first three/);
 });
 
-test("mission shows added holdings but does not count sold starting stocks", async () => {
+test("mission records the first purchases without counting a sold stock as held", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   await db.run(
     `INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
@@ -93,11 +93,11 @@ test("mission shows added holdings but does not count sold starting stocks", asy
   const state = await posts.portfolioMissionState(mission, STUDENT);
   assert.equal(state.counts.companies, 6);
   assert.equal(state.checks.companies, true);
-  assert.equal(state.checks.baselineReady, false);
+  assert.equal(state.checks.baselineReady, true);
   assert.deepEqual(state.missingBaselineTickers, ["KO"]);
   assert.ok(state.companies.some((holding: any) => holding.ticker === "CVX" && holding.sector === "Energy"));
   assert.ok(state.newCompanies.includes("CVX"));
-  assert.equal(state.met, false);
+  assert.equal(state.met, true);
 });
 
 test("mission explains the five-company four-sector portfolio shown by the student", async () => {
@@ -125,5 +125,5 @@ test("mission explains the five-company four-sector portfolio shown by the stude
   assert.equal(state.counts.sectors, 4);
   assert.ok(state.companies.some((holding: any) => holding.ticker === "CVX" && holding.sector === "Energy"));
   assert.ok(state.companies.some((holding: any) => holding.ticker === "TM" && holding.sector === "Consumer Discretionary"));
-  assert.deepEqual(state.checks, { baselineReady: false, companies: false, sectors: false });
+  assert.deepEqual(state.checks, { baselineReady: true, companies: false, sectors: false });
 });

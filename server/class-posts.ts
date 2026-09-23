@@ -160,7 +160,7 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
   const newSectorCompanies = newCompanies.filter((holding) => !baselineSectors.includes(holding.sector));
   const spec = { ...DEFAULT_MISSION_SPEC, ...post.spec };
   const checks = {
-    baselineReady: baselineTickers.length >= 3 && missingBaselineTickers.length === 0,
+    baselineReady: baselineTickers.length >= 3,
     companies: companies.length >= spec.minCompanies,
     sectors: sectors.length >= spec.minSectors,
   };
