@@ -303,3 +303,44 @@ Still open:
    server/ticker-directory.json, scripts/build-ticker-directory.mjs)
    made outside this session; ask whether to include them or stage only
    src/App.tsx + this handoff.
+
+## Update 2026-09-23 — portfolio mission simplified to three goals
+
+User request: the mission's five checks felt redundant — "Add 3 past your
+first three" and "Put some additions in new industries" collapse into the
+hold-6/cover-5 goals. New checklist is exactly three goals:
+
+1. Start with three companies (baselineReady)
+2. Hold 6 companies (minCompanies)
+3. Cover 5 sectors (minSectors)
+
+Changes (commit `c430e16`, pushed):
+- `server/class-posts.ts`: DEFAULT_MISSION_SPEC drops
+  `minNewCompanies`/`minNewSectorCompanies`; `portfolioMissionState`
+  checks now only baselineReady/companies/sectors (arrays
+  `newCompanies`/`newSectorCompanies` + counts still returned for the
+  write-up picker); submission pick validation changed from "must be
+  outside your original sectors" to "must be a current company holding
+  you added after your first three" (picks = `state.newCompanies`,
+  guaranteed ≥3 whenever hold-6 passes, so the write-up can never be
+  blocked).
+- `server/seed-portfolio-mission.ts`: SPEC drops the two keys.
+- `src/App.tsx`: student goal list → 3 rows; pick dropdown options =
+  `mission.newCompanies`; TeacherMissionDetail → 3 rows; teacher create
+  form default spec + "Built-in evidence" hint updated; copy no longer
+  says "new-industry".
+- `server/class-posts.test.ts`: rejection test now expects the new
+  pick-validation message (NKE = original buy still rejected).
+- Goal counts auto-adapt everywhere (`Object.keys(checks).length`,
+  `missionGoalsMet`) — roster/drawer show "1/3 goals" for Ava.
+- `/tmp/simlife-ui-check/check.mjs` updated: expects `1/3 goals` and
+  three-goal expansion (asserts removed goals absent).
+
+Gate: typecheck clean, 92/92 tests, build green, pushed `cbca9b1..c430e16`.
+
+Still open:
+1. Prod has the OLD spec JSON stored; behavior is already 3-goal on
+   deploy (checks read DEFAULT, not stored extras), but run
+   `npm run seed:mission` against prod after Render deploys to refresh
+   the stored spec/summary/body.
+2. Sandbox re-seed + check.mjs/check2.mjs run not yet done this round.
