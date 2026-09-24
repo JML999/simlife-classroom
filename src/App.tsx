@@ -10,26 +10,44 @@ interface Portfolio {
   holdings: any[]; quotesDelayed: boolean; quoteSource: string;
 }
 
+function Skeleton({ className = "" }: { className?: string }) {
+  return <span className={`skeleton ${className}`} aria-hidden="true" />;
+}
+
+function LoadingState({ label, kind = "panel" }: { label: string; kind?: "panel" | "cards" | "modules" | "table" | "detail" }) {
+  return <div className={`loading-state loading-${kind}`} role="status" aria-label={label}>
+    <span className="sr-only">{label}</span>
+    {kind === "cards" ? <div className="loading-card-grid">{[0, 1].map((i) => <div className="card" key={i}><Skeleton className="skeleton-label" /><Skeleton className="skeleton-value" /><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-block" /></div>)}</div>
+      : kind === "modules" ? <div className="module-grid">{[0, 1].map((i) => <div className="module-card loading-module" key={i}><div className="module-cover" /><div className="module-card-body"><Skeleton className="skeleton-label" /><Skeleton className="skeleton-title" /><Skeleton className="skeleton-line" /><Skeleton className="skeleton-line short" /></div></div>)}</div>
+      : <div className="panel loading-panel"><Skeleton className="skeleton-label" /><Skeleton className="skeleton-title" />{kind === "table" ? [0, 1, 2, 3].map((i) => <div className="loading-table-row" key={i}><Skeleton className="skeleton-line" /><Skeleton className="skeleton-line" /><Skeleton className="skeleton-line short" /></div>) : <><Skeleton className="skeleton-line" /><Skeleton className="skeleton-line short" />{kind === "detail" && <div className="loading-detail-row"><Skeleton className="skeleton-block" /><Skeleton className="skeleton-block" /></div>}</>}</div>}
+  </div>;
+}
+
 export default function App() {
   const [config, setConfig] = useState<any>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bootError, setBootError] = useState("");
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (initial = false) => {
     try {
       setMe(await api<Me>("/api/me"));
-    } catch { setMe(null); }
+    } catch (e: any) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) setMe(null);
+      else if (initial) throw e;
+    }
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      setConfig(await api("/api/auth/config"));
-      await refresh();
-      setLoading(false);
-    })();
+  const loadApp = useCallback(async () => {
+    setLoading(true); setBootError("");
+    try { setConfig(await api("/api/auth/config")); await refresh(true); }
+    catch (e: any) { setBootError(e.message); }
+    finally { setLoading(false); }
   }, [refresh]);
+  useEffect(() => { void loadApp(); }, [loadApp]);
 
-  if (loading) return <div className="wrap"><p>Loading SimLife…</p></div>;
+  if (loading) return <div className="wrap"><div className="topbar"><div className="brand"><div className="brand-mark">$</div><div><h1>SimLife</h1><p>Classroom money · banking + investing</p></div></div></div><LoadingState label="Loading SimLife" kind="detail" /></div>;
+  if (bootError) return <div className="wrap"><div className="topbar"><div className="brand"><div className="brand-mark">$</div><div><h1>SimLife</h1><p>Classroom money · banking + investing</p></div></div></div><div className="panel"><h2>Couldn’t load SimLife</h2><p className="hint">{bootError}</p><button onClick={() => void loadApp()}>Try again</button></div></div>;
 
   return (
     <>
@@ -50,12 +68,12 @@ export default function App() {
           )}
         </div>
         {!me
-          ? <Login config={config} onDone={refresh} />
+          ? <Login config={config} onDone={() => void loadApp()} />
           : me.user.role === "teacher"
             ? <Teacher me={me} refresh={refresh} />
             : !me.class
-              ? <JoinGate refresh={refresh} />
-              : <Student me={me} refreshSession={refresh} />}
+              ? <JoinGate refresh={() => void loadApp()} />
+              : <Student me={me} refreshSession={() => void refresh()} />}
       </div>
     </>
   );
@@ -147,6 +165,9 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   const [err, setErr] = useState("");
   const [symbol, setSymbol] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
+  const searchRequest = useRef(0);
   const [quote, setQuote] = useState<any>(null);
   const [quoteName, setQuoteName] = useState("");
   const [buyDollars, setBuyDollars] = useState("");
@@ -169,6 +190,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
     try {
       setPf(await api<Portfolio>("/api/portfolio"));
       setHistory((await api<{ entries: any[] }>("/api/history")).entries);
+      setErr("");
     } catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -181,17 +203,28 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
 
   const lookup = async (sym: string, name = "") => {
     setErr(""); setNotice(""); setReviewing(false);
+    ++searchRequest.current;
+    setSearching(false);
+    setSearchResults([]);
+    setLookingUp(true);
     try {
       const r = await api<{ quote: any }>(`/api/quotes?symbol=${encodeURIComponent(sym)}`);
       setQuote(r.quote); setQuoteName(name); setSearchResults([]);
     } catch (e: any) { setErr(e.message); setQuote(null); setQuoteName(""); }
+    finally { setLookingUp(false); }
   };
 
   const doSearch = async (v: string) => {
+    const request = ++searchRequest.current;
     setSymbol(v);
-    if (v.trim().length < 1) { setSearchResults([]); return; }
-    try { setSearchResults((await api<{ results: any[] }>(`/api/search?q=${encodeURIComponent(v)}`)).results); }
-    catch { /* ignore */ }
+    setSearchResults([]); setQuote(null); setQuoteName("");
+    if (v.trim().length < 1) { setSearching(false); return; }
+    setSearching(true);
+    try {
+      const results = (await api<{ results: any[] }>(`/api/search?q=${encodeURIComponent(v)}`)).results;
+      if (request === searchRequest.current) setSearchResults(results);
+    } catch { /* search can be retried by typing */ }
+    finally { if (request === searchRequest.current) setSearching(false); }
   };
 
   const submitBuy = async () => {
@@ -272,12 +305,12 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       </div>
       {frozen && <div className="frozen">Trading is paused by your teacher. You can review your portfolio but cannot buy or sell right now.</div>}
       <div className="cards">
-        <div className="card"><div className="label">Cash available</div><div className="value">{pf ? money(pf.cashCents) : "…"}</div><div className="sub">Available to invest</div></div>
-        <div className="card"><div className="label">Amount invested (simulated)</div><div className="value">{pf ? money(pf.investedCents) : "…"}</div><div className="sub">Cost of current holdings</div></div>
-        <div className="card"><div className="label">Portfolio value (simulated)</div><div className="value">{pf ? money(pf.portfolioCents) : "…"}</div><div className="sub">Cash + market value</div></div>
-        <div className="card"><div className="label">Total return</div><div className={`value ${gl >= 0 ? "up" : "down"}`}>{pf ? money(gl) : "…"}</div><div className="sub">Realized + unrealized · delayed quotes{pf ? ` · ${pf.quoteSource}` : ""}</div></div>
+        <div className="card"><div className="label">Cash available</div><div className="value">{pf ? money(pf.cashCents) : err ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Available to invest</div></div>
+        <div className="card"><div className="label">Amount invested (simulated)</div><div className="value">{pf ? money(pf.investedCents) : err ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Cost of current holdings</div></div>
+        <div className="card"><div className="label">Portfolio value (simulated)</div><div className="value">{pf ? money(pf.portfolioCents) : err ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Cash + market value</div></div>
+        <div className="card"><div className="label">Total return</div><div className={`value ${gl >= 0 ? "up" : "down"}`}>{pf ? money(gl) : err ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Realized + unrealized · delayed quotes{pf ? ` · ${pf.quoteSource}` : ""}</div></div>
       </div>
-      {err && <div className="error" role="alert">{err}</div>}
+      {err && <div className="error" role="alert">{err} {!pf && <button className="ghost" onClick={() => void load()}>Try again</button>}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       <div className="panel buy-stock-panel">
@@ -290,9 +323,11 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
             ))}
           </div>
         )}
-        {!quote && searchResults.length === 0 && (
+        {searching && <div className="buy-results" role="status" aria-label="Searching stocks"><div className="buy-result"><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-line" /></div><div className="buy-result"><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-line" /></div></div>}
+        {lookingUp && <LoadingState label="Looking up current price" kind="panel" />}
+        {!quote && !lookingUp && searchResults.length === 0 && (
           <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => symbol.trim() && lookup(symbol.trim())} disabled={!symbol.trim()}>Look up price</button>
+            <button onClick={() => symbol.trim() && lookup(symbol.trim())} disabled={!symbol.trim() || searching}>Look up price</button>
           </div>
         )}
         {quote && (() => {
@@ -326,7 +361,8 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
             <div><h2>Portfolio</h2><p className="hint">A clear picture of what you own and how each investment is performing.</p></div>
             {pf && pf.holdings.length > 0 && <span className="portfolio-count">{pf.holdings.length} investment{pf.holdings.length === 1 ? "" : "s"}</span>}
           </div>
-          {!pf?.holdings.length && <div className="portfolio-empty"><span>01</span><strong>Your portfolio is ready to begin.</strong><p>Look up a ticker and make your first simulated investment.</p></div>}
+          {!pf && !err && <LoadingState label="Loading your portfolio" kind="table" />}
+          {pf && !pf.holdings.length && <div className="portfolio-empty"><span>01</span><strong>Your portfolio is ready to begin.</strong><p>Look up a ticker and make your first simulated investment.</p></div>}
           {pf && pf.holdings.length > 0 && (
             <>
               <div className="portfolio-tools">
@@ -445,7 +481,8 @@ function OnboardingCard({ state, onDone }: { state: any; onDone: () => void }) {
 
 function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfolio: Portfolio | null; onOpen: (section: "dashboard" | "banking" | "investing") => void; onChanged: () => void }) {
   const [bank, setBank] = useState<any>(null);
-  const loadBank = useCallback(() => api<any>("/api/bank").then(setBank).catch(() => {}), []);
+  const [bankError, setBankError] = useState("");
+  const loadBank = useCallback(() => api<any>("/api/bank").then((result) => { setBank(result); setBankError(""); }).catch((e: any) => setBankError(e.message)), []);
   useEffect(() => { loadBank(); }, [loadBank, me.user.job_title, me.user.job_pay_cents, me.user.car_payment_cents]);
   const unpaid = (bank?.bills || []).filter((b: any) => b.status !== "paid");
   const bankTotal = Number(bank?.checkingCents || 0) + Number(bank?.savingsCents || 0);
@@ -454,19 +491,21 @@ function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfo
   return <div className="dashboard-experience">
     <div className="page-intro"><div><div className="eyebrow">{me.class?.name}</div><h2>Your money at a glance</h2><p>See what is available, what is due, and what you can put to work.</p></div><div className="teacher-summary"><strong>{money(total)}</strong><span>total simulated funds</span></div></div>
     <div className="cards dashboard-cards">
-      <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : "…"}</div><div className="sub">{unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"} →</div></button>
-      <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : "…"}</div><div className="sub">Move and grow money →</div></button>
-      <button className="card dashboard-card" onClick={() => onOpen("investing")}><div className="label">Investments</div><div className="value">{portfolio ? money(portfolio.portfolioCents) : "…"}</div><div className="sub">Review your portfolio →</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">{bank ? `${unpaid.length} unpaid bill${unpaid.length === 1 ? "" : "s"} →` : "Bills and spending"}</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Move and grow money →</div></button>
+      <button className="card dashboard-card" onClick={() => onOpen("investing")}><div className="label">Investments</div><div className="value">{portfolio ? money(portfolio.portfolioCents) : <Skeleton className="skeleton-value" />}</div><div className="sub">Review your portfolio →</div></button>
       <div className="card"><div className="label">Job and pay</div><div className="value dashboard-job">{me.user.job_title || "Not assigned"}</div><div className="sub">{me.user.job_pay_cents == null ? "Pay not set" : `${money(me.user.job_pay_cents)} per paycheck`}</div></div>
     </div>
-    <div className="bank-dashboard-grid">
+    {bankError && <div className="error" role="alert">{bankError} <button className="ghost" onClick={() => void loadBank()}>Try again</button></div>}
+    {bank ? <div className="bank-dashboard-grid">
       <MoveMoneyPanel bank={bank} reloadBank={loadBank} onChanged={onChanged} />
-      {bank && <SavingsProjection interest={bank.savingsInterest} savingsCents={bank.savingsCents} />}
-    </div>
+      <SavingsProjection interest={bank.savingsInterest} savingsCents={bank.savingsCents} />
+    </div> : !bankError && <LoadingState label="Loading banking tools" kind="cards" />}
     <div className="bank-panel activity-panel">
       <div className="bank-panel-title"><div className="transfer-icon">🧾</div><div><span className="bank-kicker">Checking account</span><h2>Transaction overview</h2></div><span className="mail-count">{checkingActivity.length} entr{checkingActivity.length === 1 ? "y" : "ies"}</span></div>
       <p className="bank-hint">Every checking deposit, bill payment, and transfer — the same record your teacher sees.</p>
-      {!checkingActivity.length && <p className="small">No checking activity yet.</p>}
+      {bank && !checkingActivity.length && <p className="small">No checking activity yet.</p>}
+      {!bank && !bankError && <LoadingState label="Loading checking activity" kind="table" />}
       {checkingActivity.length > 0 && <div className="table-wrap"><table>
         <thead><tr><th>When</th><th>What</th><th>Detail</th><th>Checking effect</th></tr></thead>
         <tbody>
@@ -631,7 +670,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
   const disputeKey = useRef(uid());
 
   const load = useCallback(async () => {
-    try { setBank(await api("/api/bank")); }
+    try { setBank(await api("/api/bank")); setErr(""); }
     catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -692,18 +731,19 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
       )}
       <div className="bank-section-heading"><div><span className="bank-kicker">My money</span><h2>Your accounts</h2></div><span className="sim-chip">Simulated funds</span></div>
       <div className="bank-account-grid">
-        <article className="account-tile checking-tile"><div className="account-icon">💳</div><span>Checking</span><strong>{bank ? money(bank.checkingCents) : "…"}</strong><p>Paychecks arrive here. Bills leave from here.</p></article>
-        <article className="account-tile savings-tile"><div className="account-icon">🌱</div><span>High-yield savings</span><strong>{bank ? money(bank.savingsCents) : "…"}</strong><p>{bank ? `${(bank.savingsInterest.apy * 100).toFixed(2)}% APY · ${money(bank.savingsInterest.earnedCents)} earned` : "Interest is loading…"}</p></article>
-        <article className="account-tile investing-tile"><div className="account-icon">📈</div><span>Brokerage</span><strong>{bank ? money(bank.brokerage.portfolioCents) : "…"}</strong><p>{bank ? `${money(bank.brokerage.cashCents)} ready to invest` : "Portfolio is loading…"}</p><button className="tile-link" onClick={onOpenInvesting}>Open investing →</button></article>
+        <article className="account-tile checking-tile"><div className="account-icon">💳</div><span>Checking</span><strong>{bank ? money(bank.checkingCents) : err ? "—" : <Skeleton className="skeleton-value" />}</strong><p>Paychecks arrive here. Bills leave from here.</p></article>
+        <article className="account-tile savings-tile"><div className="account-icon">🌱</div><span>High-yield savings</span><strong>{bank ? money(bank.savingsCents) : err ? "—" : <Skeleton className="skeleton-value" />}</strong><p>{bank ? `${(bank.savingsInterest.apy * 100).toFixed(2)}% APY · ${money(bank.savingsInterest.earnedCents)} earned` : err ? "Unavailable" : <Skeleton className="skeleton-line short" />}</p></article>
+        <article className="account-tile investing-tile"><div className="account-icon">📈</div><span>Brokerage</span><strong>{bank ? money(bank.brokerage.portfolioCents) : err ? "—" : <Skeleton className="skeleton-value" />}</strong><p>{bank ? `${money(bank.brokerage.cashCents)} ready to invest` : err ? "Unavailable" : <Skeleton className="skeleton-line short" />}</p><button className="tile-link" onClick={onOpenInvesting}>Open investing →</button></article>
       </div>
-      {err && <div className="error" role="alert">{err}</div>}
+      {err && <div className="error" role="alert">{err} {!bank && <button className="ghost" onClick={() => void load()}>Try again</button>}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       <div className="bank-dashboard-grid">
         <section className="bank-panel mailbox-panel">
           <div className="bank-panel-title"><div className="mail-icon">✉️</div><div><span className="bank-kicker">Bills & notices</span><h2>Mailbox</h2></div><span className="mail-count">{unpaid.length} to do</span></div>
           <p className="bank-hint">Open each letter to review the details. Nothing is taken from checking until you choose to pay.</p>
-          {bills.length === 0 && <p className="small">No bills yet. When your teacher sends one, it will appear here.</p>}
+          {!bank && !err && <LoadingState label="Loading your mailbox" kind="panel" />}
+          {bank && bills.length === 0 && <p className="small">No bills yet. When your teacher sends one, it will appear here.</p>}
           <div className="mailbox">
             {unpaid.map((b) => (
               <article className="mail-item" key={b.id}>
@@ -729,7 +769,8 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
           <div className="dashboard-line"><div><strong>Car payment</strong><span>Monthly obligation</span></div><b>{me.user.car_payment_cents == null ? "Not set" : money(me.user.car_payment_cents)}</b></div>
           <p className="bank-hint">Job, pay, and car payment are set by your teacher. Move money from the Banking tab.</p>
           <h3 className="activity-title">Recent activity</h3>
-          {!bank?.recent.length && <p className="small">No bank activity yet.</p>}
+          {!bank && !err && <LoadingState label="Loading recent activity" kind="panel" />}
+          {bank && !bank.recent.length && <p className="small">No bank activity yet.</p>}
           <div className="activity-list">{(bank?.recent || []).slice(0, 6).map((e: any) => <div className="activity-row" key={e.id}><span>{e.kind === "income" ? "💵" : e.kind === "bill_payment" ? "🧾" : e.kind === "savings_interest" ? "✨" : "↔"}</span><div><strong>{describeBankEntry(e)}</strong><small>{e.memo || new Date(e.created_at).toLocaleDateString()}</small></div><b className={e.kind === "transfer" ? "" : bankEntryAmount(e) >= 0 ? "up" : "down"}>{money(bankEntryAmount(e))}</b></div>)}</div>
         </section>
       </div>
@@ -901,6 +942,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   const [sortKey, setSortKey] = useState<string>("name");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [updating, setUpdating] = useState(false);
+  const [loadedClassId, setLoadedClassId] = useState<string | null>(null);
+  const loadRequest = useRef(0);
   const [query, setQuery] = useState("");
   const [freezeConfirm, setFreezeConfirm] = useState<any>(null);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -932,7 +975,9 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   }, [profileId]);
 
   const load = useCallback(async () => {
+    const request = ++loadRequest.current;
     setUpdating(true);
+    setErr("");
     try {
       const cid = classId || "";
       const qs = cid ? `?classId=${cid}` : "";
@@ -943,9 +988,10 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
         cid ? api<{ students: any[] }>(`/api/teacher/reference?classId=${cid}`).catch(() => ({ students: [] })) : Promise.resolve({ students: [] }),
         api<{ modules: any[]; students: Record<string, { assigned: number; started: number; completed: number }> }>(`/api/teacher/module-progress${qs}`),
       ]);
-      setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students); setModuleProgress(mp);
-    } catch (e: any) { setErr(e.message); }
-    finally { setUpdating(false); }
+      if (request !== loadRequest.current) return;
+      setClasses(c.classes); setRoster(r.students); setAudit(a.entries); setReference(ref.students); setModuleProgress(mp); setLoadedClassId(classId);
+    } catch (e: any) { if (request === loadRequest.current) setErr(e.message); }
+    finally { if (request === loadRequest.current) setUpdating(false); }
   }, [classId]);
   useEffect(() => { load(); }, [load]);
 
@@ -1104,6 +1150,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   };
 
   const cls = classes.find((c) => c.id === classId);
+  const workspaceReady = loadedClassId === classId;
 
   const workspaceTabs = (
     <div className="pills section-tabs" role="tablist" aria-label="Workspace sections">
@@ -1117,8 +1164,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   // tabs, used by every tab — pick a period once, and roster, banking, module
   // visibility, and activity results below all follow it top to bottom.
   const periodBar = (
-    <div className="period-bar">
-      <div className="section-kicker">Periods</div>
+    <div className="period-bar" aria-busy={updating}>
+      <div className="period-heading"><div className="section-kicker">Periods</div><span className="period-status" role="status">{updating ? "Updating class data…" : ""}</span></div>
       <div className="pills">
         <button className={`pill${classId === "" ? " active" : ""}`} onClick={() => setClassId("")}>All students</button>
         {classes.map((c) => (
@@ -1126,7 +1173,6 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
             {c.name}<span className="pill-count"> · {c.students ?? 0}</span>{c.trading_frozen ? " — frozen" : ""}
           </button>
         ))}
-        {updating && <span className="small" style={{ alignSelf: "center" }}>Updating…</span>}
       </div>
       {classes.length > 0 && (
         <div className="join-codes">
@@ -1158,7 +1204,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
       {profileId && (
         <div className="drawer-overlay" onClick={() => setProfileId(null)}>
           <div className="drawer" role="dialog" aria-modal="true" aria-label="Student account profile" onClick={(e) => e.stopPropagation()}>
-            {!profile ? <p>Loading profile…</p> : (
+            {!profile ? <LoadingState label="Loading student profile" kind="detail" /> : (
               <>
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "start" }}>
                   <h2>{profile.student.name}</h2>
@@ -1365,6 +1411,8 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
     </>
   );
 
+  if (!workspaceReady) return <>{workspaceTabs}{periodBar}{err ? <div className="error" role="alert">{err}</div> : <LoadingState label="Loading period workspace" kind="table" />}{profileDrawer}</>;
+
   if (tsection === "class") {
     return (
       <>
@@ -1456,6 +1504,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
   periodBar: React.ReactNode; classId: string; classes: any[]; onChanged: () => void; onOpenStudent: (id: string) => void;
 }) {
   const [summary, setSummary] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [err, setErr] = useState("");
@@ -1504,6 +1553,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
   const [profileAssignments, setProfileAssignments] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
+    setErr("");
     try {
       const qs = classId ? `?classId=${classId}` : "";
       const [s, t, d, o, bd] = await Promise.all([
@@ -1518,6 +1568,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
       setDisputes(d.disputes);
       setOnboardingProfiles(o.profiles);
       setBillDrafts(bd.drafts);
+      setLoaded(true);
     } catch (e: any) { setErr(e.message); }
   }, [classId]);
   useEffect(() => { load(); }, [load]);
@@ -1738,6 +1789,8 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
+
+  if (!loaded) return <><div className="page-intro"><div><div className="eyebrow">Teacher desk</div><h2>Banking classroom</h2><p>Issue paychecks and bills, then watch students take responsibility for paying.</p></div></div>{periodBar}{err ? <div className="error" role="alert">{err}</div> : <LoadingState label="Loading class banking" kind="table" />}</>;
 
   return (
     <>
@@ -2041,7 +2094,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
         </div>
       </div>
       {err && <div className="error" role="alert">{err}</div>}
-      {(activities === null || posts === null) && <p>Loading…</p>}
+      {(activities === null || posts === null) && !err && <LoadingState label="Loading class modules" kind="modules" />}
       {announcements.length > 0 && <section className="class-announcements" aria-label="Announcements">
         <div className="section-kicker">From your teacher</div>
         {announcements.map((post) => <article className="class-announcement" key={post.id}><span aria-hidden="true">✦</span><div><strong>{post.title}</strong><p>{post.body}</p></div></article>)}
@@ -2088,25 +2141,36 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
 }
 
 function LeaderboardSection() {
-  const [board, setBoard] = useState<any | null>(null);
-  const [err, setErr] = useState("");
+  const [boardState, setBoardState] = useState<{ key: string; data: any } | null>(null);
+  const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const boardCache = useRef(new Map<string, any>());
   const [sort, setSort] = useState<"percent" | "stable">("percent");
   const [period, setPeriod] = useState<"3" | "4">("3");
+  const key = `${period}:${sort}`;
+  const board = boardState?.key === key ? boardState.data : boardCache.current.get(key) ?? null;
+  const err = errorState?.key === key ? errorState.message : "";
   // Server-side ordering is the source of truth for each view.
   useEffect(() => {
     let cancelled = false;
     let retry: number | undefined;
-    setBoard(null);
     const load = () => api<any>(`/api/class/leaderboard?period=${period}&sort=${sort}`, { cache: "no-store" })
       .then((result) => {
         if (cancelled) return;
-        setBoard(result); setErr("");
+        if (result.refreshing && !boardCache.current.has(key)) {
+          setPendingKey(key); // first view waits for current prices instead of showing stale zeroes
+        } else {
+          boardCache.current.set(key, result);
+          setBoardState({ key, data: result });
+          setPendingKey(null);
+        }
+        setErrorState(null);
         if (result.refreshing) retry = window.setTimeout(load, 3000);
       })
-      .catch((e: any) => { if (!cancelled) setErr(e.message); });
+      .catch((e: any) => { if (!cancelled) setErrorState({ key, message: e.message }); });
     void load();
     return () => { cancelled = true; window.clearTimeout(retry); };
-  }, [period, sort]);
+  }, [period, sort, key]);
   return (
     <div className="leaderboard-section">
       <div className="page-intro">
@@ -2120,7 +2184,7 @@ function LeaderboardSection() {
         <button className={`pill${period === "3" ? " active" : ""}`} aria-pressed={period === "3"} onClick={() => setPeriod("3")}>3rd Period</button>
         <button className={`pill${period === "4" ? " active" : ""}`} aria-pressed={period === "4"} onClick={() => setPeriod("4")}>4th Period</button>
       </div>
-      <Leaderboard board={board} err={err} sort={sort} onSort={setSort} />
+      <Leaderboard board={board} err={err} sort={sort} onSort={setSort} refreshing={pendingKey === key} />
     </div>
   );
 }
@@ -2130,9 +2194,9 @@ function LeaderboardSection() {
 // visible at a glance (LEADERBOARD_PLAN.md §4). Stable gains is a filter+sort:
 // only students up at least the bar with enough history, steadiest first —
 // an empty answer is fine and says so without drama.
-function Leaderboard({ board, err, sort, onSort }: {
+function Leaderboard({ board, err, sort, onSort, refreshing }: {
   board: any | null; err: string;
-  sort: "percent" | "stable"; onSort: (s: "percent" | "stable") => void;
+  sort: "percent" | "stable"; onSort: (s: "percent" | "stable") => void; refreshing: boolean;
 }) {
   const fmtBp = (bp: number) => `${bp >= 0 ? "+" : "-"}${(Math.abs(bp) / 100).toFixed(2)}%`;
   const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "6.00";
@@ -2148,16 +2212,19 @@ function Leaderboard({ board, err, sort, onSort }: {
         <div className="leaderboard-hero-stat"><strong>{board?.entries.length ?? "—"}</strong><span>{sort === "stable" ? "qualifying investors" : "investors ranked"}</span></div>
         <div className="leaderboard-hero-stat"><strong>{board?.asOfDate ? board.asOfDate.slice(5) : "—"}</strong><span>latest snapshot</span></div>
       </div>
-      {leaders.length > 0 && <div className="leaderboard-podium" aria-label="Top three investors">
+      {(leaders.length > 0 || (!board && !err)) && <div className="leaderboard-podium" aria-label="Top investors">
         {leaders.map((entry: any, index: number) => <div className={`leaderboard-podium-card place-${index + 1}`} key={`${entry.name}:${index}`}>
           <span className="leaderboard-place">{["①", "②", "③"][index]} · {index === 0 ? "Top investor" : `Place ${index + 1}`}</span>
           <strong>{entry.name}{entry.self ? " (you)" : ""}</strong>
           <span className={`leaderboard-podium-return ${entry.returnBp >= 0 ? "up" : "down"}`}>{fmtBp(entry.returnBp)}</span>
           <small>{entry.sectorsHeld ?? "—"} sectors · {entry.holdingsCount} holdings</small>
         </div>)}
+        {!board && !err && <div className="leaderboard-podium-card loading-podium"><Skeleton className="skeleton-label" /><Skeleton className="skeleton-title" /><Skeleton className="skeleton-value" /><Skeleton className="skeleton-line short" /></div>}
       </div>}
-      {board?.refreshing && <p className="leaderboard-updating" role="status"><span className="status-dot" /> Updating with current portfolio prices…</p>}
-      {board?.refreshError && <p className="hint">{board.refreshError}</p>}
+      <div className="leaderboard-status">
+        {(board?.refreshing || refreshing) && <p className="leaderboard-updating" role="status"><span className="status-dot" /> Updating with current portfolio prices…</p>}
+        {board?.refreshError && <p className="hint">{board.refreshError}</p>}
+      </div>
       <div className="leaderboard-head">
         <div className="pills" role="group" aria-label="Sort the leaderboard">
           <button className={`pill${sort === "percent" ? " active" : ""}`} aria-pressed={sort === "percent"} onClick={() => onSort("percent")}>Percent gain</button>
@@ -2166,7 +2233,7 @@ function Leaderboard({ board, err, sort, onSort }: {
         {board?.asOfDate && <span className="small">As of {board.asOfDate}</span>}
       </div>
       {err && <div className="error" role="alert">{err}</div>}
-      {!board && !err && <p className="hint">Loading standings…</p>}
+      {!board && !err && <LoadingState label="Loading period standings" kind="table" />}
       {board && !board.asOfDate && !board.refreshing && (
         <div className="panel"><p className="hint" style={{ margin: 0 }}>No standings yet. Check back when current prices are available.</p></div>
       )}
@@ -2252,7 +2319,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   }, [load, busy]);
 
   if (err && !post) return <div className="class-section"><ModuleHead kind="Portfolio mission" onBack={onBack} /><div className="error" role="alert">{err}</div></div>;
-  if (!post) return <div className="class-section"><ModuleHead kind="Portfolio mission" onBack={onBack} /><p>Loading mission…</p></div>;
+  if (!post) return <div className="class-section"><ModuleHead kind="Portfolio mission" onBack={onBack} /><LoadingState label="Loading portfolio mission" kind="detail" /></div>;
 
   const mission = post.mission;
   const t = mission.targets;
@@ -2371,7 +2438,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
         )}
         <div className="row goals-actions">
           <button onClick={onOpenInvesting}>Open Investing →</button>
-          <button className="ghost" disabled={refreshing} onClick={() => void load({ silent: true })}>{refreshing ? "Refreshing…" : "Refresh"}</button>
+          <button className="ghost mission-refresh" disabled={refreshing} onClick={() => void load({ silent: true })}>{refreshing ? "Refreshing…" : "Refresh"}</button>
           <span className="small">Buys and sells update these goals as soon as you come back to this page.</span>
         </div>
       </section>
@@ -2530,7 +2597,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
   };
 
   if (err && !act) return <div className="class-section"><ModuleHead kind="Sector practice" onBack={onBack} /><div className="error" role="alert">{err}</div></div>;
-  if (!act) return <div className="class-section"><ModuleHead kind="Sector practice" onBack={onBack} /><p>Loading…</p></div>;
+  if (!act) return <div className="class-section"><ModuleHead kind="Sector practice" onBack={onBack} /><LoadingState label="Loading sector practice" kind="detail" /></div>;
 
   const unplaced = act.tokens.filter((t: any) => !placements[t.ticker]);
   const allPlaced = unplaced.length === 0;
@@ -2660,15 +2727,16 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
 
 function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: string; refreshKey: number; onChanged: () => void }) {
   const [modules, setModules] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
-    if (!classId) { setModules([]); setHidden(new Set()); return; }
+    if (!classId) { setModules([]); setHidden(new Set()); setLoaded(true); return; }
     const result = await api<any>(`/api/teacher/classes/${classId}/modules`);
-    setModules(result.modules); setHidden(new Set(result.hidden));
+    setModules(result.modules); setHidden(new Set(result.hidden)); setLoaded(true);
   }, [classId]);
   useEffect(() => { load().catch((e: any) => setErr(e.message)); }, [load, refreshKey]);
 
@@ -2695,14 +2763,16 @@ function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: 
     <div className="panel-heading"><div><h2>Modules shown to this period</h2><p className="hint">Untick a module to remove it from those students' Class page. Their saved work and submissions stay intact.</p></div>{classId && <div className="row"><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(true)}>Show all</button><button className="ghost" disabled={busy || modules.length === 0} onClick={() => setAll(false)}>Hide all</button></div>}</div>
     {!classId && <p className="small">Choose a period above to manage what its students can see.</p>}
     {err && <div className="error" role="alert">{err}</div>}
-    {classId && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or portfolio mission first.</p>}
+    {classId && !loaded && !err && <LoadingState label="Loading module visibility" kind="panel" />}
+    {classId && loaded && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or portfolio mission first.</p>}
     {classId && modules.length > 0 && <div className="module-visibility-grid">{modules.map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : "Portfolio mission"}</small></span></label>)}</div>}
-    {classId && <div className="module-save-state" aria-live="polite">{busy ? "Saving…" : saved ? "Saved ✓" : `${modules.length - hidden.size} shown · ${hidden.size} hidden`}</div>}
+    {classId && loaded && <div className="module-save-state" aria-live="polite">{busy ? "Saving…" : saved ? "Saved ✓" : `${modules.length - hidden.size} shown · ${hidden.size} hidden`}</div>}
   </div>;
 }
 
 function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { classes: any[]; defaultClassId: string; onModulesChanged: () => void }) {
   const [posts, setPosts] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState<"" | "announcement" | "portfolio_mission">("");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
@@ -2711,7 +2781,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
-  const load = useCallback(async () => setPosts((await api<any>("/api/teacher/class-posts")).posts), []);
+  const load = useCallback(async () => { setPosts((await api<any>("/api/teacher/class-posts")).posts); setLoaded(true); }, []);
   useEffect(() => { load().catch((e: any) => setErr(e.message)); }, [load]);
   useEffect(() => { if (open) setScope(defaultClassId); }, [defaultClassId, open]);
 
@@ -2746,10 +2816,11 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
   const published = posts.filter((post) => post.status === "published").length;
   const drafts = posts.filter((post) => post.status === "draft").length;
   return <details className="panel class-post-desk">
-    <summary className="class-post-summary"><span><strong>Create & publish</strong><small>Announcements and portfolio assignments</small></span><span className="small">{published} live · {drafts} draft</span></summary>
+    <summary className="class-post-summary"><span><strong>Create & publish</strong><small>Announcements and portfolio assignments</small></span><span className="small">{loaded ? `${published} live · ${drafts} draft` : <Skeleton className="skeleton-label" />}</span></summary>
     <div className="class-post-body">
     <div className="panel-heading"><div><h2>Assignments & announcements</h2><p className="hint"><strong>Announcements</strong> are messages only. <strong>Portfolio assignments</strong> become numbered modules with completion evidence.</p></div><div className="row"><button className="ghost" onClick={() => start("announcement")}>New announcement</button><button onClick={() => start("portfolio_mission")}>New portfolio assignment</button></div></div>
     {err && <div className="error">{err}</div>}{notice && <div className="notice">{notice}</div>}
+    {!loaded && !err && <LoadingState label="Loading class posts" kind="panel" />}
     {open && <div className="class-post-form">
       <div className="grid2"><div className="field"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} /></div><div className="field"><label>Who gets it</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div></div>
       {open === "portfolio_mission" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
@@ -2772,8 +2843,12 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
   onDashboardChanged: () => void;
 }) {
   const [activities, setActivities] = useState<any[]>([]);
+  const [activitiesLoaded, setActivitiesLoaded] = useState(false);
   const [selected, setSelected] = useState<string>("");
-  const [data, setData] = useState<any>(null);
+  const [dataState, setDataState] = useState<{ key: string; value: any } | null>(null);
+  const dataRequest = useRef(0);
+  const dataKey = `${selected}:${classId}`;
+  const data = dataState?.key === dataKey ? dataState.value : null;
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2792,17 +2867,20 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
   const loadActivities = useCallback(async (preferId?: string) => {
     const r = await api<any>("/api/teacher/activities");
     setActivities(r.activities);
+    setActivitiesLoaded(true);
     setSelected((current) => preferId || current || r.activities[0]?.id || "");
   }, []);
   useEffect(() => { loadActivities().catch((e: any) => setErr(e.message)); }, [loadActivities]);
 
   const load = useCallback(async () => {
-    if (!selected) { setData(null); return; }
+    const request = ++dataRequest.current;
+    if (!selected) { setDataState(null); return; }
     setBusy(true);
     try {
-      setData(await api<any>(`/api/teacher/activities/${selected}/progress${classId ? `?classId=${classId}` : ""}`));
-    } catch (e: any) { setErr(e.message); }
-    finally { setBusy(false); }
+      const result = await api<any>(`/api/teacher/activities/${selected}/progress${classId ? `?classId=${classId}` : ""}`);
+      if (request === dataRequest.current) setDataState({ key: `${selected}:${classId}`, value: result });
+    } catch (e: any) { if (request === dataRequest.current) setErr(e.message); }
+    finally { if (request === dataRequest.current) setBusy(false); }
   }, [selected, classId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -2935,7 +3013,8 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
         <div className="field grow">
           <label htmlFor="act-pick">Activity</label>
           <select id="act-pick" value={selected} onChange={(e) => setSelected(e.target.value)}>
-            {activities.length === 0 && <option value="">No activities yet — run npm run seed:sort</option>}
+            {!activitiesLoaded && <option value="">Loading activities…</option>}
+            {activitiesLoaded && activities.length === 0 && <option value="">No activities yet — run npm run seed:sort</option>}
             {activities.map((a) => <option key={a.id} value={a.id}>{a.title}{a.status !== "published" ? ` (${a.status})` : ""}</option>)}
           </select>
         </div>
@@ -2953,7 +3032,7 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
         </div>
       )}
 
-      {busy && <p className="small">Loading…</p>}
+      {busy && !data && <LoadingState label="Loading activity results" kind="table" />}
 
       {data && (
         <>
