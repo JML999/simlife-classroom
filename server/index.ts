@@ -44,6 +44,7 @@ import {
 } from "./class-modules.js";
 import { moduleProgress, studentModuleDetail } from "./module-progress.js";
 import { leaderboardFor, STABLE_MIN_RETURN_BP } from "./leaderboard.js";
+import { ensureLeaderboardFresh } from "./leaderboard-refresh.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -956,12 +957,14 @@ app.get("/api/class/leaderboard", requireAuth, async (req, res) => {
     return;
   }
   const sort = req.query.sort === "stable" ? "stable" as const : "percent" as const;
+  const refresh = ensureLeaderboardFresh(classId, quotes);
   const board = await leaderboardFor(classId, { sort });
   // Map explicitly: valueCents and userIds of other students never leave here.
   res.json({
     asOfDate: board.asOfDate,
     sort: board.sort,
     stableMinReturnBp: board.stableMinReturnBp,
+    ...refresh,
     entries: board.entries.map((e) => ({
       name: e.name,
       returnBp: e.returnBp,

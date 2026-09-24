@@ -81,6 +81,57 @@ test("a start value of zero yields no return rather than infinity", () => {
   assert.equal(lb.subPeriodReturnBp(0, 0, 0), 0);
 });
 
+test("first snapshot shows existing gains and subsequent deposits do not inflate them", async () => {
+  setPrice("OPN", 100);
+  const s = await student("lbclass", 100_000, "OpeningGain");
+  await buy({ userId: s, ticker: "OPN", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("OPN")) });
+  setPrice("OPN", 120);
+  const first = await lb.buildSnapshot(s, "2026-09-21", priceOf);
+  assert.equal(first.twrBp, 2000, "existing 20% gain appears on day one");
+  await lb.writeSnapshot(first);
+  await adjustCash({ userId: s, actorId: "lbteacher", amountCents: 50_000, reason: "Later funding", idempotencyKey: uid() });
+  const second = await lb.buildSnapshot(s, "2026-09-22", priceOf);
+  assert.equal(second.twrBp, 2000, "new cash leaves the return unchanged");
+});
+
+test("refresh uses current quotes and repairs legacy zero opening rows", async () => {
+  const classId = uid();
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+    [classId, "Opening Test", uid(), new Date().toISOString()]);
+  setPrice("RPR", 100);
+  const s = await student(classId, 100_000, "RepairedGain");
+  await buy({ userId: s, ticker: "RPR", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("RPR")) });
+  setPrice("RPR", 120);
+  await lb.writeSnapshot(await lb.buildSnapshot(s, "2026-09-21", priceOf));
+  await run(`UPDATE leaderboard_snapshots SET twr_bp = 0 WHERE user_id = ?`, [s]);
+  const { refreshClassSnapshot } = await import("./leaderboard-refresh.js");
+  await refreshClassSnapshot(classId, quotes, "2026-09-22");
+  const first = await one<any>(`SELECT twr_bp FROM leaderboard_snapshots WHERE user_id = ? AND as_of_date = ?`, [s, "2026-09-21"]);
+  const second = await one<any>(`SELECT twr_bp FROM leaderboard_snapshots WHERE user_id = ? AND as_of_date = ?`, [s, "2026-09-22"]);
+  assert.equal(first.twr_bp, 2000);
+  assert.equal(second.twr_bp, 2000);
+  setPrice("RPR", 132);
+  await refreshClassSnapshot(classId, quotes, "2026-09-23");
+  const third = await one<any>(`SELECT twr_bp FROM leaderboard_snapshots WHERE user_id = ? AND as_of_date = ?`, [s, "2026-09-23"]);
+  assert.equal(third.twr_bp, 3200, "later 10% growth chains with opening 20%");
+});
+
+test("refresh refuses to save a flat return when a held stock has no quote", async () => {
+  const classId = uid();
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+    [classId, "Unpriced Test", uid(), new Date().toISOString()]);
+  setPrice("NOQ", 100);
+  const s = await student(classId, 100_000, "UnpricedHolding");
+  await buy({ userId: s, ticker: "NOQ", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("NOQ")) });
+  const broken = new CachedQuotes({
+    name: "broken", search: async () => [], getQuote: async () => { throw new Error("quote unavailable"); },
+  });
+  const { refreshClassSnapshot } = await import("./leaderboard-refresh.js");
+  await assert.rejects(refreshClassSnapshot(classId, broken, "2026-09-24"), /quote unavailable/);
+  const count = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM leaderboard_snapshots WHERE class_id = ?`, [classId]);
+  assert.equal(count?.n, 0);
+});
+
 test("a mid-window deposit does not change the student's percent return", async () => {
   setPrice("AAA", 100);
   const a = await student("lbclass", 100_000, "NoDeposit");

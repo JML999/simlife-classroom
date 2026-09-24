@@ -9,11 +9,9 @@
  * sub-period returns, so deposits change how much money a student has and
  * never their percentage.
  *
- * WHY SNAPSHOTS AND NOT ON-DEMAND MATH. Portfolio value at a past date needs
- * prices at that date, and the app only ever holds current quotes. So history
- * is accumulated forward, one row per student per school day, and cannot be
- * reconstructed later. A day without a snapshot is a day permanently missing
- * from every chart and every competition that spans it.
+ * Portfolio value at a past date needs prices at that date. Snapshot history
+ * accumulates forward; the first row estimates the return already earned from
+ * the account's net funding and current value.
  *
  * Flows are ledger rows that move money in or out of the brokerage account
  * from outside it (cash_adjust, cash_reversal, transfer_in, transfer_out).
@@ -173,7 +171,11 @@ export async function buildSnapshot(
   const periodReturnBp = prev
     ? subPeriodReturnBp(prev.value_cents, valueCents, contributed - prev.net_contributed_cents)
     : 0;
-  const twrBp = prev ? chainBp(prev.twr_bp, periodReturnBp) : 0;
+  // The first snapshot is an opening estimate: current account value relative
+  // to net funding. Earlier cash-flow timing cannot be reconstructed, but
+  // starting everyone at 0% discards gains already visible in their accounts.
+  const twrBp = prev ? chainBp(prev.twr_bp, periodReturnBp)
+    : contributed > 0 ? subPeriodReturnBp(contributed, valueCents, 0) : 0;
 
   return {
     userId, classId: user?.class_id ?? null, asOfDate,
@@ -228,13 +230,43 @@ export async function snapshotAll(
   const students = opts.classId
     ? await q<{ id: string }>(`SELECT id FROM users WHERE role = 'student' AND class_id = ?`, [opts.classId])
     : await q<{ id: string }>(`SELECT id FROM users WHERE role = 'student'`);
-  let written = 0;
+  const rows: SnapshotRow[] = [];
   for (const s of students) {
-    const row = await buildSnapshot(s.id, asOfDate, priceOf);
-    await writeSnapshot(row, opts.quoteSource ?? null);
-    written++;
+    rows.push(await buildSnapshot(s.id, asOfDate, priceOf));
   }
-  return written;
+  // Validate every valuation before persisting any rows. A newly purchased
+  // ticker without a price must not leave a half-updated leaderboard.
+  for (const row of rows) await writeSnapshot(row, opts.quoteSource ?? null);
+  return rows.length;
+}
+
+/** Repair first-day 0% rows written before opening returns were included. */
+export async function repairOpeningReturns(classId: string): Promise<number> {
+  const rows = await q<{
+    id: string; user_id: string; value_cents: number; net_contributed_cents: number;
+    period_return_bp: number; twr_bp: number;
+  }>(`SELECT id, user_id, value_cents, net_contributed_cents, period_return_bp, twr_bp
+        FROM leaderboard_snapshots WHERE class_id = ? ORDER BY user_id, as_of_date`, [classId]);
+  let repaired = 0;
+  let userId = "";
+  let cumulative = 0;
+  let repairing = false;
+  for (const row of rows) {
+    if (row.user_id !== userId) {
+      userId = row.user_id;
+      const opening = row.net_contributed_cents > 0
+        ? subPeriodReturnBp(row.net_contributed_cents, row.value_cents, 0) : 0;
+      repairing = row.twr_bp === 0 && opening !== 0;
+      cumulative = repairing ? opening : row.twr_bp;
+    } else if (repairing) {
+      cumulative = chainBp(cumulative, row.period_return_bp);
+    }
+    if (repairing) {
+      await run(`UPDATE leaderboard_snapshots SET twr_bp = ? WHERE id = ?`, [cumulative, row.id]);
+      repaired++;
+    }
+  }
+  return repaired;
 }
 
 // ---------------------------------------------------------------------------

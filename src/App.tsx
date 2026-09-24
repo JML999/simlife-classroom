@@ -2095,11 +2095,17 @@ function LeaderboardSection() {
   // Server-side ordering is the source of truth for each view.
   useEffect(() => {
     let cancelled = false;
+    let retry: number | undefined;
     setBoard(null);
-    api<any>(`/api/class/leaderboard?period=${period}&sort=${sort}`, { cache: "no-store" })
-      .then((result) => { if (!cancelled) { setBoard(result); setErr(""); } })
+    const load = () => api<any>(`/api/class/leaderboard?period=${period}&sort=${sort}`, { cache: "no-store" })
+      .then((result) => {
+        if (cancelled) return;
+        setBoard(result); setErr("");
+        if (result.refreshing) retry = window.setTimeout(load, 3000);
+      })
       .catch((e: any) => { if (!cancelled) setErr(e.message); });
-    return () => { cancelled = true; };
+    void load();
+    return () => { cancelled = true; window.clearTimeout(retry); };
   }, [period, sort]);
   return (
     <div className="leaderboard-section">
@@ -2107,7 +2113,7 @@ function LeaderboardSection() {
         <div>
           <div className="eyebrow">Class</div>
           <h2>Leaderboard</h2>
-          <p>See how portfolios in 3rd and 4th period are performing.</p>
+          <p>Compare portfolio returns, sectors, and concentration across 3rd and 4th period.</p>
         </div>
       </div>
       <div className="pills leaderboard-periods" role="group" aria-label="Choose a period">
@@ -2130,8 +2136,28 @@ function Leaderboard({ board, err, sort, onSort }: {
 }) {
   const fmtBp = (bp: number) => `${bp >= 0 ? "+" : "-"}${(Math.abs(bp) / 100).toFixed(2)}%`;
   const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "6.00";
+  const leaders = (board?.entries ?? []).slice(0, 3);
   return (
     <section className="class-leaderboard" aria-label="Leaderboard">
+      <div className="leaderboard-hero">
+        <div className="leaderboard-hero-copy">
+          <span className="eyebrow">The market board</span>
+          <h3>{sort === "stable" ? "Steady hands." : "Who’s climbing?"}</h3>
+          <p>{sort === "stable" ? "Students with consistent gains rise here." : "Ranked by portfolio return, with sectors and concentration in view."}</p>
+        </div>
+        <div className="leaderboard-hero-stat"><strong>{board?.entries.length ?? "—"}</strong><span>{sort === "stable" ? "qualifying investors" : "investors ranked"}</span></div>
+        <div className="leaderboard-hero-stat"><strong>{board?.asOfDate ? board.asOfDate.slice(5) : "—"}</strong><span>latest snapshot</span></div>
+      </div>
+      {leaders.length > 0 && <div className="leaderboard-podium" aria-label="Top three investors">
+        {leaders.map((entry: any, index: number) => <div className={`leaderboard-podium-card place-${index + 1}`} key={`${entry.name}:${index}`}>
+          <span className="leaderboard-place">{["①", "②", "③"][index]} · {index === 0 ? "Top investor" : `Place ${index + 1}`}</span>
+          <strong>{entry.name}{entry.self ? " (you)" : ""}</strong>
+          <span className={`leaderboard-podium-return ${entry.returnBp >= 0 ? "up" : "down"}`}>{fmtBp(entry.returnBp)}</span>
+          <small>{entry.sectorsHeld ?? "—"} sectors · {entry.holdingsCount} holdings</small>
+        </div>)}
+      </div>}
+      {board?.refreshing && <p className="leaderboard-updating" role="status"><span className="status-dot" /> Updating with current portfolio prices…</p>}
+      {board?.refreshError && <p className="hint">{board.refreshError}</p>}
       <div className="leaderboard-head">
         <div className="pills" role="group" aria-label="Sort the leaderboard">
           <button className={`pill${sort === "percent" ? " active" : ""}`} aria-pressed={sort === "percent"} onClick={() => onSort("percent")}>Percent gain</button>
@@ -2141,8 +2167,8 @@ function Leaderboard({ board, err, sort, onSort }: {
       </div>
       {err && <div className="error" role="alert">{err}</div>}
       {!board && !err && <p className="hint">Loading standings…</p>}
-      {board && !board.asOfDate && (
-        <div className="panel"><p className="hint" style={{ margin: 0 }}>No snapshots yet — standings start accumulating with the daily snapshot.</p></div>
+      {board && !board.asOfDate && !board.refreshing && (
+        <div className="panel"><p className="hint" style={{ margin: 0 }}>No standings yet. Check back when current prices are available.</p></div>
       )}
       {board?.asOfDate && sort === "stable" && (
         <p className="hint">Gainers of at least {barPct}% with 3+ days of history, steadiest daily path first. Not everyone makes the bar.</p>
@@ -2163,7 +2189,7 @@ function Leaderboard({ board, err, sort, onSort }: {
             <tbody>
               {board.entries.map((e: any, i: number) => (
                 <tr key={`${e.name}:${i}`} className={e.self ? "is-self" : undefined}>
-                  <td>{i + 1}</td>
+                  <td><span className={`leaderboard-rank rank-${Math.min(i + 1, 3)}`}>{i + 1}</span></td>
                   <td>{e.name}{e.self ? " (you)" : ""}</td>
                   <td className={`lb-return ${e.returnBp >= 0 ? "up" : "down"}`}>{fmtBp(e.returnBp)}</td>
                   {sort === "stable" && <td>{e.volBp == null ? "—" : `±${(e.volBp / 100).toFixed(2)}%/day`}</td>}

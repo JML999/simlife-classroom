@@ -627,8 +627,34 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
 /* ---- Student leaderboard -------------------------------------------- */
 .class-leaderboard { margin-top: 8px; }
 .leaderboard-periods { margin-bottom: 16px; }
+.leaderboard-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 22px; align-items: center; padding: 25px 28px; border: 1px solid var(--olive-dark); border-radius: 14px; color: #f9f8f2; background: linear-gradient(125deg, #45482f, #626546 70%, #77734c); }
+.leaderboard-hero .eyebrow { color: #d9d8b4; }
+.leaderboard-hero h3 { margin: 5px 0 5px; font-family: var(--serif); font-size: clamp(26px, 3vw, 37px); font-weight: 550; letter-spacing: -.035em; }
+.leaderboard-hero p { max-width: 390px; margin: 0; color: #e0e0d1; font-size: 12px; line-height: 1.5; }
+.leaderboard-hero-stat { min-width: 90px; padding-left: 20px; border-left: 1px solid rgba(255,255,255,.22); }
+.leaderboard-hero-stat strong { display: block; font-family: var(--serif); font-size: 27px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.leaderboard-hero-stat span { display: block; color: #e0e0d1; font-family: var(--mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.leaderboard-podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 11px 0 16px; }
+.leaderboard-podium-card { display: flex; min-height: 140px; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-strong); }
+.leaderboard-podium-card.place-1 { border-color: #c4b17c; background: linear-gradient(145deg, #fbf6e8, #fffefb); }
+.leaderboard-place { color: var(--gold); font-family: var(--mono); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+.leaderboard-podium-card strong { overflow-wrap: anywhere; font-family: var(--serif); font-size: 18px; font-weight: 550; }
+.leaderboard-podium-return { margin-top: auto; font-family: var(--serif); font-size: 25px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.leaderboard-podium-card small { color: var(--muted); font-family: var(--mono); font-size: 9px; }
+.leaderboard-updating { display: flex; align-items: center; gap: 9px; margin: 5px 0 14px; color: var(--olive-dark); font-size: 11px; }
+.leaderboard-rank { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.leaderboard-rank.rank-1 { color: #715317; background: #f6e8be; }
+.leaderboard-rank.rank-2 { color: #565c5d; background: #e6e8e8; }
+.leaderboard-rank.rank-3 { color: #7a4d35; background: #f2e2d7; }
 .leaderboard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .leaderboard-head .small { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
 .leaderboard-table .lb-return { font-family: var(--mono); font-weight: 700; }
 .leaderboard-table tr.is-self td { background: var(--olive-pale); font-weight: 600; }
 .leaderboard-table tbody tr.is-self:hover td { background: var(--olive-pale); }
+@media (max-width: 780px) {
+  .leaderboard-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 21px; }
+  .leaderboard-hero-copy { grid-column: 1 / -1; }
+  .leaderboard-hero-stat { padding-left: 12px; }
+  .leaderboard-podium { grid-template-columns: 1fr; }
+  .leaderboard-podium-card { min-height: 0; }
+}
