@@ -148,3 +148,12 @@ test("sessions expire after the classroom session window", () => {
   const current = encodeSession({ userId: "some-student", role: "student" });
   assert.equal(decodeSession(current)?.userId, "some-student");
 });
+
+test("teacher Student view stays signed and cannot pass teacher middleware", () => {
+  const cookie = encodeSession({ userId: "teacher-id", role: "teacher", viewStudentId: "period-one-student" });
+  assert.equal(decodeSession(cookie)?.viewStudentId, "period-one-student");
+  let status = 0;
+  const res: any = { status: (code: number) => { status = code; return res; }, json: () => res };
+  requireTeacher({ cookies: { sl_session: cookie } } as any, res, () => { status = 200; });
+  assert.equal(status, 403);
+});

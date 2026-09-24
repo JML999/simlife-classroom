@@ -3,7 +3,7 @@ import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
 declare global { interface Window { google?: any } }
 
-interface Me { user: { id: string; email: string | null; name: string; role: string; job_title?: string | null; job_pay_cents?: number | null; car_payment_cents?: number | null }; class: any }
+interface Me { user: { id: string; email: string | null; name: string; role: string; job_title?: string | null; job_pay_cents?: number | null; car_payment_cents?: number | null }; class: any; viewSwitch?: { active: boolean; studentName: string } | null }
 interface Portfolio {
   cashCents: number; investedCents: number; portfolioCents: number; gainLossCents: number;
   unrealizedGainLossCents: number; realizedGainLossCents: number;
@@ -28,6 +28,8 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState("");
+  const [switchBusy, setSwitchBusy] = useState(false);
+  const [switchError, setSwitchError] = useState("");
 
   const refresh = useCallback(async (initial = false) => {
     try {
@@ -46,6 +48,16 @@ export default function App() {
   }, [refresh]);
   useEffect(() => { void loadApp(); }, [loadApp]);
 
+  const switchView = async (mode: "teacher" | "student") => {
+    if (switchBusy || !me?.viewSwitch || me.viewSwitch.active === (mode === "student")) return;
+    setSwitchBusy(true); setSwitchError("");
+    try {
+      await api("/api/view", { method: "POST", body: JSON.stringify({ mode }) });
+      await refresh(true);
+    } catch (e: any) { setSwitchError(e.message); }
+    finally { setSwitchBusy(false); }
+  };
+
   if (loading) return <div className="wrap"><div className="topbar"><div className="brand"><div className="brand-mark">$</div><div><h1>SimLife</h1><p>Classroom money · banking + investing</p></div></div></div><LoadingState label="Loading SimLife" kind="detail" /></div>;
   if (bootError) return <div className="wrap"><div className="topbar"><div className="brand"><div className="brand-mark">$</div><div><h1>SimLife</h1><p>Classroom money · banking + investing</p></div></div></div><div className="panel"><h2>Couldn’t load SimLife</h2><p className="hint">{bootError}</p><button onClick={() => void loadApp()}>Try again</button></div></div>;
 
@@ -61,12 +73,17 @@ export default function App() {
             </div>
           </div>
           {me && (
-            <div className="row">
+            <div className="topbar-actions">
+              {me.viewSwitch && <div className="pills view-switch" role="group" aria-label="Choose account view">
+                <button className={`pill${!me.viewSwitch.active ? " active" : ""}`} aria-pressed={!me.viewSwitch.active} disabled={switchBusy} onClick={() => void switchView("teacher")}>Teacher</button>
+                <button className={`pill${me.viewSwitch.active ? " active" : ""}`} aria-pressed={me.viewSwitch.active} disabled={switchBusy} onClick={() => void switchView("student")}>Student</button>
+              </div>}
               <span className="small">{me.user.name} · {me.user.role}</span>
               <button className="ghost" onClick={async () => { await api("/api/auth/logout", { method: "POST" }); setMe(null); }}>Sign out</button>
             </div>
           )}
         </div>
+        {switchError && <div className="error" role="alert">{switchError}</div>}
         {!me
           ? <Login config={config} onDone={() => void loadApp()} />
           : me.user.role === "teacher"

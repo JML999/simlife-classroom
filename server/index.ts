@@ -61,10 +61,12 @@ const quotes = makeQuoteProvider();
 
 // ---------- helpers ----------
 
-async function currentUser(req: express.Request) {
+type AuthUser = { id: string; email: string | null; name: string; role: string; class_id: string | null; job_title: string | null; job_pay_cents: number | null; car_payment_cents: number | null };
+
+async function sessionActor(req: express.Request): Promise<AuthUser | null> {
   const s = readSession(req);
   if (!s) return null;
-  const user = await one<{ id: string; email: string | null; name: string; role: string; class_id: string | null; job_title: string | null; job_pay_cents: number | null; car_payment_cents: number | null }>(
+  const user = await one<AuthUser>(
     `SELECT id, email, name, role, class_id, job_title, job_pay_cents, car_payment_cents FROM users WHERE id = ?`, [s.userId],
   );
   if (!user) return null;
@@ -75,10 +77,30 @@ async function currentUser(req: express.Request) {
   return user;
 }
 
+async function linkedStudent(teacherId: string): Promise<AuthUser | undefined> {
+  return one<AuthUser>(
+    `SELECT u.id, u.email, u.name, u.role, u.class_id, u.job_title, u.job_pay_cents, u.car_payment_cents
+       FROM teacher_student_views v JOIN users u ON u.id = v.student_id
+      WHERE v.teacher_id = ? AND u.role = 'student' AND u.class_id = 'demo-class-1'`,
+    [teacherId],
+  );
+}
+
+async function currentUser(req: express.Request): Promise<AuthUser | null> {
+  const actor = await sessionActor(req);
+  const s = readSession(req);
+  if (!actor || !s?.viewStudentId || actor.role !== "teacher") return actor;
+  const student = await linkedStudent(actor.id);
+  if (!student || student.id !== s.viewStudentId) return actor;
+  await run(`UPDATE users SET last_active_at = ? WHERE id = ?`, [nowIso(), student.id]).catch(() => {});
+  return student;
+}
+
 /** Teacher authorization is checked against the database on every request.
  * The cookie proves identity; it is not the source of truth for privileges. */
 async function requireCurrentTeacher(req: express.Request, res: express.Response, next: express.NextFunction) {
   try {
+    if (readSession(req)?.viewStudentId) { res.status(403).json({ error: "Switch to Teacher view first." }); return; }
     const user = await currentUser(req);
     if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
     if (user.role !== "teacher") { res.status(403).json({ error: "Teacher access only." }); return; }
@@ -219,10 +241,24 @@ if (demoEnabled()) {
 app.get("/api/me", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  const actor = await sessionActor(req);
+  const preview = actor?.role === "teacher" ? await linkedStudent(actor.id) : null;
   const cls = user.class_id
     ? await one(`SELECT id, name, join_code, trading_frozen FROM classes WHERE id = ?`, [user.class_id])
     : null;
-  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, job_title: user.job_title ?? null, job_pay_cents: user.job_pay_cents ?? null, car_payment_cents: user.car_payment_cents ?? null }, class: cls });
+  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, job_title: user.job_title ?? null, job_pay_cents: user.job_pay_cents ?? null, car_payment_cents: user.car_payment_cents ?? null }, class: cls,
+    viewSwitch: preview ? { active: user.id === preview.id, studentName: preview.name } : null });
+});
+
+app.post("/api/view", requireAuth, async (req, res) => {
+  const actor = await sessionActor(req);
+  if (!actor || actor.role !== "teacher") { res.status(403).json({ error: "Teacher access only." }); return; }
+  const mode = req.body?.mode;
+  if (mode !== "teacher" && mode !== "student") { res.status(400).json({ error: "Choose Teacher or Student view." }); return; }
+  const student = await linkedStudent(actor.id);
+  if (!student) { res.status(404).json({ error: "No Period 1 student account is linked to this teacher." }); return; }
+  setSessionCookie(res, { userId: actor.id, role: "teacher", ...(mode === "student" ? { viewStudentId: student.id } : {}) });
+  res.json({ ok: true, mode });
 });
 
 app.post("/api/classes/join", requireAuth, async (req, res) => {

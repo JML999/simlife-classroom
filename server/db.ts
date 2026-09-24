@@ -206,6 +206,11 @@ export async function initSchema(): Promise<void> {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_users_email ON users(email) WHERE email IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_sl_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS teacher_student_views (
+      teacher_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      student_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS user_aliases (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

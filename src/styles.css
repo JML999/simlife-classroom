@@ -87,6 +87,9 @@ button.text-danger:hover:not(:disabled) { color: #783b34; background: var(--rose
 .pills { display: flex; gap: 7px; flex-wrap: wrap; margin: 0 0 7px; }
 .pill { padding: 7px 13px; color: var(--olive-dark); background: transparent; border-color: var(--line); border-radius: 999px; }
 .pill.active { color: #fff; background: var(--olive); border-color: var(--olive); }
+.topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.view-switch { margin: 0; flex-wrap: nowrap; }
+.view-switch .pill { min-width: 78px; }
 .roster-tools { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 18px 0 7px; }
 .roster-tools .field { width: min(340px, 100%); }
 .table-wrap { width: 100%; overflow-x: auto; border-top: 1px solid var(--line); }
@@ -192,7 +195,7 @@ th.sortable:hover { color: var(--olive-dark); }
   .banner { font-size: 8px; }
   .wrap { width: calc(100% - 12px); margin: 6px auto; padding: 18px 14px 42px; border-radius: 13px; }
   .topbar, .page-intro, .panel-heading { align-items: flex-start; flex-direction: column; }
-  .topbar > .row { width: 100%; justify-content: space-between; }
+  .topbar-actions { width: 100%; justify-content: space-between; }
   .brand h1 { font-size: 20px; }
   .page-intro { padding-top: 25px; }
   .page-intro h2 { font-size: 32px; }

@@ -9,6 +9,7 @@ function secret(): string {
 export interface SessionPayload {
   userId: string;
   role: "student" | "teacher";
+  viewStudentId?: string;
   issuedAt?: number;
 }
 
@@ -34,6 +35,7 @@ export function decodeSession(cookie: string | undefined): SessionPayload | null
     const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
     if (typeof parsed.userId !== "string") return null;
     if (parsed.role !== "student" && parsed.role !== "teacher") return null;
+    if (parsed.viewStudentId !== undefined && (parsed.role !== "teacher" || typeof parsed.viewStudentId !== "string" || !parsed.viewStudentId)) return null;
     if (typeof parsed.issuedAt !== "number" || Date.now() - parsed.issuedAt > SESSION_MAX_AGE_MS) return null;
     return parsed;
   } catch {
@@ -70,7 +72,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 export function requireTeacher(req: Request, res: Response, next: NextFunction): void {
   const s = readSession(req);
   if (!s) { res.status(401).json({ error: "Sign in required." }); return; }
-  if (s.role !== "teacher") { res.status(403).json({ error: "Teacher access only." }); return; }
+  if (s.role !== "teacher" || s.viewStudentId) { res.status(403).json({ error: "Teacher access only." }); return; }
   (req as any).session = s;
   next();
 }
