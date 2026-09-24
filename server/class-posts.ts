@@ -35,8 +35,6 @@ export interface ClassPost {
 const DEFAULT_MISSION_SPEC = {
   minCompanies: 6,
   minSectors: 5,
-  pickThesisMinWords: 12,
-  reflectionMinWords: 40,
 };
 
 let directory: Record<string, any> | null = null;
@@ -133,7 +131,10 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
       subIndustry: holding.meta.subIndustry || "",
     }));
   const sectors = [...new Set(companies.map((holding) => holding.sector).filter((sector) => sector !== "Unknown"))];
-  const spec = { ...DEFAULT_MISSION_SPEC, ...post.spec };
+  const spec = {
+    minCompanies: post.spec.minCompanies ?? DEFAULT_MISSION_SPEC.minCompanies,
+    minSectors: post.spec.minSectors ?? DEFAULT_MISSION_SPEC.minSectors,
+  };
   const checks = {
     companies: companies.length >= spec.minCompanies,
     sectors: sectors.length >= spec.minSectors,
@@ -144,8 +145,6 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
     targets: spec, checks, met: Object.values(checks).every(Boolean),
   };
 }
-
-const wordCount = (value: unknown): number => String(value || "").trim().split(/\s+/).filter(Boolean).length;
 
 export async function latestClassPostSubmission(postId: string, userId: string): Promise<any | null> {
   const row = await one<any>(
@@ -173,12 +172,10 @@ export async function submitPortfolioMission(opts: {
   if (new Set(cleanPicks.map((pick: any) => pick.ticker)).size !== 3) throw new ClassPostError("INVALID_INPUT", "Choose three different tickers.");
   for (const pick of cleanPicks) {
     if (!state.companies.some((holding: any) => holding.ticker === pick.ticker)) throw new ClassPostError("INVALID_INPUT", `${pick.ticker || "Each pick"} must be a current stock holding.`);
-    if (wordCount(pick.thesis) < state.targets.pickThesisMinWords) throw new ClassPostError("INVALID_INPUT", `Explain ${pick.ticker} in at least ${state.targets.pickThesisMinWords} words.`);
+    if (!pick.thesis) throw new ClassPostError("INVALID_INPUT", `Add a short answer for ${pick.ticker}.`);
   }
   const reflection = String(opts.response?.reflection || "").trim();
-  if (wordCount(reflection) < state.targets.reflectionMinWords) {
-    throw new ClassPostError("INVALID_INPUT", `Your final reflection needs at least ${state.targets.reflectionMinWords} words.`);
-  }
+  if (!reflection) throw new ClassPostError("INVALID_INPUT", "Add a final reflection.");
   const submittedAt = nowIso();
   await run(
     `INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)

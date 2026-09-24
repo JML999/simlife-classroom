@@ -578,8 +578,6 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .pick-no { width: 26px; height: 26px; display: grid; place-items: center; color: var(--olive-dark); background: var(--olive-pale); border: 1px solid #c5c9ae; border-radius: 50%; font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .explain-pick textarea, .reflect-field textarea { width: 100%; resize: vertical; }
 .reflect-field { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
-.word-count { display: block; margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: right; }
-.word-count.met { color: var(--up); }
 
 /* Teacher results grid. Status never rides on color alone — every cell also
    carries a ✓ or ✕ glyph, for colorblind teachers and for a projector. */

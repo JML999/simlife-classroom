@@ -12,7 +12,7 @@ import { createClassPost, listClassPosts, setClassPostStatus } from "./class-pos
 const TITLE = "Build a five-sector portfolio";
 const SUMMARY = "Hold at least six individual stocks across at least five sectors, then explain how your portfolio is diversified.";
 const BODY = "Build a portfolio that currently holds at least six individual stocks across at least five different sectors. You may buy and sell as you choose; only your current holdings count. Multiple stocks in the same sector count as one sector. ETFs do not count toward the six-stock target.";
-const SPEC = { minCompanies: 6, minSectors: 5, pickThesisMinWords: 12, reflectionMinWords: 40 };
+const SPEC = { minCompanies: 6, minSectors: 5 };
 
 await initSchema();
 const existing = (await listClassPosts({})).find((post) => post.kind === "portfolio_mission" && post.title === TITLE);

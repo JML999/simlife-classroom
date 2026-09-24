@@ -81,6 +81,30 @@ test("mission rejects a pick that is not currently held", async () => {
   }), /must be a current stock holding/);
 });
 
+test("module 2 accepts brief answers while still requiring each answer", async () => {
+  const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
+  mission.spec = { ...mission.spec, pickThesisMinWords: 12, reflectionMinWords: 40 }; // existing published posts may retain old settings
+  assert.deepEqual((await posts.portfolioMissionState(mission, STUDENT)).targets, { minCompanies: 6, minSectors: 5 });
+  const response = {
+    picks: [
+      { ticker: "NKE", thesis: "Retail." },
+      { ticker: "JPM", thesis: "Banking." },
+      { ticker: "NEE", thesis: "Utilities." },
+    ],
+    reflection: "Diversified.",
+  };
+  const submitted = await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response });
+  assert.equal(submitted.deduped, false, "old word limits do not block short answers");
+  await assert.rejects(
+    () => posts.submitPortfolioMission({ post: mission, userId: STUDENT, response: { ...response, picks: [{ ...response.picks[0], thesis: "  " }, ...response.picks.slice(1)] } }),
+    /Add a short answer/,
+  );
+  await assert.rejects(
+    () => posts.submitPortfolioMission({ post: mission, userId: STUDENT, response: { ...response, reflection: "  " } }),
+    /Add a final reflection/,
+  );
+});
+
 test("selling a stock and buying a replacement can still complete the mission", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   await db.run(

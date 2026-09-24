@@ -264,12 +264,12 @@ test("board ranks by percent descending and hides dollars by default", async () 
   assert.ok(teacher.entries.every((e) => typeof e.valueCents === "number"), "teacher view has dollars");
 });
 
-test("concentration is reported beside the return, not folded into it", async () => {
+test("concentration uses invested holdings rather than cash", async () => {
   setPrice("DDD", 100);
   const s = await student("lbclass", 100_000, "AllIn");
-  await buy({ userId: s, ticker: "DDD", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("DDD")) });
+  await buy({ userId: s, ticker: "DDD", dollarsCents: 10_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("DDD")) });
   const snap = await lb.buildSnapshot(s, "2026-10-02", priceOf);
-  assert.equal(snap.topPositionBp, 10_000, "100% of the account is one position");
+  assert.equal(snap.topPositionBp, 10_000, "cash cannot dilute a single-stock concentration figure");
 });
 
 test("median is used for the team score so one lucky student cannot carry a class", () => {
@@ -312,19 +312,22 @@ test("stable gains: only >=1.5% gainers, steadiest daily path first", async () =
   for (const [s, t] of [[steady, "SXX"], [wild, "VXX"], [low, "LXX"], [threshold, "TXX"]] as const) {
     await buy({ userId: s, ticker: t, dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor(t)) });
   }
-  // Four daily snapshots with controlled paths:
+  // Five daily snapshots with controlled paths:
   //   Steady: ~+3%/day every day        -> ~+9% total, tiny vol
   //   Wild:   +25% / -15% / +20%        -> ~+27% total, enormous vol
   //   Low:    +1.4% total, below the bar
   //   Threshold: exactly +1.5%, included at the bar
-  const days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
-  const paths: Record<string, number[]> = { SXX: [100, 103, 106, 109], VXX: [100, 125, 106, 127], LXX: [1000, 1005, 1010, 1014], TXX: [1000, 1000, 1000, 1015] };
+  const days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"];
+  const paths: Record<string, number[]> = { SXX: [100, 103, 106, 109, 109], VXX: [100, 125, 106, 127, 127], LXX: [1000, 1005, 1010, 1014, 1014], TXX: [1000, 1000, 1000, 1015, 1015] };
   for (let d = 0; d < days.length; d++) {
     setPrice("SXX", paths.SXX[d]!);
     setPrice("VXX", paths.VXX[d]!);
     setPrice("LXX", paths.LXX[d]!);
     setPrice("TXX", paths.TXX[d]!);
-    for (const s of [steady, wild, low, threshold]) await lb.writeSnapshot(await lb.buildSnapshot(s, days[d]!, priceOf));
+    for (const s of [steady, wild, low, threshold]) {
+      const snap = await lb.buildSnapshot(s, days[d]!, priceOf);
+      await lb.writeSnapshot({ ...snap, sectorsHeld: 3, topPositionBp: 3500 });
+    }
   }
 
   const pct = await lb.leaderboardFor("lbclass3", { sort: "percent" });
@@ -355,4 +358,28 @@ test("stable gains: legitimately empty when nobody qualifies", async () => {
   assert.ok(stable.asOfDate, "the board still reports as-of; empty, not broken");
   const pct = await lb.leaderboardFor("lbclass4", { sort: "percent" });
   assert.equal(pct.entries.length, 1, "percent view still shows the student");
+});
+
+test("stable gains excludes thin history, few sectors, and concentrated holdings", async () => {
+  await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+    ["lbclass5", "Balanced Period", "LBST3", new Date().toISOString()]);
+  const cases = [
+    { name: "Balanced", sectorsHeld: 3, topPositionBp: 4000, days: 5, included: true },
+    { name: "FewSectors", sectorsHeld: 2, topPositionBp: 3000, days: 5, included: false },
+    { name: "OneBigStock", sectorsHeld: 3, topPositionBp: 4001, days: 5, included: false },
+    { name: "NewPortfolio", sectorsHeld: 3, topPositionBp: 3000, days: 4, included: false },
+    { name: "UnknownSectors", sectorsHeld: null, topPositionBp: 3000, days: 5, included: false },
+  ];
+  const ids = await Promise.all(cases.map((item) => student("lbclass5", 100_000, item.name)));
+  for (const [index, item] of cases.entries()) {
+    for (let day = 0; day < item.days; day++) {
+      const date = `2026-12-0${day + 1 + (item.days === 4 ? 1 : 0)}`;
+      const snap = await lb.buildSnapshot(ids[index]!, date, priceOf);
+      await lb.writeSnapshot({ ...snap, twrBp: 200, periodReturnBp: day === 0 ? 0 : 40, sectorsHeld: item.sectorsHeld, topPositionBp: item.topPositionBp });
+    }
+  }
+  const stable = await lb.leaderboardFor("lbclass5", { sort: "stable" });
+  assert.deepEqual(stable.entries.map((entry) => entry.name), ["Balanced"]);
+  const all = await lb.leaderboardFor("lbclass5", { sort: "percent" });
+  assert.equal(all.entries.length, cases.length, "percent board still includes every student");
 });

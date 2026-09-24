@@ -158,8 +158,10 @@ export async function buildSnapshot(
     }
     sectorsHeld = sectors.size;
   }
-  const topPositionBp = valueCents > 0 && holdings.length
-    ? Math.round((Math.max(...holdings.map((h) => h.marketCents)) / valueCents) * BP)
+  // Concentration is measured against invested holdings, not idle cash.
+  // Otherwise one speculative stock plus a large cash balance looks balanced.
+  const topPositionBp = holdingsValueCents > 0 && holdings.length
+    ? Math.round((Math.max(...holdings.map((h) => h.marketCents)) / holdingsValueCents) * BP)
     : holdings.length ? 0 : null;
 
   const prev = await one<{ value_cents: number; net_contributed_cents: number; twr_bp: number }>(
@@ -290,7 +292,9 @@ export interface LeaderboardEntry {
 
 /** Stable-gains bar: up at least this much, over at least this many snapshot days. */
 export const STABLE_MIN_RETURN_BP = 150; // +1.50%
-export const STABLE_MIN_DAYS = 3;
+export const STABLE_MIN_DAYS = 5;
+export const STABLE_MIN_SECTORS = 3;
+export const STABLE_MAX_POSITION_BP = 4000; // 40% of invested holdings
 
 /**
  * Population stdev of a daily-return series, in bp. Null below two points —
@@ -308,7 +312,8 @@ export function stdevBp(values: number[]): number | null {
  *
  * `sort: "percent"` (default) — percent return descending, everyone included.
  * `sort: "stable"` — the Stable-gains view: ONLY students at or above the
- * gain bar (1.5%) with enough history to measure, ordered least volatile first.
+ * gain bar (1.5%), five snapshots, three sectors, and no holding above 40%
+ * of invested value. Qualified students are ordered least volatile first.
  * Empty is a valid answer; nobody qualifying is not an error.
  *
  * `since` scopes it to a competition window: the return becomes the change
@@ -388,10 +393,13 @@ export async function leaderboardFor(
   });
 
   if (sort === "stable") {
-    // Stable gains: over the bar AND measured over enough days, steadiest
-    // first. Below the bar or too little history = not on this board at all.
+    // Stable gains rewards positive, measured returns from a diversified
+    // portfolio. Missing sector or concentration data cannot qualify.
     const qualified = entries.filter(
-      (e) => e.returnBp >= stableMinReturnBp && e.days >= stableMinDays && e.volBp != null,
+      (e) => e.returnBp >= stableMinReturnBp && e.days >= stableMinDays
+        && e.sectorsHeld != null && e.sectorsHeld >= STABLE_MIN_SECTORS
+        && e.topPositionBp != null && e.topPositionBp <= STABLE_MAX_POSITION_BP
+        && e.volBp != null,
     );
     qualified.sort((a, b) => (a.volBp! - b.volBp!) || (b.returnBp - a.returnBp) || a.name.localeCompare(b.name));
     return { asOfDate: latest, entries: qualified, sort, stableMinReturnBp };

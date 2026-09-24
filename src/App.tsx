@@ -2030,8 +2030,6 @@ function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
   );
 }
 
-const wordCount = (value: string): number => value.trim().split(/\s+/).filter(Boolean).length;
-
 // Shared chrome for every Class-tab detail page: back link, mono eyebrow with
 // the stable module number, serif title, one-line description. Module 1 (sort)
 // and Module 2 (mission) read as one product because they share this header.
@@ -2048,11 +2046,6 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
       </>}
     </header>
   );
-}
-
-function WordCount({ value, min }: { value: string; min: number }) {
-  const n = wordCount(value);
-  return <span className={`word-count${n >= min ? " met" : ""}`}>{n} / {min} words</span>;
 }
 
 function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
@@ -2238,10 +2231,10 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
         <div className="panel"><p className="hint" style={{ margin: 0 }}>No standings yet. Check back when current prices are available.</p></div>
       )}
       {board?.asOfDate && sort === "stable" && (
-        <p className="hint">Gainers of at least {barPct}% with 3+ days of history, steadiest daily path first. Not everyone makes the bar.</p>
+        <p className="hint">At least +{barPct}% across 5 snapshot days, 3 sectors, and no stock above 40% of invested holdings. Steadiest daily path first.</p>
       )}
       {board?.asOfDate && sort === "stable" && board.entries.length === 0 && (
-        <div className="panel"><p className="hint" style={{ margin: 0 }}>Nobody qualifies yet — nobody is up at least {barPct}% over enough days. That's fine; check back after the next snapshot.</p></div>
+        <div className="panel"><p className="hint" style={{ margin: 0 }}>Nobody meets all the Stable gains criteria yet. Check the return, snapshot days, sectors, and largest position above.</p></div>
       )}
       {board?.asOfDate && board.entries.length > 0 && (
         <div className="table-wrap">
@@ -2250,7 +2243,7 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
               <tr>
                 <th>#</th><th>Student</th><th>Return</th>
                 {sort === "stable" && <th>Volatility</th>}
-                <th>Sectors</th><th>Largest position</th><th>Holdings</th>
+                <th>Sectors</th><th title="Share of invested holdings in the largest stock">Largest position</th><th>Holdings</th>
               </tr>
             </thead>
             <tbody>
@@ -2356,9 +2349,9 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
     problems.push("Choose three different stocks you currently hold.");
   }
   picks.forEach((pick, index) => {
-    if (wordCount(pick.thesis) < t.pickThesisMinWords) problems.push(`Stock ${index + 1} needs at least ${t.pickThesisMinWords} words.`);
+    if (!pick.thesis.trim()) problems.push(`Add a short answer for stock ${index + 1}.`);
   });
-  if (wordCount(reflection) < t.reflectionMinWords) problems.push(`The final reflection needs at least ${t.reflectionMinWords} words.`);
+  if (!reflection.trim()) problems.push("Add a final reflection.");
   const ready = problems.length === 0;
 
   const submit = async () => {
@@ -2485,14 +2478,12 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
                 </div>
                 <textarea rows={3} value={pick.thesis} onChange={(e) => updatePick(index, { thesis: e.target.value })}
                   placeholder="What does this business do, and how does its sector contribute to your portfolio?" />
-                <WordCount value={pick.thesis} min={t.pickThesisMinWords} />
               </div>
             ))}
             <div className="field reflect-field">
               <label>How does your current mix of sectors affect your risk?</label>
               <textarea rows={5} value={reflection} onChange={(e) => setReflection(e.target.value)}
-                placeholder={`Explain how your current stocks spread risk across sectors — at least ${t.reflectionMinWords} words…`} />
-              <WordCount value={reflection} min={t.reflectionMinWords} />
+                placeholder="Explain how your current stocks spread risk across sectors…" />
             </div>
           </>
         )}
@@ -2799,7 +2790,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       const created = await api<any>("/api/teacher/class-posts", { method: "POST", body: JSON.stringify({
         kind: open, classId: scope || null, title, summary, body,
         heroUrl: open === "portfolio_mission" ? "/module-art/balanced-portfolio.svg" : null,
-        spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5, pickThesisMinWords: 12, reflectionMinWords: 40 } : {},
+        spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5 } : {},
       }) });
       setOpen(""); await load(); onModulesChanged(); setNotice(`Draft “${created.title}” created.`);
     } catch (e: any) { setErr(e.message); }
