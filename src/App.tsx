@@ -2091,23 +2091,28 @@ function LeaderboardSection() {
   const [board, setBoard] = useState<any | null>(null);
   const [err, setErr] = useState("");
   const [sort, setSort] = useState<"percent" | "stable">("percent");
+  const [period, setPeriod] = useState<"3" | "4">("3");
   // Server-side ordering is the source of truth for each view.
   useEffect(() => {
     let cancelled = false;
     setBoard(null);
-    api<any>(`/api/class/leaderboard?sort=${sort}`, { cache: "no-store" })
+    api<any>(`/api/class/leaderboard?period=${period}&sort=${sort}`, { cache: "no-store" })
       .then((result) => { if (!cancelled) { setBoard(result); setErr(""); } })
       .catch((e: any) => { if (!cancelled) setErr(e.message); });
     return () => { cancelled = true; };
-  }, [sort]);
+  }, [period, sort]);
   return (
     <div className="leaderboard-section">
       <div className="page-intro">
         <div>
           <div className="eyebrow">Class</div>
           <h2>Leaderboard</h2>
-          <p>See how portfolios in your class are performing.</p>
+          <p>See how portfolios in 3rd and 4th period are performing.</p>
         </div>
+      </div>
+      <div className="pills leaderboard-periods" role="group" aria-label="Choose a period">
+        <button className={`pill${period === "3" ? " active" : ""}`} aria-pressed={period === "3"} onClick={() => setPeriod("3")}>3rd Period</button>
+        <button className={`pill${period === "4" ? " active" : ""}`} aria-pressed={period === "4"} onClick={() => setPeriod("4")}>4th Period</button>
       </div>
       <Leaderboard board={board} err={err} sort={sort} onSort={setSort} />
     </div>

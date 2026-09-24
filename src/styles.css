@@ -626,6 +626,7 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
 
 /* ---- Student leaderboard -------------------------------------------- */
 .class-leaderboard { margin-top: 8px; }
+.leaderboard-periods { margin-bottom: 16px; }
 .leaderboard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .leaderboard-head .small { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
 .leaderboard-table .lb-return { font-family: var(--mono); font-weight: 700; }

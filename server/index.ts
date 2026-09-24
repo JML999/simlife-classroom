@@ -938,17 +938,25 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
   res.json({ ...post, submission, mission });
 });
 
-// ---- Leaderboard: percent-only, own class, never another student's dollars --
+// ---- Leaderboard: percent-only, public class periods, never students' dollars --
 
 app.get("/api/class/leaderboard", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
-  if (!user.class_id) {
+  const period = req.query.period;
+  if (period !== undefined && period !== "3" && period !== "4") {
+    res.status(400).json({ error: "Choose 3rd or 4th period." });
+    return;
+  }
+  const classId = period === "3" ? "class-p3-2026"
+    : period === "4" ? "class-p4-2026"
+    : user.class_id;
+  if (!classId) {
     res.json({ asOfDate: null, sort: "percent", stableMinReturnBp: STABLE_MIN_RETURN_BP, entries: [] });
     return;
   }
   const sort = req.query.sort === "stable" ? "stable" as const : "percent" as const;
-  const board = await leaderboardFor(user.class_id, { sort });
+  const board = await leaderboardFor(classId, { sort });
   // Map explicitly: valueCents and userIds of other students never leave here.
   res.json({
     asOfDate: board.asOfDate,
