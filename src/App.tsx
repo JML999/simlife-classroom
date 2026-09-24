@@ -2199,7 +2199,7 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
   sort: "percent" | "stable"; onSort: (s: "percent" | "stable") => void; refreshing: boolean;
 }) {
   const fmtBp = (bp: number) => `${bp >= 0 ? "+" : "-"}${(Math.abs(bp) / 100).toFixed(2)}%`;
-  const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "6.00";
+  const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "1.50";
   const leaders = (board?.entries ?? []).slice(0, 3);
   return (
     <section className="class-leaderboard" aria-label="Leaderboard">

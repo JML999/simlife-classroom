@@ -289,7 +289,7 @@ export interface LeaderboardEntry {
 }
 
 /** Stable-gains bar: up at least this much, over at least this many snapshot days. */
-export const STABLE_MIN_RETURN_BP = 600; // +6.00%
+export const STABLE_MIN_RETURN_BP = 150; // +1.50%
 export const STABLE_MIN_DAYS = 3;
 
 /**
@@ -308,7 +308,7 @@ export function stdevBp(values: number[]): number | null {
  *
  * `sort: "percent"` (default) — percent return descending, everyone included.
  * `sort: "stable"` — the Stable-gains view: ONLY students at or above the
- * gain bar (6%) with enough history to measure, ordered least volatile first.
+ * gain bar (1.5%) with enough history to measure, ordered least volatile first.
  * Empty is a valid answer; nobody qualifying is not an error.
  *
  * `since` scopes it to a competition window: the return becomes the change

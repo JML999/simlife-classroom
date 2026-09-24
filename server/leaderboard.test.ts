@@ -298,41 +298,44 @@ test("formatBp reads as a percentage", () => {
 // Stable gains sort
 // ---------------------------------------------------------------------------
 
-test("stable gains: only >=6% gainers, steadiest daily path first", async () => {
+test("stable gains: only >=1.5% gainers, steadiest daily path first", async () => {
   await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
     ["lbclass3", "Stable Period", "LBST1", new Date().toISOString()]);
   setPrice("SXX", 100);
   setPrice("VXX", 100);
-  setPrice("LXX", 100);
+  setPrice("LXX", 1000);
+  setPrice("TXX", 1000);
   const steady = await student("lbclass3", 100_000, "SteadyEddie");
   const wild = await student("lbclass3", 100_000, "WildCard");
   const low = await student("lbclass3", 100_000, "SlowLoader");
-  for (const [s, t] of [[steady, "SXX"], [wild, "VXX"], [low, "LXX"]] as const) {
+  const threshold = await student("lbclass3", 100_000, "AtThreshold");
+  for (const [s, t] of [[steady, "SXX"], [wild, "VXX"], [low, "LXX"], [threshold, "TXX"]] as const) {
     await buy({ userId: s, ticker: t, dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor(t)) });
   }
   // Four daily snapshots with controlled paths:
   //   Steady: ~+3%/day every day        -> ~+9% total, tiny vol
   //   Wild:   +25% / -15% / +20%        -> ~+27% total, enormous vol
-  //   Low:    ~+1%/day                  -> ~+3% total, below the 6% bar
+  //   Low:    +1.4% total, below the bar
+  //   Threshold: exactly +1.5%, included at the bar
   const days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
-  const paths: Record<string, number[]> = { SXX: [100, 103, 106, 109], VXX: [100, 125, 106, 127], LXX: [100, 101, 102, 103] };
+  const paths: Record<string, number[]> = { SXX: [100, 103, 106, 109], VXX: [100, 125, 106, 127], LXX: [1000, 1005, 1010, 1014], TXX: [1000, 1000, 1000, 1015] };
   for (let d = 0; d < days.length; d++) {
     setPrice("SXX", paths.SXX[d]!);
     setPrice("VXX", paths.VXX[d]!);
     setPrice("LXX", paths.LXX[d]!);
-    for (const s of [steady, wild, low]) await lb.writeSnapshot(await lb.buildSnapshot(s, days[d]!, priceOf));
+    setPrice("TXX", paths.TXX[d]!);
+    for (const s of [steady, wild, low, threshold]) await lb.writeSnapshot(await lb.buildSnapshot(s, days[d]!, priceOf));
   }
 
   const pct = await lb.leaderboardFor("lbclass3", { sort: "percent" });
-  assert.equal(pct.entries.length, 3, "percent gain shows everyone");
+  assert.equal(pct.entries.length, 4, "percent gain shows everyone");
   assert.equal(pct.entries[0]!.name, "WildCard", "the wild path tops percent");
 
   const stable = await lb.leaderboardFor("lbclass3", { sort: "stable" });
-  assert.equal(stable.entries.length, 2, "SlowLoader is out — under the 6% bar");
-  assert.equal(stable.entries[0]!.name, "SteadyEddie", "least volatile qualifies first");
-  assert.equal(stable.entries[1]!.name, "WildCard");
-  assert.ok(stable.entries[0]!.volBp! < stable.entries[1]!.volBp!, "ordered by volatility ascending");
-  assert.ok(stable.entries.every((e) => e.returnBp >= 600), "nobody below the bar appears");
+  assert.equal(stable.entries.length, 3, "SlowLoader is out — under the 1.5% bar");
+  assert.ok(stable.entries.some((e) => e.name === "AtThreshold" && e.returnBp === 150), "exactly 1.5% qualifies");
+  assert.ok(stable.entries.every((e) => e.returnBp >= 150), "nobody below the bar appears");
+  assert.ok(stable.entries.every((e, i) => i === 0 || stable.entries[i - 1]!.volBp! <= e.volBp!), "ordered by volatility ascending");
 });
 
 test("stable gains: legitimately empty when nobody qualifies", async () => {
@@ -342,7 +345,7 @@ test("stable gains: legitimately empty when nobody qualifies", async () => {
   const dull = await student("lbclass4", 100_000, "DullButSteady");
   await buy({ userId: dull, ticker: "QXX", dollarsCents: 100_000, idempotencyKey: uid(), tradingFrozen: false, ...(await quoteFor("QXX")) });
   const days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
-  const prices = [100, 101, 102, 103]; // ~+3% total — steady, but under 6%
+  const prices = [100, 100, 100, 101]; // +1% total — steady, but under 1.5%
   for (let d = 0; d < days.length; d++) {
     setPrice("QXX", prices[d]!);
     await lb.writeSnapshot(await lb.buildSnapshot(dull, days[d]!, priceOf));
