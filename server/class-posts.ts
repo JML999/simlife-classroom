@@ -121,8 +121,8 @@ export async function setClassPostStatus(id: string, status: "draft" | "publishe
 export async function portfolioMissionState(post: ClassPost, userId: string): Promise<any> {
   if (post.kind !== "portfolio_mission") throw new ClassPostError("INVALID_INPUT", "This post is not a portfolio mission.");
   const { holdings } = await holdingsFor(userId, () => null);
-  const companies = holdings
-    .map((holding) => ({ ...holding, meta: tickerMeta(holding.ticker) }))
+  const classified = holdings.map((holding) => ({ ...holding, meta: tickerMeta(holding.ticker) }));
+  const companies = classified
     .filter((holding) => holding.meta?.kind === "STOCK")
     .map((holding) => ({
       ticker: holding.ticker,
@@ -130,6 +130,9 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
       sector: holding.meta.sector || "Unknown",
       subIndustry: holding.meta.subIndustry || "",
     }));
+  const uncounted = classified
+    .filter((holding) => holding.meta?.kind !== "STOCK")
+    .map((holding) => ({ ticker: holding.ticker, reason: holding.meta?.kind === "ETF" ? "ETF" : "Sector data unavailable" }));
   const sectors = [...new Set(companies.map((holding) => holding.sector).filter((sector) => sector !== "Unknown"))];
   const spec = {
     minCompanies: post.spec.minCompanies ?? DEFAULT_MISSION_SPEC.minCompanies,
@@ -140,7 +143,7 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
     sectors: sectors.length >= spec.minSectors,
   };
   return {
-    companies, sectors,
+    companies, sectors, uncounted,
     counts: { companies: companies.length, sectors: sectors.length },
     targets: spec, checks, met: Object.values(checks).every(Boolean),
   };

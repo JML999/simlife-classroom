@@ -148,6 +148,24 @@ test("mission explains the five-company four-sector portfolio shown by the stude
   assert.deepEqual(state.checks, { companies: false, sectors: false });
 });
 
+test("mission counts Wingstop and explains excluded holdings after a sale", async () => {
+  const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
+  const now = new Date().toISOString();
+  await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES ('post-wing-scenario', 'Wing scenario', 'student', 'post-class', ?)`, [now]);
+  await db.run(`INSERT INTO accounts (id, user_id, cash_cents, created_at) VALUES ('post-wing-account', 'post-wing-scenario', 0, ?)`, [now]);
+  for (const [index, ticker] of ["TSLA", "CEG", "META", "WING", "ADDYY", "MSFT", "MCD", "VOO", "ZZZZ"].entries()) {
+    await db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+      VALUES (?, 'post-wing-account', 'buy', -1000, ?, 1000000, 1000, ?, ?)`, [`wing-buy-${index}`, ticker, `wing-buy-key-${index}`, now]);
+  }
+  await db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+    VALUES ('wing-sell-mcd', 'post-wing-account', 'sell', 1000, 'MCD', -1000000, 1000, 'wing-sell-key', ?)`, [now]);
+  const state = await posts.portfolioMissionState(mission, "post-wing-scenario");
+  assert.deepEqual(state.counts, { companies: 6, sectors: 4 });
+  assert.ok(state.companies.some((company: any) => company.ticker === "WING" && company.sector === "Consumer Discretionary"));
+  assert.ok(!state.companies.some((company: any) => company.ticker === "MCD"));
+  assert.deepEqual(state.uncounted.map((holding: any) => holding.ticker).sort(), ["VOO", "ZZZZ"]);
+});
+
 test("teacher progress ignores the removed historical goal in older submissions", async () => {
   const { studentModuleDetail } = await import("./module-progress.js");
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;

@@ -2393,6 +2393,9 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
               ))}
             </div>
           ) : <p className="small">No individual company stocks held yet.</p>}
+          {mission.uncounted?.length > 0 && (
+            <p className="small mission-uncounted">Also held but not counted: {mission.uncounted.map((holding: any) => `${holding.ticker} (${holding.reason})`).join(", ")}. Ask your teacher if a stock needs sector data.</p>
+          )}
         </div>
       </section>
 

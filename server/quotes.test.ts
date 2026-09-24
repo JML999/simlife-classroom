@@ -81,6 +81,17 @@ test("Chime is searchable and classified as a Financials stock", async () => {
   assert.ok((await new MockQuoteProvider().getQuote("CHYM")).priceCents > 0);
 });
 
+test("currently held out-of-index stocks have searchable sector classifications", async () => {
+  const { searchDirectory } = await import("./quotes.js");
+  const fs = await import("node:fs");
+  const directory = JSON.parse(fs.readFileSync(new URL("./ticker-directory.json", import.meta.url), "utf8"));
+  for (const [ticker, sector] of [["WING", "Consumer Discretionary"], ["GEG", "Financials"]]) {
+    assert.ok(searchDirectory(ticker).some((result) => result.ticker === ticker));
+    assert.equal(directory.meta[ticker].kind, "STOCK");
+    assert.equal(directory.meta[ticker].sector, sector);
+  }
+});
+
 test("finnhub adapter parses live quotes and handles gaps", async () => {
   const { FinnhubQuoteProvider } = await import("./quotes.js");
   const originalFetch = globalThis.fetch;
