@@ -52,6 +52,7 @@ For next week's class, publish only after reviewing the lesson and confirming th
 
 - TypeScript type check and production build pass.
 - The full automated suite passes, including tests for broad vs. narrow ETF holdings, submission evidence, draft visibility, and search metadata.
+- On September 27, 2026, the configured Finnhub provider returned positive delayed quotes for all 14 broad stock and bond ETFs in the catalog (SPY, VOO, VTI, SCHX, SCHA, IWM, DIA, SCHF, VEA, VWO, VXUS, BND, AGG, BNDX). Future quote availability still depends on the provider.
 - The 12 slide deck passes PPTX package, layout, font, and import validation. Every slide was rendered and visually reviewed.
 
 Sources for lesson content: [SEC ETF bulletin](https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-24), [SEC ETF characteristics](https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/characteristics-mutual-funds-exchange-traded-funds), [SEC diversification guidance](https://www.investor.gov/introduction-investing/getting-started/asset-allocation), and [SEC fund fee guidance](https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins/mutual-fund-and-etf-fees-and-expenses-investor-bulletin).
