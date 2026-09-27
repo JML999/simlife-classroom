@@ -12,7 +12,7 @@ import { ROOT } from "./env.js";
 import { holdingsFor } from "./ledger.js";
 import { newId, nowIso, one, q, run } from "./db.js";
 
-export type ClassPostKind = "announcement" | "portfolio_mission";
+export type ClassPostKind = "announcement" | "portfolio_mission" | "etf_mission";
 
 export class ClassPostError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "NOT_READY";
@@ -76,8 +76,8 @@ export async function createClassPost(opts: {
   kind: string; classId?: string | null; title: string; summary?: string; body?: string;
   spec?: unknown; heroUrl?: string | null; createdBy?: string | null;
 }): Promise<ClassPost> {
-  if (opts.kind !== "announcement" && opts.kind !== "portfolio_mission") {
-    throw new ClassPostError("INVALID_INPUT", "Choose announcement or portfolio mission.");
+  if (opts.kind !== "announcement" && opts.kind !== "portfolio_mission" && opts.kind !== "etf_mission") {
+    throw new ClassPostError("INVALID_INPUT", "Choose announcement, portfolio mission, or ETF mission.");
   }
   const title = String(opts.title || "").trim();
   const summary = String(opts.summary || "").trim();
@@ -147,6 +147,45 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
     counts: { companies: companies.length, sectors: sectors.length },
     targets: spec, checks, met: Object.values(checks).every(Boolean),
   };
+}
+
+/** A broad fund is evidence of diversification; sector and single-asset ETFs are not. */
+export async function etfMissionState(post: ClassPost, userId: string): Promise<any> {
+  if (post.kind !== "etf_mission") throw new ClassPostError("INVALID_INPUT", "This post is not an ETF mission.");
+  const { holdings } = await holdingsFor(userId, () => null);
+  const etfs = holdings.flatMap((holding) => {
+    const meta = tickerMeta(holding.ticker);
+    return meta?.kind === "ETF" ? [{ ticker: holding.ticker, shares: holding.shares, assetClass: meta.assetClass, region: meta.region, breadth: meta.breadth, what: meta.what || "" }] : [];
+  });
+  const broadEtfs = etfs.filter((fund) => fund.breadth === "BROAD" && ["EQUITY", "BOND"].includes(fund.assetClass));
+  return { etfs, broadEtfs, checks: { broadEtf: broadEtfs.length > 0 }, met: broadEtfs.length > 0 };
+}
+
+export async function submitEtfMission(opts: {
+  post: ClassPost; userId: string; response: any; idempotencyKey?: string;
+}): Promise<any> {
+  if (opts.post.kind !== "etf_mission" || opts.post.status !== "published") throw new ClassPostError("NOT_FOUND", "ETF mission not found.");
+  if (opts.idempotencyKey) {
+    const existing = await one<any>(`SELECT created_at FROM class_post_submissions WHERE idempotency_key = ? AND post_id = ? AND user_id = ?`, [opts.idempotencyKey, opts.post.id, opts.userId]);
+    if (existing) return { submittedAt: existing.created_at, deduped: true };
+  }
+  const state = await etfMissionState(opts.post, opts.userId);
+  if (!state.met) throw new ClassPostError("NOT_READY", "Hold a broad stock or bond ETF before submitting.");
+  const chosenTicker = String(opts.response?.chosenTicker || "").trim().toUpperCase();
+  const alternatives = Array.isArray(opts.response?.alternatives) ? opts.response.alternatives.map((value: any) => String(value || "").trim().toUpperCase()) : [];
+  if (!state.broadEtfs.some((fund: any) => fund.ticker === chosenTicker)) throw new ClassPostError("INVALID_INPUT", "Choose a broad ETF you currently hold.");
+  if (alternatives.length !== 1 || !alternatives[0] || alternatives[0] === chosenTicker || tickerMeta(alternatives[0])?.kind !== "ETF") {
+    throw new ClassPostError("INVALID_INPUT", "Compare your holding with one different ETF from the catalog.");
+  }
+  const gap = String(opts.response?.gap || "").trim();
+  const comparison = String(opts.response?.comparison || "").trim();
+  const impact = String(opts.response?.impact || "").trim();
+  if (!gap || !comparison || !impact) throw new ClassPostError("INVALID_INPUT", "Explain your portfolio gap, ETF comparison, and expected impact.");
+  const submittedAt = nowIso();
+  await run(`INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`, [newId("csub"), opts.post.id, opts.userId,
+    JSON.stringify({ chosenTicker, alternatives, gap, comparison, impact }), JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt]);
+  return { submittedAt, deduped: false };
 }
 
 export async function latestClassPostSubmission(postId: string, userId: string): Promise<any | null> {

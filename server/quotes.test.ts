@@ -29,6 +29,9 @@ test("directory search finds S&P 500 names beyond the classroom list", async () 
   // Classroom picks rank first.
   const voo = searchDirectory("VOO");
   assert.equal(voo[0].ticker, "VOO");
+  assert.equal(voo[0].kind, "ETF");
+  assert.equal(voo[0].breadth, "BROAD");
+  assert.equal(searchDirectory("XLK")[0].breadth, "SECTOR");
   // Both providers share the directory.
   const stooq = await new (await import("./quotes.js")).StooqQuoteProvider().search("Procter");
   assert.ok(stooq.some((s) => s.ticker === "PG"));

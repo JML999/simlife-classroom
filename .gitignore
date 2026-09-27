@@ -1,5 +1,6 @@
 node_modules/
 dist/
+docs/module3-etfs/.deck-build/
 data/*.db*
 *.local
 .env

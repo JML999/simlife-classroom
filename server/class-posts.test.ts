@@ -177,3 +177,26 @@ test("teacher progress ignores the removed historical goal in older submissions"
   assert.equal(detail.partsTotal, 2);
   assert.deepEqual(detail.detail?.checks, { companies: true, sectors: true });
 });
+
+test("ETF mission counts broad current holdings and rejects narrow funds", async () => {
+  const student = "etf-student";
+  const now = new Date().toISOString();
+  await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES (?, 'ETF Student', 'student', 'post-class', ?)`, [student, now]);
+  await db.run(`INSERT INTO accounts (id, user_id, cash_cents, created_at) VALUES ('etf-account', ?, 0, ?)`, [student, now]);
+  const post = await posts.createClassPost({ kind: "etf_mission", title: "Choose an ETF", body: "Compare funds and explain the choice." });
+  assert.equal(post.status, "draft");
+  assert.equal((await posts.listClassPosts({ classId: "post-class", publishedOnly: true })).some((p) => p.id === post.id), false);
+  await posts.setClassPostStatus(post.id, "published"); post.status = "published";
+  const add = async (ticker: string) => db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+    VALUES (?, 'etf-account', 'buy', -1000, ?, 1000000, 1000, ?, ?)`, [`etf-buy-${ticker}`, ticker, `etf-key-${ticker}`, now]);
+  await add("XLK");
+  assert.equal((await posts.etfMissionState(post, student)).met, false);
+  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { chosenTicker: "XLK", alternatives: ["VTI"], gap: "Too much tech", comparison: "VTI is broader", impact: "Less concentrated" } }), /Hold a broad/);
+  await add("VXUS");
+  const state = await posts.etfMissionState(post, student);
+  assert.deepEqual(state.broadEtfs.map((f: any) => f.ticker), ["VXUS"]);
+  const response = { chosenTicker: "VXUS", alternatives: ["VTI"], gap: "Only U.S. stocks", comparison: "VXUS owns non-U.S. stocks while VTI owns U.S. stocks. I checked costs and overlap.", impact: "More geographic spread, but stock market risk remains." };
+  await posts.submitEtfMission({ post, userId: student, response });
+  assert.equal((await posts.latestClassPostSubmission(post.id, student))?.evidence.met, true);
+  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, alternatives: ["VXUS"] } }), /one different ETF/);
+});

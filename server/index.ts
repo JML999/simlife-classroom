@@ -37,7 +37,7 @@ import {
 } from "./sorting.js";
 import {
   createClassPost, getClassPost, listClassPosts, setClassPostStatus,
-  portfolioMissionState, latestClassPostSubmission, submitPortfolioMission, ClassPostError,
+  portfolioMissionState, etfMissionState, latestClassPostSubmission, submitPortfolioMission, submitEtfMission, ClassPostError,
 } from "./class-posts.js";
 import {
   classModuleCatalog, classModuleKey, hiddenClassModuleKeys, replaceHiddenClassModules,
@@ -953,10 +953,10 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
   const moduleNumbers = new Map(catalog.map((item) => [item.key, item.moduleNumber]));
   const out = [];
   for (const post of posts) {
-    const key = post.kind === "portfolio_mission" ? classModuleKey("post", post.id) : null;
+    const key = post.kind !== "announcement" ? classModuleKey("post", post.id) : null;
     if (key && hidden.has(key)) continue;
-    const submission = post.kind === "portfolio_mission" ? await latestClassPostSubmission(post.id, user.id) : null;
-    const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : null;
+    const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
+    const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
     out.push({ ...post, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
   }
   res.json({ posts: out });
@@ -970,8 +970,8 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
   if (!post || post.status !== "published" || (post.classId && post.classId !== user.class_id)) {
     res.status(404).json({ error: "Class post not found." }); return;
   }
-  const submission = post.kind === "portfolio_mission" ? await latestClassPostSubmission(post.id, user.id) : null;
-  const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : null;
+  const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
+  const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
   res.json({ ...post, submission, mission });
 });
 
@@ -1020,7 +1020,7 @@ app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {
   const post = await getClassPost(String(req.params.id));
   if (!post || (post.classId && post.classId !== user.class_id)) { res.status(404).json({ error: "Mission not found." }); return; }
   try {
-    res.json(await submitPortfolioMission({
+    res.json(await (post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
       post, userId: user.id, response: req.body?.response,
       idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
     }));

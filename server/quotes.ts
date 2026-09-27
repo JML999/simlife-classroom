@@ -19,6 +19,11 @@ export interface Quote {
 export interface SecurityInfo {
   ticker: string;
   name: string;
+  kind?: string;
+  assetClass?: string;
+  region?: string;
+  breadth?: string;
+  what?: string;
 }
 
 export class QuoteError extends Error {
@@ -51,14 +56,14 @@ import { fileURLToPath } from "node:url";
  * never shipped to the browser. Falls back to the classroom list if the
  * generated file is missing.
  */
-interface DirectoryRow { ticker: string; name: string; kind: string }
+interface DirectoryRow extends SecurityInfo { kind: string }
 let directoryCache: DirectoryRow[] | null = null;
 export function loadDirectory(): DirectoryRow[] {
   if (directoryCache) return directoryCache;
   try {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const raw = JSON.parse(fs.readFileSync(path.join(dir, "ticker-directory.json"), "utf8"));
-    directoryCache = (raw.rows as string[][]).map(([ticker, name, kind]) => ({ ticker, name, kind }));
+    directoryCache = (raw.rows as string[][]).map(([ticker, name, kind]) => ({ ticker, name, kind, ...(kind === "ETF" ? raw.meta?.[ticker] ?? {} : {}) }));
   } catch {
     directoryCache = SECURITY_DIRECTORY.map((s) => ({ ...s, kind: "STOCK" }));
   }
@@ -83,7 +88,7 @@ export function searchDirectory(q: string, limit = 8): SecurityInfo[] {
     .filter((x) => x.k >= 0)
     .sort((a, b) => a.k - b.k || (a.r.ticker < b.r.ticker ? -1 : 1))
     .slice(0, limit)
-    .map((x) => ({ ticker: x.r.ticker, name: x.r.name }));
+    .map((x) => ({ ...x.r }));
 }
 
 /** Curated classroom directory: widely-held U.S. stocks + index ETFs. */

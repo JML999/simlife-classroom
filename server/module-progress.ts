@@ -21,7 +21,7 @@
 import { q, one } from "./db.js";
 import { classModuleCatalog, hiddenClassModuleKeys } from "./class-modules.js";
 import { getActivity, attemptsFor, draftFor, answerKeyFor } from "./sorting.js";
-import { getClassPost, portfolioMissionState, latestClassPostSubmission } from "./class-posts.js";
+import { getClassPost, portfolioMissionState, etfMissionState, latestClassPostSubmission } from "./class-posts.js";
 
 export type ModuleStatus = "not_started" | "in_progress" | "submitted";
 
@@ -104,8 +104,8 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     if (!post) continue;
     for (const s of students) {
       if (submittedPosts[s.id]?.has(post.id)) continue;
-      const state = await portfolioMissionState(post, s.id);
-      if (state.counts.companies > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+      const state = post.kind === "etf_mission" ? await etfMissionState(post, s.id) : await portfolioMissionState(post, s.id);
+      if (post.kind === "etf_mission" ? state.etfs.length > 0 : state.counts.companies > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
     }
   }
 
@@ -200,6 +200,18 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       const post = await getClassPost(mod.id);
       if (!post) continue;
       const submission = await latestClassPostSubmission(post.id, userId);
+      if (post.kind === "etf_mission") {
+        const state = await etfMissionState(post, userId);
+        const saved = submission?.evidence ?? state;
+        out.push({
+          key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, title: mod.title,
+          status: submission ? "submitted" : state.etfs.length ? "in_progress" : "not_started",
+          partsDone: saved.checks?.broadEtf ? 1 : 0, partsTotal: 1, partsLabel: "goals",
+          detail: { missionKind: "etf_mission", submittedAt: submission?.createdAt ?? null,
+            heldEtfs: saved.etfs, broadEtfs: saved.broadEtfs, liveEtfs: state.etfs, response: submission?.response ?? null },
+        });
+        continue;
+      }
       const state = await portfolioMissionState(post, userId);
       const evidence = submission?.evidence ?? null;
       const response = submission?.response ?? null;

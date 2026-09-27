@@ -17,7 +17,8 @@
     "seed:fourth": "tsx server/seed-fourth-period.ts",
     "snapshot": "tsx scripts/snapshot-today.ts",
     "seed:sort": "tsx server/seed-sector-sort.ts",
-    "seed:mission": "tsx server/seed-portfolio-mission.ts"
+    "seed:mission": "tsx server/seed-portfolio-mission.ts",
+    "seed:etf": "node --import tsx server/seed-etf-mission.ts"
   },
   "engines": {
     "node": ">=22"

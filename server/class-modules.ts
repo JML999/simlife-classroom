@@ -19,8 +19,8 @@ export async function classModuleCatalog(classId: string | null): Promise<ClassM
     ? await q<any>(`SELECT id, title, created_at FROM sort_activities WHERE status = 'published' AND (class_id = ? OR class_id IS NULL)`, [classId])
     : await q<any>(`SELECT id, title, created_at FROM sort_activities WHERE status = 'published' AND class_id IS NULL`);
   const postRows = classId
-    ? await q<any>(`SELECT id, title, created_at FROM class_posts WHERE status = 'published' AND kind = 'portfolio_mission' AND (class_id = ? OR class_id IS NULL)`, [classId])
-    : await q<any>(`SELECT id, title, created_at FROM class_posts WHERE status = 'published' AND kind = 'portfolio_mission' AND class_id IS NULL`);
+    ? await q<any>(`SELECT id, title, created_at FROM class_posts WHERE status = 'published' AND kind IN ('portfolio_mission', 'etf_mission') AND (class_id = ? OR class_id IS NULL)`, [classId])
+    : await q<any>(`SELECT id, title, created_at FROM class_posts WHERE status = 'published' AND kind IN ('portfolio_mission', 'etf_mission') AND class_id IS NULL`);
   return [
     ...sortRows.map((row) => ({ key: classModuleKey("sort", row.id), kind: "sort" as const, id: row.id, title: row.title, createdAt: row.created_at })),
     ...postRows.map((row) => ({ key: classModuleKey("post", row.id), kind: "post" as const, id: row.id, title: row.title, createdAt: row.created_at })),

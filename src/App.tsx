@@ -187,6 +187,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
   const searchRequest = useRef(0);
   const [quote, setQuote] = useState<any>(null);
   const [quoteName, setQuoteName] = useState("");
+  const [fundInfo, setFundInfo] = useState<any>(null);
   const [buyDollars, setBuyDollars] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [sellQty, setSellQty] = useState("");
@@ -218,23 +219,26 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
     return () => window.clearInterval(timer);
   }, [refreshSession]);
 
-  const lookup = async (sym: string, name = "") => {
+  const lookup = async (sym: string, name = "", info: any = null) => {
     setErr(""); setNotice(""); setReviewing(false);
     ++searchRequest.current;
     setSearching(false);
     setSearchResults([]);
     setLookingUp(true);
     try {
-      const r = await api<{ quote: any }>(`/api/quotes?symbol=${encodeURIComponent(sym)}`);
-      setQuote(r.quote); setQuoteName(name); setSearchResults([]);
-    } catch (e: any) { setErr(e.message); setQuote(null); setQuoteName(""); }
+      const [r, found] = await Promise.all([
+        api<{ quote: any }>(`/api/quotes?symbol=${encodeURIComponent(sym)}`),
+        info ? Promise.resolve(info) : api<{ results: any[] }>(`/api/search?q=${encodeURIComponent(sym)}`).then((result) => result.results.find((item) => item.ticker === sym.toUpperCase()) || null),
+      ]);
+      setQuote(r.quote); setQuoteName(name || found?.name || ""); setFundInfo(found?.kind === "ETF" ? found : null); setSearchResults([]);
+    } catch (e: any) { setErr(e.message); setQuote(null); setQuoteName(""); setFundInfo(null); }
     finally { setLookingUp(false); }
   };
 
   const doSearch = async (v: string) => {
     const request = ++searchRequest.current;
     setSymbol(v);
-    setSearchResults([]); setQuote(null); setQuoteName("");
+    setSearchResults([]); setQuote(null); setQuoteName(""); setFundInfo(null);
     if (v.trim().length < 1) { setSearching(false); return; }
     setSearching(true);
     try {
@@ -331,16 +335,16 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       <div className="panel buy-stock-panel">
-        <div className="panel-heading"><div><div className="eyebrow">Investing</div><h2>Buy a stock</h2><p className="hint">Search a stock to buy. Dollars only — we calculate the shares for you. Fractional shares allowed. Prices are delayed and for class only.</p></div>{pf && <span className="portfolio-count">{money(pf.cashCents)} available</span>}</div>
-        <div className="field buy-search"><label htmlFor="buy-search">Search stocks</label><input id="buy-search" type="search" value={symbol} onChange={(e) => doSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && symbol.trim()) lookup(symbol.trim()); }} placeholder="Try AAPL, KO, or VOO…" autoComplete="off" /></div>
+        <div className="panel-heading"><div><div className="eyebrow">Investing</div><h2>Buy a stock or ETF</h2><p className="hint">Search by company, fund name, or ticker. Dollars only — we calculate the shares for you. Fractional shares allowed. Prices are delayed and for class only.</p></div>{pf && <span className="portfolio-count">{money(pf.cashCents)} available</span>}</div>
+        <div className="field buy-search"><label htmlFor="buy-search">Search stocks and ETFs</label><input id="buy-search" type="search" value={symbol} onChange={(e) => doSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && symbol.trim()) lookup(symbol.trim()); }} placeholder="Try AAPL, VTI, VXUS, or BND…" autoComplete="off" /></div>
         {searchResults.length > 0 && (
-          <div className="buy-results" role="listbox" aria-label="Matching stocks">
+          <div className="buy-results" role="listbox" aria-label="Matching stocks and ETFs">
             {searchResults.map((s) => (
-              <button key={s.ticker} role="option" aria-selected={false} className="buy-result" onClick={() => { setSymbol(s.ticker); lookup(s.ticker, s.name); }}><strong>{s.ticker}</strong><span>{s.name}</span></button>
+              <button key={s.ticker} role="option" aria-selected={false} className="buy-result" onClick={() => { setSymbol(s.ticker); lookup(s.ticker, s.name, s); }}><strong>{s.ticker}</strong><span>{s.name} · {s.kind === "ETF" ? "ETF" : "Stock"}</span></button>
             ))}
           </div>
         )}
-        {searching && <div className="buy-results" role="status" aria-label="Searching stocks"><div className="buy-result"><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-line" /></div><div className="buy-result"><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-line" /></div></div>}
+        {searching && <div className="buy-results" role="status" aria-label="Searching investments"><div className="buy-result"><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-line" /></div><div className="buy-result"><Skeleton className="skeleton-line short" /><Skeleton className="skeleton-line" /></div></div>}
         {lookingUp && <LoadingState label="Looking up current price" kind="panel" />}
         {!quote && !lookingUp && searchResults.length === 0 && (
           <div className="row" style={{ marginTop: 8 }}>
@@ -358,7 +362,8 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
           const chgPct = prev ? (chg! / prev) * 100 : null;
           return (
             <div className="buy-quote">
-              <div className="buy-quote-head"><div><strong className="ticker">{quote.ticker}</strong>{quoteName && <span className="small"> — {quoteName}</span>}<div className="buy-price">{money(quote.priceCents)}{chg != null && <span className={chg >= 0 ? "up" : "down"}> {chg >= 0 ? "+" : ""}{money(chg)} ({chgPct! >= 0 ? "+" : ""}{chgPct!.toFixed(2)}%) today</span>}</div></div><button className="ghost" onClick={() => { setQuote(null); setQuoteName(""); setBuyDollars(""); setReviewing(false); }}>New search</button></div>
+              <div className="buy-quote-head"><div><strong className="ticker">{quote.ticker}</strong>{quoteName && <span className="small"> — {quoteName}</span>}<div className="buy-price">{money(quote.priceCents)}{chg != null && <span className={chg >= 0 ? "up" : "down"}> {chg >= 0 ? "+" : ""}{money(chg)} ({chgPct! >= 0 ? "+" : ""}{chgPct!.toFixed(2)}%) today</span>}</div></div><button className="ghost" onClick={() => { setQuote(null); setQuoteName(""); setFundInfo(null); setBuyDollars(""); setReviewing(false); }}>New search</button></div>
+              {fundInfo && <p className="small"><strong>ETF · {fundInfo.breadth === "BROAD" ? "Broad" : fundInfo.breadth?.toLowerCase().replace("_", " ")}</strong> · {fundInfo.what} Check the fund issuer’s current holdings and expense ratio before buying.</p>}
               <p className="small">Delayed · {quote.source} · {new Date(quote.asOf).toLocaleString()}{quote.openCents != null || quote.highCents != null || quote.lowCents != null || prev != null ? <> · {prev != null ? <>Prev close {money(prev)}</> : null}{quote.openCents != null ? <> · Open {money(quote.openCents)}</> : null}{quote.highCents != null ? <> · High {money(quote.highCents)}</> : null}{quote.lowCents != null ? <> · Low {money(quote.lowCents)}</> : null}</> : null}</p>
               <div className="row">
                 <div className="field grow"><label htmlFor="buy-dollars">Dollars to invest</label><input id="buy-dollars" value={buyDollars} onChange={(e) => { setBuyDollars(e.target.value); setReviewing(false); }} placeholder="25.00" inputMode="decimal" autoFocus /></div>
@@ -903,6 +908,10 @@ function TeacherSortDetail({ mod }: { mod: any }) {
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
+  if (d.missionKind === "etf_mission") return <div className="module-submission">
+    <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · Broad ETFs held: {(d.broadEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
+    {d.response && <><p><strong>Portfolio need:</strong> {d.response.gap}</p><p><strong>Compared:</strong> {d.response.chosenTicker} with {d.response.alternatives?.join(", ")} — {d.response.comparison}</p><p><strong>Expected effect:</strong> {d.response.impact}</p></>}
+  </div>;
   const t = d.targets;
   const goals = [
     { done: d.checks?.companies, label: `Hold ${t.minCompanies} companies`, note: `${d.counts.companies} of ${t.minCompanies} held` },
@@ -2068,7 +2077,7 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
 function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
   const [posts, setPosts] = useState<any[] | null>(null);
-  const [open, setOpen] = useState<{ kind: "sort" | "mission"; id: string; moduleNumber?: number } | null>(null);
+  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf"; id: string; moduleNumber?: number } | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -2085,11 +2094,14 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const close = useCallback(() => { setOpen(null); void load(); }, [load]);
   if (open?.kind === "sort") return <SortActivity id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
   if (open?.kind === "mission") return <PortfolioMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
+  if (open?.kind === "etf") return <EtfMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
 
   const announcements = posts?.filter((post) => post.kind === "announcement") ?? [];
   const missions = posts?.filter((post) => post.kind === "portfolio_mission") ?? [];
+  const etfMissions = posts?.filter((post) => post.kind === "etf_mission") ?? [];
   const modules = [
     ...missions.map((post) => ({ kind: "mission" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
+    ...etfMissions.map((post) => ({ kind: "etf" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...(activities ?? []).map((activity) => ({ kind: "sort" as const, moduleNumber: activity.moduleNumber, createdAt: activity.createdAt, data: activity })),
   ].sort((a, b) => Number(a.moduleNumber || 999) - Number(b.moduleNumber || 999) || String(a.createdAt).localeCompare(String(b.createdAt)));
   const empty = activities?.length === 0 && posts?.length === 0;
@@ -2114,7 +2126,16 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       )}
       {modules.length > 0 && <div className="section-kicker">Assignments and practice</div>}
       <div className="module-grid">
-        {modules.map((module) => module.kind === "mission" ? (() => { const post = module.data; const m = post.mission;
+        {modules.map((module) => module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
+          const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.etfs.length ? "In progress" : "Not started";
+          return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "etf", id: post.id, moduleNumber: post.moduleNumber })}>
+            <ModuleCover moduleNumber={post.moduleNumber} kindLabel="ETF mission" submitted={!!post.submittedAt} art="portfolio" />
+            <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p>
+              <div className="module-progress-line"><span>{m.broadEtfs.length} broad ETFs held</span><span>{m.etfs.length} ETFs total</span></div>
+              <span className={status === "Submitted" ? "badge-paid" : status === "Ready to submit" ? "badge-ready" : "badge-due"}>{status}</span>
+            </div>
+          </button>;
+        })() : module.kind === "mission" ? (() => { const post = module.data; const m = post.mission;
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.counts.companies === 0 ? "Not started" : "In progress";
           return (
           <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "mission", id: post.id, moduleNumber: post.moduleNumber })}>
@@ -2522,6 +2543,78 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   );
 }
 
+function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
+  id: string; moduleNumber?: number; onBack: () => void; onOpenInvesting: () => void;
+}) {
+  const [post, setPost] = useState<any>(null);
+  const [chosenTicker, setChosenTicker] = useState("");
+  const [alternative, setAlternative] = useState("");
+  const [gap, setGap] = useState("");
+  const [comparison, setComparison] = useState("");
+  const [impact, setImpact] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [err, setErr] = useState("");
+  const key = useRef(uid());
+  const hydrated = useRef(false);
+  const load = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true);
+    try {
+      const result = await api<any>(`/api/class/posts/${id}`, { cache: "no-store" });
+      setPost(result);
+      if (!hydrated.current && result.submission?.response) {
+        const r = result.submission.response;
+        setChosenTicker(r.chosenTicker || ""); setAlternative(r.alternatives?.[0] || "");
+        setGap(r.gap || ""); setComparison(r.comparison || ""); setImpact(r.impact || "");
+      }
+      hydrated.current = true;
+    } catch (e: any) { setErr(e.message); }
+    finally { setRefreshing(false); }
+  }, [id]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const onFocus = () => { void load(true); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
+  if (!post) return <div className="class-section"><ModuleHead kind="ETF mission" onBack={onBack} />{err ? <div className="error" role="alert">{err}</div> : <LoadingState label="Loading ETF mission" kind="detail" />}</div>;
+  const mission = post.mission;
+  const ready = mission.met && chosenTicker && mission.broadEtfs.some((fund: any) => fund.ticker === chosenTicker)
+    && alternative.trim() && alternative.trim().toUpperCase() !== chosenTicker && gap.trim() && comparison.trim() && impact.trim();
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true); setErr("");
+    try {
+      await api(`/api/class/posts/${id}/submit`, { method: "POST", body: JSON.stringify({
+        response: { chosenTicker, alternatives: [alternative.trim().toUpperCase()], gap, comparison, impact }, idempotencyKey: key.current,
+      }) });
+      key.current = uid(); hydrated.current = false; await load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  return <div className="class-section module-page">
+    <ModuleHead moduleNumber={moduleNumber} kind="ETF mission" title={post.title} detail={post.summary} onBack={onBack} />
+    {err && <div className="error" role="alert">{err}</div>}
+    {post.submission && <div className="notice" role="status"><strong>Submitted ✓ · {new Date(post.submission.createdAt).toLocaleString()}</strong> Your teacher can review your ETF choice and your portfolio explanation.</div>}
+    <section className="panel"><div className="section-kicker">The assignment</div><p className="mission-brief-body">{post.body}</p>
+      <p className="hint">A fund can hold many securities and still be narrow. Sector, thematic, and single asset ETFs do not meet this mission’s broad fund goal.</p>
+    </section>
+    <section className="panel goals-card" aria-label="ETF evidence"><div className="panel-heading"><div><h3>Where you stand</h3><p className="hint">Checked against the ETFs you hold now. Trades update after Refresh.</p></div><div className="goals-score"><strong>{mission.broadEtfs.length}</strong><span>broad ETFs</span></div></div>
+      <ol className="goal-list"><li className={`goal-item${mission.met ? " done" : ""}`}><span className="goal-tick" aria-hidden="true">{mission.met ? "✓" : "○"}</span><div><div className="goal-label">Hold one broad stock or bond ETF</div><div className="goal-detail">Examples: VTI, VXUS, VOO, BND. Choose a fund for a gap in your own portfolio.</div></div></li></ol>
+      {mission.etfs.length > 0 && <div className="mission-holdings"><strong>ETFs you hold now</strong><div className="mission-holdings-list">{mission.etfs.map((fund: any) => <div className="mission-holding" key={fund.ticker}><strong>{fund.ticker}</strong><span>{fund.breadth === "BROAD" ? "Broad" : fund.breadth.toLowerCase().replace("_", " ")} · {fund.what}</span></div>)}</div></div>}
+      <div className="row goals-actions"><button onClick={onOpenInvesting}>Open Investing →</button><button className="ghost" disabled={refreshing} onClick={() => void load(true)}>{refreshing ? "Refreshing…" : "Refresh"}</button></div>
+    </section>
+    <section className="panel"><div className="section-kicker">Explain your decision</div>
+      <div className="field"><label>What does your portfolio need more of?</label><textarea rows={3} value={gap} onChange={(e) => setGap(e.target.value)} placeholder="Name a gap or concentration you see in your current holdings." /></div>
+      <div className="grid2"><div className="field"><label>Broad ETF you hold</label><select value={chosenTicker} onChange={(e) => setChosenTicker(e.target.value)}><option value="">Choose a current holding…</option>{mission.broadEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker}>{fund.ticker} · {fund.what}</option>)}</select></div>
+        <div className="field"><label>Another ETF you researched</label><input value={alternative} onChange={(e) => setAlternative(e.target.value.toUpperCase())} placeholder="e.g. QQQ" /></div></div>
+      <div className="field"><label>Compare what the two funds own, their overlap, fees, and risks</label><textarea rows={4} value={comparison} onChange={(e) => setComparison(e.target.value)} placeholder="Use the fund pages for each ETF. Explain why your chosen fund fits better." /></div>
+      <div className="field"><label>How does your choice change your portfolio? What risk remains?</label><textarea rows={4} value={impact} onChange={(e) => setImpact(e.target.value)} placeholder="Explain the expected effect without promising a return." /></div>
+    </section>
+    <div className="module-action-bar"><div><strong>{mission.met ? "Broad ETF verified" : "A broad ETF is needed"}</strong><span>{ready ? "Your teacher receives your current ETF holdings and explanation." : "Complete the fields above and hold a broad ETF to submit."}</span></div><button disabled={!ready || busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
+  </div>;
+}
+
 function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?: number; onBack: () => void }) {
   const [act, setAct] = useState<any>(null);
   const [placements, setPlacements] = useState<Record<string, string>>({});
@@ -2784,7 +2877,7 @@ function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: 
 function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { classes: any[]; defaultClassId: string; onModulesChanged: () => void }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [open, setOpen] = useState<"" | "announcement" | "portfolio_mission">("");
+  const [open, setOpen] = useState<"" | "announcement" | "portfolio_mission" | "etf_mission">("");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
@@ -2796,12 +2889,16 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
   useEffect(() => { load().catch((e: any) => setErr(e.message)); }, [load]);
   useEffect(() => { if (open) setScope(defaultClassId); }, [defaultClassId, open]);
 
-  const start = (kind: "announcement" | "portfolio_mission") => {
+  const start = (kind: "announcement" | "portfolio_mission" | "etf_mission") => {
     setOpen(kind); setErr(""); setNotice("");
     if (kind === "portfolio_mission") {
       setTitle("Build a five-sector portfolio");
       setSummary("Hold at least six individual stocks across at least five sectors, then explain how your portfolio is diversified.");
       setBody("Build a portfolio that currently holds at least six individual stocks across at least five different sectors. You may buy and sell as you choose; only your current holdings count. Multiple stocks in the same sector count as one sector. ETFs do not count toward the six-stock target.");
+    } else if (kind === "etf_mission") {
+      setTitle("Choose an ETF for your portfolio");
+      setSummary("Find a portfolio gap, compare two ETFs, and hold a broad fund that addresses it.");
+      setBody("Review your current holdings and identify a gap or concentration. Compare two ETFs by what they own, overlap with your portfolio, fees, and risk. Hold at least one broad stock or bond ETF that fits your goal. Explain why you chose it and what risk remains. You may buy or sell as you choose; only your current holdings count.");
     } else { setTitle(""); setSummary(""); setBody(""); }
   };
   const createPost = async () => {
@@ -2809,7 +2906,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
     try {
       const created = await api<any>("/api/teacher/class-posts", { method: "POST", body: JSON.stringify({
         kind: open, classId: scope || null, title, summary, body,
-        heroUrl: open === "portfolio_mission" ? "/module-art/balanced-portfolio.svg" : null,
+        heroUrl: open === "portfolio_mission" || open === "etf_mission" ? "/module-art/balanced-portfolio.svg" : null,
         spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5 } : {},
       }) });
       setOpen(""); await load(); onModulesChanged(); setNotice(`Draft “${created.title}” created.`);
@@ -2827,19 +2924,20 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
   const published = posts.filter((post) => post.status === "published").length;
   const drafts = posts.filter((post) => post.status === "draft").length;
   return <details className="panel class-post-desk">
-    <summary className="class-post-summary"><span><strong>Create & publish</strong><small>Announcements and portfolio assignments</small></span><span className="small">{loaded ? `${published} live · ${drafts} draft` : <Skeleton className="skeleton-label" />}</span></summary>
+    <summary className="class-post-summary"><span><strong>Create & publish</strong><small>Announcements, portfolio and ETF assignments</small></span><span className="small">{loaded ? `${published} live · ${drafts} draft` : <Skeleton className="skeleton-label" />}</span></summary>
     <div className="class-post-body">
-    <div className="panel-heading"><div><h2>Assignments & announcements</h2><p className="hint"><strong>Announcements</strong> are messages only. <strong>Portfolio assignments</strong> become numbered modules with completion evidence.</p></div><div className="row"><button className="ghost" onClick={() => start("announcement")}>New announcement</button><button onClick={() => start("portfolio_mission")}>New portfolio assignment</button></div></div>
+    <div className="panel-heading"><div><h2>Assignments & announcements</h2><p className="hint"><strong>Announcements</strong> are messages only. <strong>Portfolio and ETF assignments</strong> become numbered modules with completion evidence.</p></div><div className="row"><button className="ghost" onClick={() => start("announcement")}>New announcement</button><button onClick={() => start("portfolio_mission")}>New portfolio assignment</button><button onClick={() => start("etf_mission")}>New ETF assignment</button></div></div>
     {err && <div className="error">{err}</div>}{notice && <div className="notice">{notice}</div>}
     {!loaded && !err && <LoadingState label="Loading class posts" kind="panel" />}
     {open && <div className="class-post-form">
       <div className="grid2"><div className="field"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} /></div><div className="field"><label>Who gets it</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">Every class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div></div>
-      {open === "portfolio_mission" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
+      {open !== "announcement" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
       <div className="field"><label>{open === "announcement" ? "Message" : "Mission brief"}</label><textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)} /></div>
       {open === "portfolio_mission" && <p className="hint">Built-in evidence: 6 current stocks · 5 current sectors · three research explanations · final reflection.</p>}
+      {open === "etf_mission" && <p className="hint">Built-in evidence: a current broad stock or bond ETF · comparison with another ETF · portfolio explanation.</p>}
       <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
     </div>}
-    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
+    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : post.kind === "etf_mission" ? "ETF assignment · numbered module" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
     </div>
   </details>;
 }
