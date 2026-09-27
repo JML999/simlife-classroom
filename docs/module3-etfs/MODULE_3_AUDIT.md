@@ -23,6 +23,8 @@ The generated directory currently has **42 ETFs**:
 | Single commodity | 1 | GLD |
 | Single crypto asset | 10 | IBIT, FBTC, ETHA |
 
+The directory labels the crypto entries `ETF` for search and trading. Some such products fall outside the SEC's investment-company ETF definition; teach them as narrow exchange-traded products rather than examples of a diversified fund.
+
 Search and quotes support the directory. SimLife accepts dollar amounts and calculates fractional shares. The investing search now labels results as **Stock** or **ETF**, and ETF quote previews show the directory's breadth and description. That description is a classroom summary, not live fund data. The app does **not** supply current holdings, sector weights, expense ratios, prospectuses, or bid-ask spreads. Students must check the issuer's current fund page for those facts. Delayed quotes and quote-provider availability still govern trade execution.
 
 Module 2 remains a separate stock and sector exercise. ETFs do not count toward its six individual-stock target.

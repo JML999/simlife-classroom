@@ -60,7 +60,7 @@ const secFees='https://www.investor.gov/introduction-investing/general-resources
   'VXUS  →  Stocks outside the U.S.',
   'BND  →  A broad mix of U.S. bonds',
   'XLK  →  Technology stocks only',
-  'IBIT  →  Bitcoin exposure'
+  'QQQ  →  Large Nasdaq companies; technology tilted'
  ],90,220,1070,79,27);
  notes(s,'These descriptions follow the SimLife ETF directory as audited September 2026. Ask which funds can fill a broad gap and which are concentrated. Stress that the ETF wrapper alone does not guarantee diversification.',[secCompare,secDiversify]);
 }
