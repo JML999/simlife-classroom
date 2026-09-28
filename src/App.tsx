@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
 declare global { interface Window { google?: any } }
@@ -1540,12 +1541,30 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   );
 }
 
+const WHEEL_LABELS = ["Inheritance", "Tax refund", "Side gig", "Rebate", "Flat tire", "Phone repair", "Urgent care", "Parking ticket", "Promotion", "New job"];
+const SPIN_DURATION = 6800;
+
+function WheelFace({ angle, options, presenting = false }: { angle: number; options: any[]; presenting?: boolean }) {
+  return <div className={`life-wheel-wrap${presenting ? " is-presenting" : ""}`}>
+    <div className="life-wheel-pointer" aria-hidden="true">▼</div>
+    <div className="life-wheel" style={{ transform: `rotate(${angle}deg)` }} aria-hidden="true">
+      {options.map((option, index) => <span className="life-wheel-option" key={option.key} style={{ transform: `translate(-50%, -50%) rotate(${index * 36}deg) translateY(var(--wheel-label-offset)) rotate(${-index * 36}deg)` }}>{WHEEL_LABELS[index]}</span>)}
+      <span className="life-wheel-hub">SIMLIFE</span>
+    </div>
+  </div>;
+}
+
 function LifeEventWheel({ classId, students, onApplied }: { classId: string; students: any[]; onApplied: () => void }) {
   const [options, setOptions] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [studentId, setStudentId] = useState("");
   const [angle, setAngle] = useState(0);
-  const [spins, setSpins] = useState(0);
+  const angleRef = useRef(0);
+  const frameRef = useRef<number | null>(null);
+  const audioRef = useRef<AudioContext | null>(null);
+  const [presenting, setPresenting] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
+  const [passingIndex, setPassingIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
@@ -1555,15 +1574,59 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
     setOptions(r.options); setEvents(r.events);
   }, [classId]);
   useEffect(() => { setStudentId(""); setResult(null); setOptions([]); setEvents([]); setError(""); void load().catch((e: any) => setError(e.message)); }, [load]);
+  useEffect(() => {
+    if (!presenting) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) setPresenting(false); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKeyDown); };
+  }, [presenting, busy]);
+  useEffect(() => () => { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current); void audioRef.current?.close(); }, []);
+
+  const tick = () => {
+    if (!soundOn || !audioRef.current) return;
+    const context = audioRef.current;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(760, context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(420, context.currentTime + .035);
+    gain.gain.setValueAtTime(.045, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .045);
+    oscillator.connect(gain); gain.connect(context.destination);
+    oscillator.start(); oscillator.stop(context.currentTime + .05);
+  };
   const spin = async () => {
     if (!studentId || busy) return;
-    setBusy(true); setError(""); setResult(null);
+    setPresenting(true); setBusy(true); setError(""); setResult(null); setPassingIndex(null);
+    if (soundOn) {
+      try { audioRef.current ??= new AudioContext(); await audioRef.current.resume(); } catch { /* The visual spin still works when audio is unavailable. */ }
+    }
     try {
       const r = await api<any>("/api/teacher/life-events/spin", { method: "POST", body: JSON.stringify({ classId, studentId }) });
-      const nextSpins = spins + 1;
-      setSpins(nextSpins);
-      setAngle(nextSpins * 1800 - r.event.index * 36);
-      window.setTimeout(() => { setResult(r.event); setBusy(false); }, 3100);
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const target = ((-r.event.index * 36 - angleRef.current) % 360 + 360) % 360 + (reducedMotion ? 0 : 2160);
+      const startAngle = angleRef.current;
+      const startTime = performance.now();
+      let lastIndex = -1;
+      let lastTick = 0;
+      const animate = (now: number) => {
+        const progress = reducedMotion ? 1 : Math.min(1, (now - startTime) / SPIN_DURATION);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = startAngle + target * eased;
+        angleRef.current = current;
+        setAngle(current);
+        const index = ((Math.round(-current / 36) % 10) + 10) % 10;
+        if (index !== lastIndex) {
+          lastIndex = index;
+          setPassingIndex(index);
+          if (now - lastTick > 55 && progress < 1) { tick(); lastTick = now; }
+        }
+        if (progress < 1) frameRef.current = requestAnimationFrame(animate);
+        else { frameRef.current = null; setPassingIndex(null); setResult(r.event); setBusy(false); }
+      };
+      frameRef.current = requestAnimationFrame(animate);
       onApplied();
       void load().catch(() => setError("Result applied. Refresh the page to update the recent spins list."));
     } catch (e: any) { setError(e.message); setBusy(false); }
@@ -1571,18 +1634,34 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
   const selectedName = students.find((student) => student.id === studentId)?.name || "student";
   const today = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
   const todayEvent = events.find((event) => event.userId === studentId && new Date(event.createdAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) === today);
+  const resultCard = <div className={`life-event-result${result ? " is-revealed" : ""}`} aria-live="polite">{result ? <><span className="eyebrow">The wheel landed on</span><strong>{result.title}</strong><p>{result.description}</p>{result.newJobTitle && <p>New job: {result.newJobTitle} · {money(result.newPayCents)} per paycheck</p>}</> : <p>{busy ? "The wheel is spinning…" : "Choose a student and spin to reveal their life event."}</p>}</div>;
   return <section className="panel life-event-section" aria-label="Life event wheel">
     <div className="panel-heading"><div><div className="eyebrow">SimLife day</div><h2>Life event wheel</h2><p className="hint">Choose one student and spin. The result posts directly to checking, creates a payable bill, or changes future pay. One result per student per day.</p></div></div>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="life-event-layout">
-      <div className="life-wheel-wrap"><div className="life-wheel-pointer" aria-hidden="true">▼</div><div className="life-wheel" style={{ transform: `rotate(${angle}deg)` }} aria-hidden="true"><span style={{ transform: `rotate(${-angle}deg)` }}>SIMLIFE</span></div></div>
+      <WheelFace angle={angle} options={options} />
       <div className="life-event-controls">
         <div className="field"><label htmlFor="life-event-student">Student</label><select id="life-event-student" value={studentId} disabled={busy} onChange={(e) => { setStudentId(e.target.value); setResult(null); }}><option value="">Choose a student…</option>{students.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></div>
-        <button disabled={!studentId || busy || options.length !== 10} onClick={spin}>{busy ? "Applying result…" : todayEvent ? `Show ${selectedName}'s result` : `Spin for ${selectedName}`}</button>
+        <div className="life-wheel-actions"><button className="ghost" disabled={options.length !== 10} onClick={() => setPresenting(true)}>Present wheel</button><button disabled={!studentId || busy || options.length !== 10} onClick={spin}>{busy ? "Spinning…" : todayEvent ? `Replay ${selectedName}'s spin` : `Spin for ${selectedName}`}</button></div>
         <p className="small">Students need an assigned job and paycheck before spinning. Bills arrive in their mailbox; nothing is withdrawn automatically.</p>
-        <div className="life-event-result" aria-live="polite">{result ? <><strong>{result.title}</strong><p>{result.description}</p>{result.newJobTitle && <p>New job: {result.newJobTitle} · {money(result.newPayCents)} per paycheck</p>}</> : <p>{busy ? "Spinning…" : "The result will appear here."}</p>}</div>
+        {resultCard}
       </div>
     </div>
+    {presenting && createPortal(<div className="life-wheel-stage" role="dialog" aria-modal="true" aria-label="Life event wheel presentation">
+      <div className="life-wheel-stage-top"><span>SIMLIFE · CLASSROOM EVENT</span><button className="ghost" disabled={busy} onClick={() => setPresenting(false)} aria-label="Close presentation">Close ×</button></div>
+      <div className="life-wheel-stage-content">
+        <div className="life-wheel-stage-heading"><span className="eyebrow">The wheel of life</span><h2>{studentId ? selectedName : "Who’s up next?"}</h2><p>{busy ? "Round and round…" : result ? "A new chapter begins." : "Choose a student, then give the wheel a spin."}</p></div>
+        <WheelFace angle={angle} options={options} presenting />
+        <div className="life-wheel-stage-bottom">
+          {error && <div className="error" role="alert">{error}</div>}
+          {busy ? <div className="life-wheel-passing" aria-hidden="true">{passingIndex === null ? "Here we go…" : `Passing: ${options[passingIndex]?.title || ""}`}</div> : result ? <>{resultCard}<button onClick={() => { setStudentId(""); setResult(null); }}>Next student</button></> : <>
+            <div className="field"><label htmlFor="life-event-stage-student">Student</label><select id="life-event-stage-student" value={studentId} onChange={(e) => { setStudentId(e.target.value); setResult(null); }}><option value="">Choose a student…</option>{students.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></div>
+            <button disabled={!studentId || options.length !== 10} onClick={spin}>{todayEvent ? "Replay today’s spin" : "Spin the wheel"}</button>
+          </>}
+          <button className="life-wheel-sound" disabled={busy} onClick={() => setSoundOn(!soundOn)} aria-pressed={soundOn}>{soundOn ? "Sound on ♪" : "Sound off"}</button>
+        </div>
+      </div>
+    </div>, document.body)}
     {options.length > 0 && <details className="life-event-options"><summary>See all 10 possible results</summary><ol>{options.map((option) => <li key={option.key}><strong>{option.title}</strong> · {option.description}</li>)}</ol></details>}
     {events.length > 0 && <div className="life-event-history"><strong>Recent spins in this period</strong><div>{events.slice(0, 8).map((event) => <p className="small" key={event.id}>{students.find((student) => student.id === event.userId)?.name || "Student"} · {event.title} · {event.date}</p>)}</div></div>}
   </section>;
