@@ -23,8 +23,9 @@ Suggested announcement: “A new **[bill name]** will arrive on **[release date]
 | Phone repair | $90 bill, due in 7 days |
 | Urgent care copay | $75 bill, due in 7 days |
 | Parking ticket | $40 bill, due in 7 days |
-| Promotion | Job title changes; future pay rises 10% |
-| Laid off, then rehired | Job immediately changes to **Cashier at Arby's**; future pay becomes 85% of prior pay, capped at $400 per paycheck |
+| Career twist (two spaces) | The student's current pay rank within the selected period determines the job outcome. The highest paid 5% move to **Cashier at Arby's**; the lowest paid 5% get a promotion; others can receive either outcome. |
+
+The top and bottom brackets each contain at least one student when a period has two or more students with assigned positive pay. Tied pay at a bracket boundary shares the same outcome; a period where everyone has identical pay uses the ordinary 50/50 career split. Earlier wheel results do not shift other students' pay ranks that day. A top earner's Arby's paycheck is 85% of prior pay, capped at $400. A bottom earner's promotion raises each paycheck by at least $100 or 25%, whichever is greater. A bottom bracket DoorDash driver instead receives the new **Delivery Operations Coordinator** assignment with the same raise; this does not assert an employment arrangement with DoorDash. Middle earners' ordinary promotion is a 10% raise.
 
 The expense outcomes create bills; they do not silently remove checking cash. Students must pay them. Deposit outcomes appear in checking history. Job outcomes change the assigned pay used by the next class paycheck batch. The wheel requires a job and positive assigned pay so all ten results are meaningful. A student cannot reroll on the same calendar day; retrying a request returns the existing result.
 

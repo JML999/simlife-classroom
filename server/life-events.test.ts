@@ -54,3 +54,38 @@ test("layoff immediately assigns the Arby's cashier role and a lower paycheck", 
   await assert.rejects(() => life.spinLifeEvent({ classId: "wrong-class", studentId: "wheel-no-job", actorId: "teacher", now }), /selected period/);
   await assert.rejects(() => life.spinLifeEvent({ classId: "wheel-class", studentId: "wheel-no-job", actorId: "teacher", now }), /Assign this student a job/);
 });
+
+test("career wedges use the highest and lowest five percent of assigned pay in that period", async () => {
+  await db.run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES ('ranked-class', 'Ranked Class', 'RANKED', 0, ?)`, [now.toISOString()]);
+  for (let i = 0; i < 20; i++) {
+    const id = `ranked-${i}`;
+    const title = i === 0 ? "DoorDash Delivery Driver" : i === 19 ? "Cardiologist" : "Office Assistant";
+    const pay = i === 0 ? 20000 : i === 19 ? 2500000 : 40000 + i * 1000;
+    await db.run(`INSERT INTO users (id, name, role, class_id, job_title, job_pay_cents, created_at)
+      VALUES (?, ?, 'student', 'ranked-class', ?, ?, ?)`, [id, id, title, pay, now.toISOString()]);
+  }
+  const top = await life.spinLifeEvent({ classId: "ranked-class", studentId: "ranked-19", actorId: "teacher", now, drawIndex: 8 });
+  assert.equal(top.index, 8, "the animation lands on the career wedge that was drawn");
+  assert.equal(top.key, "layoff");
+  assert.equal(top.newJobTitle, "Cashier at Arby's");
+  assert.equal(top.newPayCents, 40000);
+  const nextHighest = await life.spinLifeEvent({ classId: "ranked-class", studentId: "ranked-18", actorId: "teacher", now, drawIndex: 8 });
+  assert.equal(nextHighest.key, "promotion", "the first layoff must not move the next earner into today's top bracket");
+  const bottom = await life.spinLifeEvent({ classId: "ranked-class", studentId: "ranked-0", actorId: "teacher", now, drawIndex: 9 });
+  assert.equal(bottom.index, 9);
+  assert.equal(bottom.key, "promotion");
+  assert.equal(bottom.title, "New job assignment");
+  assert.equal(bottom.newJobTitle, "Delivery Operations Coordinator");
+  assert.equal(bottom.newPayCents, 30000);
+  const studentNotice = (await life.studentLifeEvents("ranked-0"))[0];
+  assert.equal(studentNotice?.title, "New job assignment");
+  assert.equal("key" in studentNotice, false);
+  assert.equal("index" in studentNotice, false);
+  assert.equal(/percent|bracket|rank/i.test(studentNotice.description), false);
+  const middle = await life.spinLifeEvent({ classId: "ranked-class", studentId: "ranked-10", actorId: "teacher", now, drawIndex: 8 });
+  assert.equal(middle.key, "promotion");
+  assert.equal(middle.newPayCents, 55000);
+  const saved = await db.one<{ event_key: string; payload: string }>(`SELECT event_key, payload FROM life_events WHERE id = ?`, [bottom.id]);
+  assert.equal(saved?.event_key, "promotion");
+  assert.equal(JSON.parse(saved!.payload).wheelIndex, 9);
+});

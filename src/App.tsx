@@ -1541,7 +1541,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   );
 }
 
-const WHEEL_LABELS = ["Inheritance", "Tax refund", "Side gig", "Rebate", "Flat tire", "Phone repair", "Urgent care", "Parking ticket", "Promotion", "New job"];
+const WHEEL_LABELS = ["Inheritance", "Tax refund", "Side gig", "Rebate", "Flat tire", "Phone repair", "Urgent care", "Parking ticket", "Career twist", "Career twist"];
 const SPIN_DURATION = 6800;
 
 function WheelFace({ angle, options, presenting = false }: { angle: number; options: any[]; presenting?: boolean }) {
@@ -1662,7 +1662,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
         </div>
       </div>
     </div>, document.body)}
-    {options.length > 0 && <details className="life-event-options"><summary>See all 10 possible results</summary><ol>{options.map((option) => <li key={option.key}><strong>{option.title}</strong> · {option.description}</li>)}</ol></details>}
+    {options.length > 0 && <details className="life-event-options"><summary>See the possible life events</summary><ol>{options.map((option) => <li key={option.key}><strong>{option.title}</strong> · {option.description}</li>)}</ol></details>}
     {events.length > 0 && <div className="life-event-history"><strong>Recent spins in this period</strong><div>{events.slice(0, 8).map((event) => <p className="small" key={event.id}>{students.find((student) => student.id === event.userId)?.name || "Student"} · {event.title} · {event.date}</p>)}</div></div>}
   </section>;
 }
