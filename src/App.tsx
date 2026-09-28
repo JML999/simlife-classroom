@@ -2974,6 +2974,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
 
 function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: string; refreshKey: number; onChanged: () => void }) {
   const [modules, setModules] = useState<any[]>([]);
+  const [drafts, setDrafts] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -2981,9 +2982,13 @@ function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: 
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
-    if (!classId) { setModules([]); setHidden(new Set()); setLoaded(true); return; }
-    const result = await api<any>(`/api/teacher/classes/${classId}/modules`);
-    setModules(result.modules); setHidden(new Set(result.hidden)); setLoaded(true);
+    setLoaded(false); setErr("");
+    const [postResult, moduleResult] = await Promise.all([
+      api<any>("/api/teacher/class-posts"),
+      classId ? api<any>(`/api/teacher/classes/${classId}/modules`) : Promise.resolve({ modules: [], hidden: [] }),
+    ]);
+    setDrafts(postResult.posts.filter((post: any) => post.status === "draft" && post.kind !== "announcement" && (!classId || !post.classId || post.classId === classId)));
+    setModules(moduleResult.modules); setHidden(new Set(moduleResult.hidden)); setLoaded(true);
   }, [classId]);
   useEffect(() => { load().catch((e: any) => setErr(e.message)); }, [load, refreshKey]);
 
@@ -3011,9 +3016,10 @@ function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: 
     {!classId && <p className="small">Choose a period above to manage what its students can see.</p>}
     {err && <div className="error" role="alert">{err}</div>}
     {classId && !loaded && !err && <LoadingState label="Loading module visibility" kind="panel" />}
-    {classId && loaded && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or portfolio mission first.</p>}
-    {classId && modules.length > 0 && <div className="module-visibility-grid">{modules.map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : "Portfolio mission"}</small></span></label>)}</div>}
+    {classId && loaded && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or assignment first.</p>}
+    {classId && modules.length > 0 && <div className="module-visibility-grid">{modules.map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : module.postKind === "etf_mission" ? "ETF mission" : "Portfolio mission"}</small></span></label>)}</div>}
     {classId && loaded && <div className="module-save-state" aria-live="polite">{busy ? "Saving…" : saved ? "Saved ✓" : `${modules.length - hidden.size} shown · ${hidden.size} hidden`}</div>}
+    {loaded && drafts.length > 0 && <div className="module-draft-list"><strong>Upcoming assignment drafts</strong><p className="small">Drafts are already hidden from students. Publish one when you're ready; it will then appear in the numbered module list above, where each period can show or hide it.</p>{drafts.map((post) => <div className="module-draft-row" key={post.id}><span><b>{post.title}</b><small>{post.kind === "etf_mission" ? "ETF assignment" : "Portfolio assignment"} · {post.classId ? "one period" : "every period"} · draft</small></span><button className="ghost" onClick={() => { const desk = document.querySelector<HTMLDetailsElement>(".class-post-desk"); if (desk) { desk.open = true; desk.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Manage draft</button></div>)}</div>}
   </div>;
 }
 

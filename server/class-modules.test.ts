@@ -32,6 +32,11 @@ test("published assignments get stable chronological module numbers", async () =
   assert.deepEqual(catalog.map((item) => [item.key, item.moduleNumber]), [
     [`sort:${sort.id}`, 1], [`post:${mission.id}`, 2],
   ]);
+  const etf = await posts.createClassPost({ kind: "etf_mission", title: "ETF assignment", body: "Compare two funds." });
+  assert.equal((await modules.classModuleCatalog("module-class")).some((item) => item.id === etf.id), false);
+  await posts.setClassPostStatus(etf.id, "published");
+  const publishedEtf = (await modules.classModuleCatalog("module-class")).find((item) => item.id === etf.id);
+  assert.deepEqual([publishedEtf?.moduleNumber, publishedEtf?.postKind], [3, "etf_mission"]);
 });
 
 test("hidden modules are class-specific and replacement rejects junk keys", async () => {

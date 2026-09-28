@@ -44,7 +44,7 @@ The slide examples are discussion prompts, not recommendations. A broad ETF can 
 
 ## Release and teacher controls
 
-The new post type is `etf_mission`. Run `npm run seed:etf` once against the intended database to create the shared assignment as a **draft**. It is not visible to students until a teacher publishes it in **Teacher → Class → Create & publish**. After publishing, it enters the numbered class module catalog and teacher progress view. Teachers can instead create a class specific ETF assignment from the same UI. If Module 1 and Module 2 are already published, the shared post becomes Module 3 by creation time.
+The new post type is `etf_mission`. Run `npm run seed:etf` once against the intended database to create the shared assignment as a **draft**. Teacher → Class shows it under **Upcoming assignment drafts** with a link to **Create & publish**. Drafts are already hidden from students and have no module visibility checkbox. After a teacher publishes it, it enters the numbered module catalog, teacher progress view, and per-period show/hide controls. Teachers can instead create a class specific ETF assignment from the same UI. If Module 1 and Module 2 are already published, the shared post becomes Module 3 by creation time.
 
 For next week's class, publish only after reviewing the lesson and confirming the quote provider can price the ETFs students plan to buy. The app can mark the ETF goal complete from existing current holdings, even if the student purchased the fund before publication; this is deliberate.
 

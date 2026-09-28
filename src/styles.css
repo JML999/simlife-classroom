@@ -615,6 +615,13 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .module-visibility-grid span strong { color: var(--olive); font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
 .module-visibility-grid span small { color: var(--muted); font-size: 10px; }
 .module-save-state { min-height: 18px; margin-top: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: right; }
+.module-draft-list { margin-top: 18px; padding-top: 15px; border-top: 1px dashed var(--line-dark); }
+.module-draft-list > strong { font-family: var(--serif); font-size: 18px; }
+.module-draft-list > p { margin: 5px 0 10px; }
+.module-draft-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-strong); }
+.module-draft-row + .module-draft-row { margin-top: 8px; }
+.module-draft-row span { display: flex; flex-direction: column; gap: 3px; }
+.module-draft-row small { color: var(--muted); font-size: 10px; }
 .module-results-heading { margin: 22px 0 10px; }
 .module-results-heading h2 { margin: 3px 0 2px; }
 table.sort-grid th.tick-col { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
