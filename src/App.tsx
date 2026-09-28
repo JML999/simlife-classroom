@@ -504,14 +504,22 @@ function OnboardingCard({ state, onDone }: { state: any; onDone: () => void }) {
 function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfolio: Portfolio | null; onOpen: (section: "dashboard" | "banking" | "investing") => void; onChanged: () => void }) {
   const [bank, setBank] = useState<any>(null);
   const [bankError, setBankError] = useState("");
+  const [lifeEvents, setLifeEvents] = useState<any[]>([]);
   const loadBank = useCallback(() => api<any>("/api/bank").then((result) => { setBank(result); setBankError(""); }).catch((e: any) => setBankError(e.message)), []);
   useEffect(() => { loadBank(); }, [loadBank, me.user.job_title, me.user.job_pay_cents, me.user.car_payment_cents]);
+  useEffect(() => { window.addEventListener("focus", loadBank); return () => window.removeEventListener("focus", loadBank); }, [loadBank]);
+  useEffect(() => {
+    const loadEvents = () => { void api<any>("/api/life-events", { cache: "no-store" }).then((r) => setLifeEvents(r.events)).catch(() => {}); };
+    loadEvents(); window.addEventListener("focus", loadEvents);
+    return () => window.removeEventListener("focus", loadEvents);
+  }, []);
   const unpaid = (bank?.bills || []).filter((b: any) => b.status !== "paid");
   const bankTotal = Number(bank?.checkingCents || 0) + Number(bank?.savingsCents || 0);
   const total = bankTotal + Number(portfolio?.portfolioCents || 0);
   const checkingActivity = (bank?.recent || []).filter((e: any) => Number(e.checking_leg) !== 0);
   return <div className="dashboard-experience">
     <div className="page-intro"><div><div className="eyebrow">{me.class?.name}</div><h2>Your money at a glance</h2><p>See what is available, what is due, and what you can put to work.</p></div><div className="teacher-summary"><strong>{money(total)}</strong><span>total simulated funds</span></div></div>
+    {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
     <div className="cards dashboard-cards">
       <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">{bank ? `${unpaid.length} unpaid bill${unpaid.length === 1 ? "" : "s"} →` : "Bills and spending"}</div></button>
       <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Move and grow money →</div></button>
@@ -679,6 +687,7 @@ function SavingsProjection({ interest, savingsCents }: { interest: any; savingsC
 
 function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged: () => void; onOpenInvesting: () => void }) {
   const [bank, setBank] = useState<any>(null);
+  const [lifeEvents, setLifeEvents] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -695,7 +704,11 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
     try { setBank(await api("/api/bank")); setErr(""); }
     catch (e: any) { setErr(e.message); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const refresh = () => { void load(); void api<any>("/api/life-events", { cache: "no-store" }).then((r) => setLifeEvents(r.events)).catch(() => {}); };
+    refresh(); window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [load]);
 
   const bills: any[] = bank?.bills || [];
   const unpaid = bills.filter((b) => !b.paid_at);
@@ -748,6 +761,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
         </div>
         <div className="wallet-art" aria-hidden="true"><span>💵</span><strong>👛</strong><i>★</i></div>
       </div>
+      {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
       {unpaidTotal > 0 && (
         <div className="money-reminder" role="note"><span>🔔</span><div><strong>{money(unpaidTotal)} is still spoken for</strong><p>You have {unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}. Your checking balance is not the same as money available to invest.</p></div></div>
       )}
@@ -1526,6 +1540,54 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   );
 }
 
+function LifeEventWheel({ classId, students, onApplied }: { classId: string; students: any[]; onApplied: () => void }) {
+  const [options, setOptions] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
+  const [studentId, setStudentId] = useState("");
+  const [angle, setAngle] = useState(0);
+  const [spins, setSpins] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!classId) return;
+    const r = await api<any>(`/api/teacher/life-events?classId=${encodeURIComponent(classId)}`, { cache: "no-store" });
+    setOptions(r.options); setEvents(r.events);
+  }, [classId]);
+  useEffect(() => { setStudentId(""); setResult(null); setOptions([]); setEvents([]); setError(""); void load().catch((e: any) => setError(e.message)); }, [load]);
+  const spin = async () => {
+    if (!studentId || busy) return;
+    setBusy(true); setError(""); setResult(null);
+    try {
+      const r = await api<any>("/api/teacher/life-events/spin", { method: "POST", body: JSON.stringify({ classId, studentId }) });
+      const nextSpins = spins + 1;
+      setSpins(nextSpins);
+      setAngle(nextSpins * 1800 - r.event.index * 36);
+      window.setTimeout(() => { setResult(r.event); setBusy(false); }, 3100);
+      onApplied();
+      void load().catch(() => setError("Result applied. Refresh the page to update the recent spins list."));
+    } catch (e: any) { setError(e.message); setBusy(false); }
+  };
+  const selectedName = students.find((student) => student.id === studentId)?.name || "student";
+  const today = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
+  const todayEvent = events.find((event) => event.userId === studentId && new Date(event.createdAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) === today);
+  return <section className="panel life-event-section" aria-label="Life event wheel">
+    <div className="panel-heading"><div><div className="eyebrow">SimLife day</div><h2>Life event wheel</h2><p className="hint">Choose one student and spin. The result posts directly to checking, creates a payable bill, or changes future pay. One result per student per day.</p></div></div>
+    {error && <div className="error" role="alert">{error}</div>}
+    <div className="life-event-layout">
+      <div className="life-wheel-wrap"><div className="life-wheel-pointer" aria-hidden="true">▼</div><div className="life-wheel" style={{ transform: `rotate(${angle}deg)` }} aria-hidden="true"><span style={{ transform: `rotate(${-angle}deg)` }}>SIMLIFE</span></div></div>
+      <div className="life-event-controls">
+        <div className="field"><label htmlFor="life-event-student">Student</label><select id="life-event-student" value={studentId} disabled={busy} onChange={(e) => { setStudentId(e.target.value); setResult(null); }}><option value="">Choose a student…</option>{students.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></div>
+        <button disabled={!studentId || busy || options.length !== 10} onClick={spin}>{busy ? "Applying result…" : todayEvent ? `Show ${selectedName}'s result` : `Spin for ${selectedName}`}</button>
+        <p className="small">Students need an assigned job and paycheck before spinning. Bills arrive in their mailbox; nothing is withdrawn automatically.</p>
+        <div className="life-event-result" aria-live="polite">{result ? <><strong>{result.title}</strong><p>{result.description}</p>{result.newJobTitle && <p>New job: {result.newJobTitle} · {money(result.newPayCents)} per paycheck</p>}</> : <p>{busy ? "Spinning…" : "The result will appear here."}</p>}</div>
+      </div>
+    </div>
+    {options.length > 0 && <details className="life-event-options"><summary>See all 10 possible results</summary><ol>{options.map((option) => <li key={option.key}><strong>{option.title}</strong> · {option.description}</li>)}</ol></details>}
+    {events.length > 0 && <div className="life-event-history"><strong>Recent spins in this period</strong><div>{events.slice(0, 8).map((event) => <p className="small" key={event.id}>{students.find((student) => student.id === event.userId)?.name || "Student"} · {event.title} · {event.date}</p>)}</div></div>}
+  </section>;
+}
+
 function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent }: {
   periodBar: React.ReactNode; classId: string; classes: any[]; onChanged: () => void; onOpenStudent: (id: string) => void;
 }) {
@@ -1828,6 +1890,8 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
       {!classId && <div className="notice">Choose a period above to issue paychecks or bills. Issuance is always scoped to one period.</div>}
+
+      {classId && <LifeEventWheel key={classId} classId={classId} students={summary} onApplied={() => { void load(); onChanged(); }} />}
 
       <div className="panel">
         <h2>Class accounts</h2>

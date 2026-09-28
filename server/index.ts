@@ -45,6 +45,7 @@ import {
 import { moduleProgress, studentModuleDetail } from "./module-progress.js";
 import { leaderboardFor, STABLE_MIN_RETURN_BP } from "./leaderboard.js";
 import { ensureLeaderboardFresh } from "./leaderboard-refresh.js";
+import { LIFE_EVENT_OPTIONS, spinLifeEvent, classLifeEvents, studentLifeEvents, LifeEventError } from "./life-events.js";
 
 // Render and similar hosts supply PORT and reach the process over 0.0.0.0.
 // Local development stays loopback-only and keeps SimLife on its own port.
@@ -942,6 +943,32 @@ app.get("/api/teacher/activities/:id/progress", requireCurrentTeacher, async (re
 });
 
 // ---- Class feed: announcements + portfolio-linked missions ----------------
+
+app.get("/api/life-events", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  res.set("Cache-Control", "private, no-store");
+  res.json({ events: await studentLifeEvents(user.id) });
+});
+
+app.get("/api/teacher/life-events", requireCurrentTeacher, async (req, res) => {
+  const classId = String(req.query["classId"] || "");
+  if (!classId || !(await one(`SELECT id FROM classes WHERE id = ?`, [classId]))) { res.status(400).json({ error: "Choose a period." }); return; }
+  res.set("Cache-Control", "private, no-store");
+  res.json({ options: LIFE_EVENT_OPTIONS, events: await classLifeEvents(classId) });
+});
+
+app.post("/api/teacher/life-events/spin", requireCurrentTeacher, async (req, res) => {
+  const actor = (req as any).currentUser;
+  try {
+    const event = await spinLifeEvent({ classId: String(req.body?.classId || ""), studentId: String(req.body?.studentId || ""), actorId: actor.id });
+    res.json({ event });
+  } catch (err) {
+    if (err instanceof LifeEventError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message, code: err.code }); return; }
+    if (err instanceof BankError) { bankError(res, err); return; }
+    throw err;
+  }
+});
 
 app.get("/api/class/posts", requireAuth, async (req, res) => {
   const user = await currentUser(req);

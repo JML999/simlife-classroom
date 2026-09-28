@@ -518,6 +518,19 @@ export async function initSchema(): Promise<void> {
       created_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_class_post_submissions ON class_post_submissions(post_id, user_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS life_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      class_id TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      event_date TEXT NOT NULL,
+      event_key TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      applied_at TEXT,
+      UNIQUE(user_id, event_date)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sl_life_events_class_date ON life_events(class_id, event_date)`,
 
     // Per-class module visibility. Store what is hidden, not what is visible:
     // newly published modules therefore appear by default without a backfill.
