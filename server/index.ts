@@ -997,6 +997,9 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
   if (!post || post.status !== "published" || (post.classId && post.classId !== user.class_id)) {
     res.status(404).json({ error: "Class post not found." }); return;
   }
+  if (post.kind !== "announcement" && (await hiddenClassModuleKeys(user.class_id)).has(classModuleKey("post", post.id))) {
+    res.status(404).json({ error: "Class post not found." }); return;
+  }
   const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
   const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
   res.json({ ...post, submission, mission });
@@ -1045,7 +1048,10 @@ app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user || user.role !== "student") { res.status(403).json({ error: "Student access only." }); return; }
   const post = await getClassPost(String(req.params.id));
-  if (!post || (post.classId && post.classId !== user.class_id)) { res.status(404).json({ error: "Mission not found." }); return; }
+  if (!post || (post.classId && post.classId !== user.class_id) ||
+      (await hiddenClassModuleKeys(user.class_id)).has(classModuleKey("post", post.id))) {
+    res.status(404).json({ error: "Mission not found." }); return;
+  }
   try {
     res.json(await (post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
       post, userId: user.id, response: req.body?.response,

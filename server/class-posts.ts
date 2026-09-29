@@ -149,7 +149,7 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
   };
 }
 
-/** A broad fund is evidence of diversification; sector and single-asset ETFs are not. */
+/** Count current fund holdings, including sector and thematic funds, but not single-asset products. */
 export async function etfMissionState(post: ClassPost, userId: string): Promise<any> {
   if (post.kind !== "etf_mission") throw new ClassPostError("INVALID_INPUT", "This post is not an ETF mission.");
   const { holdings } = await holdingsFor(userId, () => null);
@@ -157,8 +157,8 @@ export async function etfMissionState(post: ClassPost, userId: string): Promise<
     const meta = tickerMeta(holding.ticker);
     return meta?.kind === "ETF" ? [{ ticker: holding.ticker, shares: holding.shares, assetClass: meta.assetClass, region: meta.region, breadth: meta.breadth, what: meta.what || "" }] : [];
   });
-  const broadEtfs = etfs.filter((fund) => fund.breadth === "BROAD" && ["EQUITY", "BOND"].includes(fund.assetClass));
-  return { etfs, broadEtfs, checks: { broadEtf: broadEtfs.length > 0 }, met: broadEtfs.length > 0 };
+  const qualifyingEtfs = etfs.filter((fund) => fund.breadth !== "SINGLE_ASSET");
+  return { etfs, qualifyingEtfs, checks: { twoEtfs: qualifyingEtfs.length >= 2 }, met: qualifyingEtfs.length >= 2 };
 }
 
 export async function submitEtfMission(opts: {
@@ -170,21 +170,23 @@ export async function submitEtfMission(opts: {
     if (existing) return { submittedAt: existing.created_at, deduped: true };
   }
   const state = await etfMissionState(opts.post, opts.userId);
-  if (!state.met) throw new ClassPostError("NOT_READY", "Hold a broad stock or bond ETF before submitting.");
-  const chosenTicker = String(opts.response?.chosenTicker || "").trim().toUpperCase();
-  const alternatives = Array.isArray(opts.response?.alternatives) ? opts.response.alternatives.map((value: any) => String(value || "").trim().toUpperCase()) : [];
-  if (!state.broadEtfs.some((fund: any) => fund.ticker === chosenTicker)) throw new ClassPostError("INVALID_INPUT", "Choose a broad ETF you currently hold.");
-  if (alternatives.length !== 1 || !alternatives[0] || alternatives[0] === chosenTicker || tickerMeta(alternatives[0])?.kind !== "ETF") {
-    throw new ClassPostError("INVALID_INPUT", "Compare your holding with one different ETF from the catalog.");
+  if (!state.met) throw new ClassPostError("NOT_READY", "Hold two different ETFs before submitting.");
+  const gapTicker = String(opts.response?.gapTicker || "").trim().toUpperCase();
+  const convictionTicker = String(opts.response?.convictionTicker || "").trim().toUpperCase();
+  if (!gapTicker || !convictionTicker || gapTicker === convictionTicker ||
+      !state.qualifyingEtfs.some((fund: any) => fund.ticker === gapTicker) ||
+      !state.qualifyingEtfs.some((fund: any) => fund.ticker === convictionTicker)) {
+    throw new ClassPostError("INVALID_INPUT", "Choose two different ETFs you currently hold.");
   }
-  const gap = String(opts.response?.gap || "").trim();
-  const comparison = String(opts.response?.comparison || "").trim();
-  const impact = String(opts.response?.impact || "").trim();
-  if (!gap || !comparison || !impact) throw new ClassPostError("INVALID_INPUT", "Explain your portfolio gap, ETF comparison, and expected impact.");
+  const gapArea = String(opts.response?.gapArea || "").trim();
+  const gapFit = String(opts.response?.gapFit || "").trim();
+  const convictionArea = String(opts.response?.convictionArea || "").trim();
+  const convictionFit = String(opts.response?.convictionFit || "").trim();
+  if (!gapArea || !gapFit || !convictionArea || !convictionFit) throw new ClassPostError("INVALID_INPUT", "Explain the portfolio gap, your investment idea, and how each ETF fits its goal.");
   const submittedAt = nowIso();
   await run(`INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`, [newId("csub"), opts.post.id, opts.userId,
-    JSON.stringify({ chosenTicker, alternatives, gap, comparison, impact }), JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt]);
+    JSON.stringify({ gapTicker, convictionTicker, gapArea, gapFit, convictionArea, convictionFit }), JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt]);
   return { submittedAt, deduped: false };
 }
 

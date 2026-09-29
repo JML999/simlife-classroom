@@ -36,7 +36,7 @@ const secFees='https://www.investor.gov/introduction-investing/general-resources
 {
  const s=base('One ticker can hold a basket',1,{dark:true,titleSize:68});
  txt(s,'Exchange traded funds  ·  Portfolio balance  ·  Your next decision',70,275,1060,100,31,C.pale);
- txt(s,'Today: find a gap in your portfolio, compare funds, and choose one you can explain.',70,464,1030,95,28,C.white);
+ txt(s,'Today: use one ETF to fill a gap and another to back an idea you believe in.',70,464,1030,95,28,C.white);
  notes(s,'Opening prompt: Which part of your current portfolio would be hurt if one company or one type of company struggled? Let students answer without assuming a right ticker.');
 }
 {
@@ -104,38 +104,38 @@ const secFees='https://www.investor.gov/introduction-investing/general-resources
  notes(s,'QQQ is a non-financial Nasdaq fund and the SimLife directory marks it as tilted toward technology. Use this as a qualitative overlap example rather than exact portfolio-weight arithmetic. Funds can overlap even when their names differ.',[secDiversify]);
 }
 {
- const s=base('Compare two ETF candidates',9);
+ const s=base('Two goals can call for two funds',9);
  txt(s,'Student example: mostly U.S. company stocks',84,215,1090,50,29,C.olive,true);
  txt(s,'VTI',88,298,210,65,44,C.ink,true,'Georgia');
  txt(s,'Broad U.S. stocks\nAdds many companies\nStill mostly U.S. stock risk',88,380,450,190,26);
  txt(s,'VXUS',675,298,310,65,44,C.ink,true,'Georgia');
  txt(s,'Broad non-U.S. stocks\nAdds geographic exposure\nStill stock market risk',675,380,460,190,26);
- notes(s,'Ask students: Which fits the stated gap better? If the gap is geographic, VXUS is the clearer explanation. If the goal is broad U.S. coverage, VTI may fit. Check current fund pages for holdings and costs; do not imply one is universally best.',[secDiversify]);
+ notes(s,'Ask students: Which area has little exposure, and which different area do they want to emphasize? These sample funds illustrate exposure, not a recommendation. Check current fund pages for holdings and costs.',[secDiversify]);
 }
 {
  const s=base('Module 3 assignment',10,{dark:true});
  lines(s,[
-  'Identify a gap or concentration in your portfolio.',
-  'Compare two ETFs: holdings, overlap, fees, and risk.',
-  'Hold one broad stock or bond ETF that fits your goal.',
-  'Explain the effect you expect and the risk that remains.'
+  'Find an area with little exposure; hold an ETF to fill it.',
+  'Find a different idea you believe in; hold a second ETF.',
+  'Explain how each fund serves its goal.',
+  'Check both funds’ holdings, overlap, fees, and risks.'
  ],82,225,1100,96,29,C.white);
- notes(s,'The app checks current holdings for a broad stock or bond ETF. Students choose one held fund and enter a second ETF they researched. No fixed spending minimum and no requirement to preserve Module 2 holdings. Sector, thematic, commodity, and crypto single-asset ETFs do not satisfy the broad fund check.');
+ notes(s,'The app checks for two different current ETF holdings. Broad, sector, and thematic funds count; single asset products do not. The teacher judges whether each explanation connects the fund to the stated goal. No fixed spending minimum and no requirement to preserve Module 2 holdings.');
 }
 {
  const s=base('What a strong explanation sounds like',11);
- txt(s,'“My portfolio is mostly U.S. company stocks. I chose VXUS because it holds companies outside the U.S. I compared it with VTI, which would add more U.S. stocks I already have. I checked each fund’s holdings and costs. VXUS adds geographic spread, but I can still lose money if global stocks fall.”',88,220,1090,365,30,C.ink);
- notes(s,'Model answer only. Students should use their own actual portfolio and fund research. Ask the class to identify the gap, comparison, decision, and remaining risk. Do not grade on agreement with one ticker.',[secDiversify,secFees]);
+ txt(s,'“I own mostly U.S. stocks, so VXUS adds companies outside the U.S. That fills a geographic gap, though global stocks can still fall. I also want a bigger technology position, so XLK adds technology companies. It overlaps with stocks I own, and a tech downturn would hurt both.”',88,220,1090,365,30,C.ink);
+ notes(s,'Model answer only. Students should use their own actual portfolio and fund research. Ask the class to identify both goals, the fund fit, overlap, and remaining risks. Do not grade on agreement with one ticker.',[secDiversify,secFees]);
 }
 {
  const s=base('Exit ticket',12);
  lines(s,[
-  'Which risk in your portfolio are you trying to change?',
-  'Which two ETFs will you compare?',
-  'What would make you reject an ETF, even if its name sounds right?'
+  'Where do you have little or no exposure?',
+  'Which different area do you want to bet bigger on?',
+  'Which two ETFs fit those goals, and what risks remain?'
  ],82,225,1100,115,32);
- txt(s,'Next: open Investing, research two funds, then begin your Module 3 draft.',82,615,1100,44,22,C.olive,true);
- notes(s,'Collect responses before independent work. Ask students to name a concrete holding or sector in their current portfolio. Teacher can publish the saved draft from Teacher → Class when ready.');
+ txt(s,'Next: open Investing, research both funds, then begin Module 3.',82,615,1100,44,22,C.olive,true);
+ notes(s,'Collect responses before independent work. Ask students to name a concrete holding or sector in their current portfolio.');
 }
 
 const { finalizePresentation } = await import(pathToFileURL(path.join(skill,'container_tools/artifact_tool_utils.mjs')).href);

@@ -924,8 +924,8 @@ function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   if (d.missionKind === "etf_mission") return <div className="module-submission">
-    <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · Broad ETFs held: {(d.broadEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
-    {d.response && <><p><strong>Portfolio need:</strong> {d.response.gap}</p><p><strong>Compared:</strong> {d.response.chosenTicker} with {d.response.alternatives?.join(", ")} — {d.response.comparison}</p><p><strong>Expected effect:</strong> {d.response.impact}</p></>}
+    <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · ETFs held: {(d.qualifyingEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
+    {d.response && <><p><strong>Portfolio gap:</strong> {d.response.gapArea}</p><p><strong>{d.response.gapTicker}:</strong> {d.response.gapFit}</p><p><strong>Investment idea:</strong> {d.response.convictionArea}</p><p><strong>{d.response.convictionTicker}:</strong> {d.response.convictionFit}</p></>}
   </div>;
   const t = d.targets;
   const goals = [
@@ -2274,7 +2274,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
           return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "etf", id: post.id, moduleNumber: post.moduleNumber })}>
             <ModuleCover moduleNumber={post.moduleNumber} kindLabel="ETF mission" submitted={!!post.submittedAt} art="portfolio" />
             <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p>
-              <div className="module-progress-line"><span>{m.broadEtfs.length} broad ETFs held</span><span>{m.etfs.length} ETFs total</span></div>
+              <div className="module-progress-line"><span>{Math.min(m.qualifyingEtfs.length, 2)}/2 ETFs held</span><span>{m.etfs.length} ETFs total</span></div>
               <span className={status === "Submitted" ? "badge-paid" : status === "Ready to submit" ? "badge-ready" : "badge-due"}>{status}</span>
             </div>
           </button>;
@@ -2690,11 +2690,12 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   id: string; moduleNumber?: number; onBack: () => void; onOpenInvesting: () => void;
 }) {
   const [post, setPost] = useState<any>(null);
-  const [chosenTicker, setChosenTicker] = useState("");
-  const [alternative, setAlternative] = useState("");
-  const [gap, setGap] = useState("");
-  const [comparison, setComparison] = useState("");
-  const [impact, setImpact] = useState("");
+  const [gapTicker, setGapTicker] = useState("");
+  const [convictionTicker, setConvictionTicker] = useState("");
+  const [gapArea, setGapArea] = useState("");
+  const [gapFit, setGapFit] = useState("");
+  const [convictionArea, setConvictionArea] = useState("");
+  const [convictionFit, setConvictionFit] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState("");
@@ -2707,8 +2708,9 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
       setPost(result);
       if (!hydrated.current && result.submission?.response) {
         const r = result.submission.response;
-        setChosenTicker(r.chosenTicker || ""); setAlternative(r.alternatives?.[0] || "");
-        setGap(r.gap || ""); setComparison(r.comparison || ""); setImpact(r.impact || "");
+        setGapTicker(r.gapTicker || ""); setConvictionTicker(r.convictionTicker || "");
+        setGapArea(r.gapArea || ""); setGapFit(r.gapFit || "");
+        setConvictionArea(r.convictionArea || ""); setConvictionFit(r.convictionFit || "");
       }
       hydrated.current = true;
     } catch (e: any) { setErr(e.message); }
@@ -2722,14 +2724,16 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   }, [load]);
   if (!post) return <div className="class-section"><ModuleHead kind="ETF mission" onBack={onBack} />{err ? <div className="error" role="alert">{err}</div> : <LoadingState label="Loading ETF mission" kind="detail" />}</div>;
   const mission = post.mission;
-  const ready = mission.met && chosenTicker && mission.broadEtfs.some((fund: any) => fund.ticker === chosenTicker)
-    && alternative.trim() && alternative.trim().toUpperCase() !== chosenTicker && gap.trim() && comparison.trim() && impact.trim();
+  const ready = mission.met && gapTicker && convictionTicker && gapTicker !== convictionTicker
+    && mission.qualifyingEtfs.some((fund: any) => fund.ticker === gapTicker)
+    && mission.qualifyingEtfs.some((fund: any) => fund.ticker === convictionTicker)
+    && gapArea.trim() && gapFit.trim() && convictionArea.trim() && convictionFit.trim();
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true); setErr("");
     try {
       await api(`/api/class/posts/${id}/submit`, { method: "POST", body: JSON.stringify({
-        response: { chosenTicker, alternatives: [alternative.trim().toUpperCase()], gap, comparison, impact }, idempotencyKey: key.current,
+        response: { gapTicker, convictionTicker, gapArea, gapFit, convictionArea, convictionFit }, idempotencyKey: key.current,
       }) });
       key.current = uid(); hydrated.current = false; await load();
     } catch (e: any) { setErr(e.message); }
@@ -2738,23 +2742,26 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   return <div className="class-section module-page">
     <ModuleHead moduleNumber={moduleNumber} kind="ETF mission" title={post.title} detail={post.summary} onBack={onBack} />
     {err && <div className="error" role="alert">{err}</div>}
-    {post.submission && <div className="notice" role="status"><strong>Submitted ✓ · {new Date(post.submission.createdAt).toLocaleString()}</strong> Your teacher can review your ETF choice and your portfolio explanation.</div>}
+    {post.submission && <div className="notice" role="status"><strong>Submitted ✓ · {new Date(post.submission.createdAt).toLocaleString()}</strong> Your teacher can review both ETF choices and your explanations.</div>}
     <section className="panel"><div className="section-kicker">The assignment</div><p className="mission-brief-body">{post.body}</p>
-      <p className="hint">A fund can hold many securities and still be narrow. Sector, thematic, and single asset ETFs do not meet this mission’s broad fund goal.</p>
+      <p className="hint">The two ETFs must be different current holdings. Broad, sector, and thematic ETFs count; single asset products do not. Check each fund’s holdings and risks before choosing.</p>
     </section>
-    <section className="panel goals-card" aria-label="ETF evidence"><div className="panel-heading"><div><h3>Where you stand</h3><p className="hint">Checked against the ETFs you hold now. Trades update after Refresh.</p></div><div className="goals-score"><strong>{mission.broadEtfs.length}</strong><span>broad ETFs</span></div></div>
-      <ol className="goal-list"><li className={`goal-item${mission.met ? " done" : ""}`}><span className="goal-tick" aria-hidden="true">{mission.met ? "✓" : "○"}</span><div><div className="goal-label">Hold one broad stock or bond ETF</div><div className="goal-detail">Examples: VTI, VXUS, VOO, BND. Choose a fund for a gap in your own portfolio.</div></div></li></ol>
+    <section className="panel goals-card" aria-label="ETF evidence"><div className="panel-heading"><div><h3>Where you stand</h3><p className="hint">Checked against the ETFs you hold now. Trades update after Refresh.</p></div><div className="goals-score"><strong>{Math.min(mission.qualifyingEtfs.length, 2)}/2</strong><span>ETFs held</span></div></div>
+      <ol className="goal-list"><li className={`goal-item${mission.met ? " done" : ""}`}><span className="goal-tick" aria-hidden="true">{mission.met ? "✓" : "○"}</span><div><div className="goal-label">Hold two different ETFs</div><div className="goal-detail">One addresses an area with little exposure; the other backs an area you want to emphasize.</div></div></li></ol>
       {mission.etfs.length > 0 && <div className="mission-holdings"><strong>ETFs you hold now</strong><div className="mission-holdings-list">{mission.etfs.map((fund: any) => <div className="mission-holding" key={fund.ticker}><strong>{fund.ticker}</strong><span>{fund.breadth === "BROAD" ? "Broad" : fund.breadth.toLowerCase().replace("_", " ")} · {fund.what}</span></div>)}</div></div>}
       <div className="row goals-actions"><button onClick={onOpenInvesting}>Open Investing →</button><button className="ghost" disabled={refreshing} onClick={() => void load(true)}>{refreshing ? "Refreshing…" : "Refresh"}</button></div>
     </section>
-    <section className="panel"><div className="section-kicker">Explain your decision</div>
-      <div className="field"><label>What does your portfolio need more of?</label><textarea rows={3} value={gap} onChange={(e) => setGap(e.target.value)} placeholder="Name a gap or concentration you see in your current holdings." /></div>
-      <div className="grid2"><div className="field"><label>Broad ETF you hold</label><select value={chosenTicker} onChange={(e) => setChosenTicker(e.target.value)}><option value="">Choose a current holding…</option>{mission.broadEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker}>{fund.ticker} · {fund.what}</option>)}</select></div>
-        <div className="field"><label>Another ETF you researched</label><input value={alternative} onChange={(e) => setAlternative(e.target.value.toUpperCase())} placeholder="e.g. QQQ" /></div></div>
-      <div className="field"><label>Compare what the two funds own, their overlap, fees, and risks</label><textarea rows={4} value={comparison} onChange={(e) => setComparison(e.target.value)} placeholder="Use the fund pages for each ETF. Explain why your chosen fund fits better." /></div>
-      <div className="field"><label>How does your choice change your portfolio? What risk remains?</label><textarea rows={4} value={impact} onChange={(e) => setImpact(e.target.value)} placeholder="Explain the expected effect without promising a return." /></div>
+    <section className="panel"><div className="section-kicker">Goal 1 · Fill a gap</div>
+      <div className="field"><label>What sector or investing area do you hold little or none of?</label><textarea rows={3} value={gapArea} onChange={(e) => setGapArea(e.target.value)} placeholder="Use your current portfolio to describe the gap." /></div>
+      <div className="field"><label>ETF you hold for this gap</label><select value={gapTicker} onChange={(e) => setGapTicker(e.target.value)}><option value="">Choose a current holding…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker}>{fund.ticker} · {fund.what}</option>)}</select></div>
+      <div className="field"><label>How does this ETF add the exposure you lack? What risk remains?</label><textarea rows={4} value={gapFit} onChange={(e) => setGapFit(e.target.value)} placeholder="Look through the fund’s holdings, sector weights, fees, and risks." /></div>
     </section>
-    <div className="module-action-bar"><div><strong>{mission.met ? "Broad ETF verified" : "A broad ETF is needed"}</strong><span>{ready ? "Your teacher receives your current ETF holdings and explanation." : "Complete the fields above and hold a broad ETF to submit."}</span></div><button disabled={!ready || busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
+    <section className="panel"><div className="section-kicker">Goal 2 · Bet bigger</div>
+      <div className="field"><label>What different sector or investing idea are you bullish on, and why?</label><textarea rows={3} value={convictionArea} onChange={(e) => setConvictionArea(e.target.value)} placeholder="Describe the idea and why you want more exposure to it." /></div>
+      <div className="field"><label>Different ETF you hold for this idea</label><select value={convictionTicker} onChange={(e) => setConvictionTicker(e.target.value)}><option value="">Choose a current holding…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker}>{fund.ticker} · {fund.what}</option>)}</select></div>
+      <div className="field"><label>How does this ETF express your idea? What could go wrong?</label><textarea rows={4} value={convictionFit} onChange={(e) => setConvictionFit(e.target.value)} placeholder="Explain what the fund owns, overlap with your current portfolio, costs, and risks." /></div>
+    </section>
+    <div className="module-action-bar"><div><strong>{mission.met ? "Two ETFs verified" : `${mission.qualifyingEtfs.length}/2 ETFs held`}</strong><span>{ready ? "Your teacher receives your current ETF holdings and both explanations." : "Hold two different ETFs and explain how each serves its goal."}</span></div><button disabled={!ready || busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
   </div>;
 }
 
@@ -3045,9 +3052,9 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       setSummary("Hold at least six individual stocks across at least five sectors, then explain how your portfolio is diversified.");
       setBody("Build a portfolio that currently holds at least six individual stocks across at least five different sectors. You may buy and sell as you choose; only your current holdings count. Multiple stocks in the same sector count as one sector. ETFs do not count toward the six-stock target.");
     } else if (kind === "etf_mission") {
-      setTitle("Choose an ETF for your portfolio");
-      setSummary("Find a portfolio gap, compare two ETFs, and hold a broad fund that addresses it.");
-      setBody("Review your current holdings and identify a gap or concentration. Compare two ETFs by what they own, overlap with your portfolio, fees, and risk. Hold at least one broad stock or bond ETF that fits your goal. Explain why you chose it and what risk remains. You may buy or sell as you choose; only your current holdings count.");
+      setTitle("Use two ETFs for two portfolio goals");
+      setSummary("Fill a gap in your portfolio and back an investing idea with two different ETFs.");
+      setBody("Identify a sector or investing area where you currently have little or no exposure. Hold one ETF that adds that exposure and explain how it helps. Then identify a different area you are bullish on. Hold a second, different ETF that increases your exposure to that idea and explain why it fits and what could go wrong. Look through each fund's holdings, overlap, fees, and risks. Only your current ETF holdings count; there is no minimum purchase amount.");
     } else { setTitle(""); setSummary(""); setBody(""); }
   };
   const createPost = async () => {
@@ -3083,7 +3090,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       {open !== "announcement" && <div className="field"><label>Card summary</label><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></div>}
       <div className="field"><label>{open === "announcement" ? "Message" : "Mission brief"}</label><textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)} /></div>
       {open === "portfolio_mission" && <p className="hint">Built-in evidence: 6 current stocks · 5 current sectors · three research explanations · final reflection.</p>}
-      {open === "etf_mission" && <p className="hint">Built-in evidence: a current broad stock or bond ETF · comparison with another ETF · portfolio explanation.</p>}
+      {open === "etf_mission" && <p className="hint">Built-in evidence: two different current ETF holdings · an explanation of how each serves its goal.</p>}
       <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
     </div>}
     {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : post.kind === "etf_mission" ? "ETF assignment · numbered module" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}

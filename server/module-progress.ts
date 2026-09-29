@@ -206,9 +206,9 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
         out.push({
           key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, title: mod.title,
           status: submission ? "submitted" : state.etfs.length ? "in_progress" : "not_started",
-          partsDone: saved.checks?.broadEtf ? 1 : 0, partsTotal: 1, partsLabel: "goals",
+          partsDone: Math.min(saved.qualifyingEtfs?.length ?? 0, 2), partsTotal: 2, partsLabel: "goals",
           detail: { missionKind: "etf_mission", submittedAt: submission?.createdAt ?? null,
-            heldEtfs: saved.etfs, broadEtfs: saved.broadEtfs, liveEtfs: state.etfs, response: submission?.response ?? null },
+            heldEtfs: saved.etfs, qualifyingEtfs: saved.qualifyingEtfs, liveEtfs: state.etfs, response: submission?.response ?? null },
         });
         continue;
       }
