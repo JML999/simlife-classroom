@@ -1686,7 +1686,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
   // Bill form
   const [billMode, setBillMode] = useState<"assigned_rent" | "assigned_car" | "flat">("assigned_rent");
   const [billTemplate, setBillTemplate] = useState("");
-  const [billTitle, setBillTitle] = useState("");
+  const [billTitle, setBillTitle] = useState("Rent");
   const [billDollars, setBillDollars] = useState("");
   const [billFee, setBillFee] = useState("");
   const [billDue, setBillDue] = useState("");
@@ -2092,7 +2092,13 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
           <div className="panel" id="send-bills">
             <h2>Send bills</h2>
             <p className="hint">Bills arrive in each student's mailbox. Students pay from checking — nothing is taken automatically. Use each student's assigned rent or car payment, or enter one flat amount.</p>
-            <div className="field"><label>Bill source</label><select value={billMode} onChange={(e) => { setBillMode(e.target.value as any); setBillPreview(null); }}><option value="assigned_rent">Each student's assigned rent</option><option value="assigned_car">Each student's assigned car payment</option><option value="flat">One amount for everyone</option></select></div>
+            <div className="field"><label>Bill source</label><select value={billMode} onChange={(e) => {
+              const next = e.target.value as "assigned_rent" | "assigned_car" | "flat";
+              setBillMode(next); setBillPreview(null); setBillTemplate("");
+              setBillTitle(next === "assigned_rent" ? "Rent" : next === "assigned_car" ? "Car Payment" : "");
+              setBillDocumentTitle(next === "assigned_rent" ? "Your Rent is Due" : next === "assigned_car" ? "Your Car Payment is Due" : "");
+              setBillDocumentBody("");
+            }}><option value="assigned_rent">Each student's assigned rent</option><option value="assigned_car">Each student's assigned car payment</option><option value="flat">One amount for everyone</option></select></div>
             <div className="field"><label>From template (optional)</label>
               <select value={billTemplate} onChange={(e) => useTemplate(e.target.value)}>
                 <option value="">Custom bill…</option>

@@ -21,7 +21,7 @@ import {
 } from "./ledger.js";
 import {
   postIncome, transfer, payBill, disputeBill, resolveDispute, listDisputes, createBillTemplate, issueIncomeBatch,
-  issueBillBatch, bankSummaryFor, checkBankInvariant, BankError,
+  issueBillBatch, bankSummaryFor, checkBankInvariant, BankError, assertBillSourceMatchesTitle,
   adjustBankBalance,
 } from "./bank.js";
 import { deletionStatus, deleteEmptyStudent, StudentAdminError } from "./student-admin.js";
@@ -1375,6 +1375,7 @@ function parseBillForm(body: any) {
   }
   const title = String(body?.title || "").trim();
   if (title.length < 2) throw new BankError("INVALID_INPUT", "Give the bill a short title.");
+  assertBillSourceMatchesTitle(assignedRent ? "assigned_rent" : assignedCar ? "assigned_car" : "flat", title);
   const dueAt = String(body?.dueAt || "");
   if (!dueAt || isNaN(new Date(dueAt).getTime())) throw new BankError("INVALID_INPUT", "Pick a valid due date.");
   return {

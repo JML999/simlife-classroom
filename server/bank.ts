@@ -26,6 +26,16 @@ export class BankError extends Error {
   }
 }
 
+/** Assigned bill amounts must agree with the purpose named on the bill. */
+export function assertBillSourceMatchesTitle(mode: "assigned_rent" | "assigned_car" | "flat", title: string): void {
+  if (mode === "assigned_rent" && /\b(car|auto|vehicle)\b/i.test(title)) {
+    throw new BankError("INVALID_INPUT", "This bill is titled as a car expense but uses rent amounts. Choose assigned car payment or change the title.");
+  }
+  if (mode === "assigned_car" && /\brent\b/i.test(title)) {
+    throw new BankError("INVALID_INPUT", "This bill is titled as rent but uses car-payment amounts. Choose assigned rent or change the title.");
+  }
+}
+
 export interface BankAccount {
   id: string;
   checkingCents: number;

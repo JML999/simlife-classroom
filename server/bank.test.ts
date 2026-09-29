@@ -17,7 +17,7 @@ const { initSchema, run, one } = await import("./db.js");
 const {
   postIncome, transfer, payBill, disputeBill, createBillTemplate, issueBillInTx,
   issueIncomeBatch, issueBillBatch, bankSummaryFor, checkBankInvariant,
-  billStatus, billTotal, BankError, adjustBankBalance,
+  billStatus, billTotal, BankError, adjustBankBalance, assertBillSourceMatchesTitle,
 } = await import("./bank.js");
 const { checkInvariant } = await import("./ledger.js");
 const { withTx } = await import("./db.js");
@@ -25,6 +25,13 @@ const { withTx } = await import("./db.js");
 let n = 0;
 const uid = () => `t_bank_${process.pid}_${++n}`;
 const TEACHER = "bteacher";
+
+test("assigned bill source rejects a car title priced from rent, and vice versa", () => {
+  assert.throws(() => assertBillSourceMatchesTitle("assigned_rent", "Car Payment"), /uses rent amounts/);
+  assert.throws(() => assertBillSourceMatchesTitle("assigned_car", "Monthly Rent"), /uses car-payment amounts/);
+  assert.doesNotThrow(() => assertBillSourceMatchesTitle("assigned_car", "Car Payment"));
+  assert.doesNotThrow(() => assertBillSourceMatchesTitle("assigned_rent", "Rent"));
+});
 
 before(async () => {
   await initSchema();
