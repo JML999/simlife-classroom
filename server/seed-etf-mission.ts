@@ -12,7 +12,7 @@ if (existing) {
   const post = await createClassPost({
     kind: "etf_mission", classId: null, title,
     summary: "Fill a gap in your portfolio and back an investing idea with two different ETFs.",
-    body: "Identify a sector or investing area where you currently have little or no exposure. Hold one ETF that adds that exposure and explain how it helps. Then identify a different area you are bullish on. Hold a second, different ETF that increases your exposure to that idea and explain why it fits and what could go wrong. Look through each fund's holdings, overlap, fees, and risks. Only your current ETF holdings count; there is no minimum purchase amount.",
+    body: "Identify a sector or investing area where you currently have little or no exposure. Hold one ETF that adds that exposure and explain how it helps. Then identify a different area where you have a reasoned investment idea. Hold a second, different ETF that increases your exposure to that idea. Explain what each fund owns, how it fits your goal, overlap, fees, and risks. For your second idea, describe evidence that would make you reconsider it. Only your current ETF holdings count; there is no minimum purchase amount.",
     heroUrl: "/module-art/balanced-portfolio.svg",
   });
   console.log(`Created draft ETF mission: ${post.id}. Publish it in Teacher → Class when ready.`);

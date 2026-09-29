@@ -925,7 +925,7 @@ function TeacherMissionDetail({ mod }: { mod: any }) {
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   if (d.missionKind === "etf_mission") return <div className="module-submission">
     <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · ETFs held: {(d.qualifyingEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
-    {d.response && <><p><strong>Portfolio gap:</strong> {d.response.gapArea}</p><p><strong>{d.response.gapTicker}:</strong> {d.response.gapFit}</p><p><strong>Investment idea:</strong> {d.response.convictionArea}</p><p><strong>{d.response.convictionTicker}:</strong> {d.response.convictionFit}</p></>}
+    {d.response && <><p><strong>Portfolio gap:</strong> {d.response.gapArea}</p><p><strong>{d.response.gapTicker}:</strong> {d.response.gapFit}</p><p><strong>Investment idea:</strong> {d.response.convictionArea}</p><p><strong>{d.response.convictionTicker}:</strong> {d.response.convictionFit}</p><p><strong>What would change their mind:</strong> {d.response.convictionChallenge}</p></>}
   </div>;
   const t = d.targets;
   const goals = [
@@ -2696,6 +2696,7 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   const [gapFit, setGapFit] = useState("");
   const [convictionArea, setConvictionArea] = useState("");
   const [convictionFit, setConvictionFit] = useState("");
+  const [convictionChallenge, setConvictionChallenge] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState("");
@@ -2711,6 +2712,7 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
         setGapTicker(r.gapTicker || ""); setConvictionTicker(r.convictionTicker || "");
         setGapArea(r.gapArea || ""); setGapFit(r.gapFit || "");
         setConvictionArea(r.convictionArea || ""); setConvictionFit(r.convictionFit || "");
+        setConvictionChallenge(r.convictionChallenge || "");
       }
       hydrated.current = true;
     } catch (e: any) { setErr(e.message); }
@@ -2727,13 +2729,13 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   const ready = mission.met && gapTicker && convictionTicker && gapTicker !== convictionTicker
     && mission.qualifyingEtfs.some((fund: any) => fund.ticker === gapTicker)
     && mission.qualifyingEtfs.some((fund: any) => fund.ticker === convictionTicker)
-    && gapArea.trim() && gapFit.trim() && convictionArea.trim() && convictionFit.trim();
+    && gapArea.trim() && gapFit.trim() && convictionArea.trim() && convictionFit.trim() && convictionChallenge.trim();
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true); setErr("");
     try {
       await api(`/api/class/posts/${id}/submit`, { method: "POST", body: JSON.stringify({
-        response: { gapTicker, convictionTicker, gapArea, gapFit, convictionArea, convictionFit }, idempotencyKey: key.current,
+        response: { gapTicker, convictionTicker, gapArea, gapFit, convictionArea, convictionFit, convictionChallenge }, idempotencyKey: key.current,
       }) });
       key.current = uid(); hydrated.current = false; await load();
     } catch (e: any) { setErr(e.message); }
@@ -2756,10 +2758,11 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
       <div className="field"><label>ETF you hold for this gap</label><select value={gapTicker} onChange={(e) => setGapTicker(e.target.value)}><option value="">Choose a current holding…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker}>{fund.ticker} · {fund.what}</option>)}</select></div>
       <div className="field"><label>How does this ETF add the exposure you lack? What risk remains?</label><textarea rows={4} value={gapFit} onChange={(e) => setGapFit(e.target.value)} placeholder="Look through the fund’s holdings, sector weights, fees, and risks." /></div>
     </section>
-    <section className="panel"><div className="section-kicker">Goal 2 · Bet bigger</div>
-      <div className="field"><label>What different sector or investing idea are you bullish on, and why?</label><textarea rows={3} value={convictionArea} onChange={(e) => setConvictionArea(e.target.value)} placeholder="Describe the idea and why you want more exposure to it." /></div>
+    <section className="panel"><div className="section-kicker">Goal 2 · A reasoned conviction</div>
+      <div className="field"><label>What different sector or investing idea do you want more exposure to, and why?</label><textarea rows={3} value={convictionArea} onChange={(e) => setConvictionArea(e.target.value)} placeholder="Give a reason for your idea, rather than predicting a guaranteed gain." /></div>
       <div className="field"><label>Different ETF you hold for this idea</label><select value={convictionTicker} onChange={(e) => setConvictionTicker(e.target.value)}><option value="">Choose a current holding…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker}>{fund.ticker} · {fund.what}</option>)}</select></div>
-      <div className="field"><label>How does this ETF express your idea? What could go wrong?</label><textarea rows={4} value={convictionFit} onChange={(e) => setConvictionFit(e.target.value)} placeholder="Explain what the fund owns, overlap with your current portfolio, costs, and risks." /></div>
+      <div className="field"><label>What does this ETF actually own, and how does it fit your idea?</label><textarea rows={4} value={convictionFit} onChange={(e) => setConvictionFit(e.target.value)} placeholder="Name its holdings or focus, overlap with your portfolio, costs, and risks." /></div>
+      <div className="field"><label>What evidence would make you reconsider this idea?</label><textarea rows={3} value={convictionChallenge} onChange={(e) => setConvictionChallenge(e.target.value)} placeholder="Describe a concrete change or finding that would weaken your case." /></div>
     </section>
     <div className="module-action-bar"><div><strong>{mission.met ? "Two ETFs verified" : `${mission.qualifyingEtfs.length}/2 ETFs held`}</strong><span>{ready ? "Your teacher receives your current ETF holdings and both explanations." : "Hold two different ETFs and explain how each serves its goal."}</span></div><button disabled={!ready || busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
   </div>;
@@ -3054,7 +3057,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
     } else if (kind === "etf_mission") {
       setTitle("Use two ETFs for two portfolio goals");
       setSummary("Fill a gap in your portfolio and back an investing idea with two different ETFs.");
-      setBody("Identify a sector or investing area where you currently have little or no exposure. Hold one ETF that adds that exposure and explain how it helps. Then identify a different area you are bullish on. Hold a second, different ETF that increases your exposure to that idea and explain why it fits and what could go wrong. Look through each fund's holdings, overlap, fees, and risks. Only your current ETF holdings count; there is no minimum purchase amount.");
+      setBody("Identify a sector or investing area where you currently have little or no exposure. Hold one ETF that adds that exposure and explain how it helps. Then identify a different area where you have a reasoned investment idea. Hold a second, different ETF that increases your exposure to that idea. Explain what each fund owns, how it fits your goal, overlap, fees, and risks. For your second idea, describe evidence that would make you reconsider it. Only your current ETF holdings count; there is no minimum purchase amount.");
     } else { setTitle(""); setSummary(""); setBody(""); }
   };
   const createPost = async () => {

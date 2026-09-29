@@ -2,11 +2,11 @@
 
 ## Assignment
 
-Students inspect their **current** SimLife portfolio and identify an area with little or no exposure. They hold one ETF to fill that gap, then identify a different area they are bullish on and hold a second, different ETF to increase that exposure. For each, they explain what the fund owns, how it serves the goal, overlap, fees, and risks. There is no dollar minimum or answer word limit. They may buy and sell freely; only current holdings count.
+Students inspect their **current** SimLife portfolio and identify an area with little or no exposure. They hold one ETF to fill that gap, then identify a different area where they have a reasoned investment idea and hold a second, different ETF to increase that exposure. For each, they explain what the fund owns, how it serves the goal, overlap, fees, and risks. For the second idea, they name evidence that would make them reconsider it. There is no dollar minimum or answer word limit. They may buy and sell freely; only current holdings count.
 
 The server verifies two different current ETF holdings from the curated directory. Broad, tilted, and sector funds qualify; single asset commodity and crypto products do not. The server cannot establish whether a student's described gap or thesis is sound from the ticker alone, so the teacher evaluates that reasoning. A holdings snapshot is stored with each submission.
 
-Suggested rubric (10 points): portfolio gap and supporting evidence (2); gap ETF fit and risks (3); investment idea and supporting reasoning (2); second ETF fit, overlap, and risks (3). Grade the reasoning, not whether a student picked a preferred ticker.
+Suggested rubric (10 points): portfolio gap and supporting evidence (2); gap ETF fit and risks (2); investment idea and supporting reasoning (2); second ETF holdings, fit, and overlap (2); specific evidence that would make the student reconsider the idea (2). Grade the reasoning, not whether a student picked a preferred ticker or correctly predicted a return.
 
 ## Catalog and investing audit
 

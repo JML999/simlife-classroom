@@ -182,11 +182,12 @@ export async function submitEtfMission(opts: {
   const gapFit = String(opts.response?.gapFit || "").trim();
   const convictionArea = String(opts.response?.convictionArea || "").trim();
   const convictionFit = String(opts.response?.convictionFit || "").trim();
-  if (!gapArea || !gapFit || !convictionArea || !convictionFit) throw new ClassPostError("INVALID_INPUT", "Explain the portfolio gap, your investment idea, and how each ETF fits its goal.");
+  const convictionChallenge = String(opts.response?.convictionChallenge || "").trim();
+  if (!gapArea || !gapFit || !convictionArea || !convictionFit || !convictionChallenge) throw new ClassPostError("INVALID_INPUT", "Explain both ETF goals and what evidence would make you reconsider your investment idea.");
   const submittedAt = nowIso();
   await run(`INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`, [newId("csub"), opts.post.id, opts.userId,
-    JSON.stringify({ gapTicker, convictionTicker, gapArea, gapFit, convictionArea, convictionFit }), JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt]);
+    JSON.stringify({ gapTicker, convictionTicker, gapArea, gapFit, convictionArea, convictionFit, convictionChallenge }), JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt]);
   return { submittedAt, deduped: false };
 }
 

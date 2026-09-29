@@ -116,23 +116,23 @@ const secFees='https://www.investor.gov/introduction-investing/general-resources
  const s=base('Module 3 assignment',10,{dark:true});
  lines(s,[
   'Find an area with little exposure; hold an ETF to fill it.',
-  'Find a different idea you believe in; hold a second ETF.',
-  'Explain how each fund serves its goal.',
-  'Check both funds’ holdings, overlap, fees, and risks.'
+  'Build a reasoned idea; hold a second ETF that fits it.',
+  'Explain holdings, overlap, fees, and risks for each.',
+  'Name evidence that would make you reconsider the idea.'
  ],82,225,1100,96,29,C.white);
- notes(s,'The app checks for two different current ETF holdings. Broad, sector, and thematic funds count; single asset products do not. The teacher judges whether each explanation connects the fund to the stated goal. No fixed spending minimum and no requirement to preserve Module 2 holdings.');
+ notes(s,'The app checks for two different current ETF holdings. Broad, sector, and thematic funds count; single asset products do not. The teacher judges whether each explanation connects the fund to the stated goal and gives a reasoned challenge to the investment idea. No fixed spending minimum and no requirement to preserve Module 2 holdings.');
 }
 {
  const s=base('What a strong explanation sounds like',11);
- txt(s,'“I own mostly U.S. stocks, so VXUS adds companies outside the U.S. That fills a geographic gap, though global stocks can still fall. I also want a bigger technology position, so XLK adds technology companies. It overlaps with stocks I own, and a tech downturn would hurt both.”',88,220,1090,365,30,C.ink);
- notes(s,'Model answer only. Students should use their own actual portfolio and fund research. Ask the class to identify both goals, the fund fit, overlap, and remaining risks. Do not grade on agreement with one ticker.',[secDiversify,secFees]);
+ txt(s,'“I own mostly U.S. stocks, so VXUS adds companies outside the U.S. That fills a geographic gap, though global stocks can still fall. I also want more technology exposure, so XLK adds technology companies. It overlaps with stocks I own. If those companies’ earnings stopped growing, I would reconsider that bet.”',88,220,1090,365,30,C.ink);
+ notes(s,'Model answer only. Students should use their own actual portfolio and fund research. Ask the class to identify both goals, what each fund owns, overlap, remaining risks, and what evidence would change the second decision. Do not grade on agreement with one ticker or a predicted return.',[secDiversify,secFees]);
 }
 {
  const s=base('Exit ticket',12);
  lines(s,[
   'Where do you have little or no exposure?',
-  'Which different area do you want to bet bigger on?',
-  'Which two ETFs fit those goals, and what risks remain?'
+  'Which different idea do you have a reason to believe in?',
+  'What would make you reconsider that idea?'
  ],82,225,1100,115,32);
  txt(s,'Next: open Investing, research both funds, then begin Module 3.',82,615,1100,44,22,C.olive,true);
  notes(s,'Collect responses before independent work. Ask students to name a concrete holding or sector in their current portfolio.');
