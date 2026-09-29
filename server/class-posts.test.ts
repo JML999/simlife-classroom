@@ -195,10 +195,10 @@ test("ETF mission requires two different current fund holdings and two explanati
   await add("VXUS");
   const state = await posts.etfMissionState(post, student);
   assert.deepEqual(state.qualifyingEtfs.map((f: any) => f.ticker).sort(), ["VXUS", "XLK"]);
-  const response = { gapTicker: "VXUS", convictionTicker: "XLK", gapArea: "Little international exposure", gapFit: "VXUS owns non-U.S. stocks; global markets can still fall.", convictionArea: "I think technology will grow", convictionFit: "XLK owns technology companies and increases my exposure, but overlaps with my stocks.", convictionChallenge: "I would reconsider if the companies' earnings stopped growing." };
+  const response = { gapTicker: "VXUS", convictionTicker: "XLK", gapExplanation: "My portfolio has little international exposure. VXUS owns non-U.S. stocks; global markets can still fall.", convictionExplanation: "I think technology will grow. XLK owns technology companies and increases my exposure, but overlaps with my stocks. I would reconsider if earnings stopped growing." };
   await posts.submitEtfMission({ post, userId: student, response });
   assert.equal((await posts.latestClassPostSubmission(post.id, student))?.evidence.met, true);
-  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionChallenge: " " } }), /make you reconsider/);
+  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionExplanation: " " } }), /Explain how each ETF/);
   await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VXUS" } }), /two different ETFs/);
   await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VTI" } }), /you currently hold/);
 });

@@ -538,6 +538,28 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
 .mission-brief-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .goal-sectors .small { color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 
+/* Module 3: one deliberate pick and one explanation for each ETF goal. */
+.etf-goal-card { overflow: hidden; padding: 0; border-color: #c8cdbb; box-shadow: 0 8px 24px rgba(50,55,32,.05); }
+.etf-goal-card:focus-within { border-color: #8d9a70; box-shadow: 0 8px 28px rgba(50,55,32,.1); }
+.etf-goal-head { display: flex; align-items: flex-start; gap: 16px; padding: 23px 25px 20px; background: linear-gradient(115deg, #edf0e4, #f8f8f2); border-bottom: 1px solid #d9ddce; }
+.etf-goal-conviction .etf-goal-head { background: linear-gradient(115deg, #f4eddd, #faf8f1); border-bottom-color: #e4dcc9; }
+.etf-goal-number { flex: none; display: grid; place-items: center; width: 38px; height: 38px; color: #fff; background: var(--olive); border-radius: 11px; font-family: var(--mono); font-size: 13px; font-weight: 700; }
+.etf-goal-conviction .etf-goal-number { background: #8c713e; }
+.etf-goal-head h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 25px; line-height: 1.2; }
+.etf-goal-head p { margin: 0; color: #55594a; font-size: 13px; line-height: 1.5; }
+.etf-goal-fields { display: grid; gap: 25px; padding: 24px 25px 27px; }
+.etf-goal-fields .field { gap: 10px; }
+.etf-goal-fields .field label { color: var(--ink); font-family: var(--sans); font-size: 14px; font-weight: 700; letter-spacing: 0; line-height: 1.4; text-transform: none; }
+.etf-goal-fields select, .etf-goal-fields textarea { padding: 14px 15px; background: #fff; border-color: #bfc4b4; border-radius: 10px; font-size: 15px; line-height: 1.55; }
+.etf-goal-fields textarea { min-height: 150px; resize: vertical; }
+.etf-goal-fields select:focus-visible, .etf-goal-fields textarea:focus-visible { border-color: var(--olive); outline: 2px solid rgba(88,90,58,.25); outline-offset: 2px; }
+.etf-field-help { margin: -3px 0 1px; color: #565b50; font-size: 13px; line-height: 1.5; }
+.etf-mission-page .module-action-bar { position: static; margin-bottom: 24px; }
+@media (max-width: 520px) {
+  .etf-goal-head { padding: 18px; }
+  .etf-goal-fields { padding: 20px 18px 23px; }
+}
+
 .goals-card .panel-heading h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 21px; font-weight: 550; }
 .goals-score { display: flex; flex: none; gap: 18px; text-align: right; }
 .goals-score strong { display: block; color: var(--olive-dark); font-family: var(--serif); font-size: 30px; font-weight: 550; font-variant-numeric: tabular-nums; line-height: 1; }
