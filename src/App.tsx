@@ -2158,19 +2158,16 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 // keyboard and screen-reader users. Pick a ticker, pick a bucket. Less code,
 // works everywhere, and is undoable.
 
-// Shared cover for every module card: same frame, palette, and line style —
-// only the motif changes with the activity (dropping a coin into sector trays
-// vs. a five-slice portfolio pie). Inline SVG so both cards read as one family
-// instead of one stock illustration + one ad-hoc chip collage.
+// Shared frame for module cards; each activity has its own illustration.
 function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
-  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio";
+  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf";
 }) {
   return (
-    <div className="module-cover">
+    <div className={`module-cover${art === "etf" ? " module-cover-etf" : ""}`}>
       <span className="module-kind">{moduleNumber ? `Module ${moduleNumber} · ${kindLabel}` : kindLabel}</span>
       {submitted && <span className="module-complete">Submitted ✓</span>}
       <div className="module-cover-art" aria-hidden="true">
-        {art === "sort" ? (
+        {art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
           <svg viewBox="0 0 280 132" fill="none">
             <circle cx="140" cy="32" r="18" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
             <text x="140" y="39" textAnchor="middle" fontSize="20" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
@@ -2272,7 +2269,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
         {modules.map((module) => module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.etfs.length ? "In progress" : "Not started";
           return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "etf", id: post.id, moduleNumber: post.moduleNumber })}>
-            <ModuleCover moduleNumber={post.moduleNumber} kindLabel="ETF mission" submitted={!!post.submittedAt} art="portfolio" />
+            <ModuleCover moduleNumber={post.moduleNumber} kindLabel="ETF mission" submitted={!!post.submittedAt} art="etf" />
             <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p>
               <div className="module-progress-line"><span>{Math.min(m.qualifyingEtfs.length, 2)}/2 ETFs held</span><span>{m.etfs.length} ETFs total</span></div>
               <span className={status === "Submitted" ? "badge-paid" : status === "Ready to submit" ? "badge-ready" : "badge-due"}>{status}</span>
@@ -3058,7 +3055,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
     try {
       const created = await api<any>("/api/teacher/class-posts", { method: "POST", body: JSON.stringify({
         kind: open, classId: scope || null, title, summary, body,
-        heroUrl: open === "portfolio_mission" || open === "etf_mission" ? "/module-art/balanced-portfolio.svg" : null,
+        heroUrl: open === "etf_mission" ? "/module-art/two-etf-goals.svg" : open === "portfolio_mission" ? "/module-art/balanced-portfolio.svg" : null,
         spec: open === "portfolio_mission" ? { minCompanies: 6, minSectors: 5 } : {},
       }) });
       setOpen(""); await load(); onModulesChanged(); setNotice(`Draft “${created.title}” created.`);

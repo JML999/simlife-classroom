@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Two ETFs for two portfolio goals</title>
+  <desc id="desc">A green fund card fills an empty space in a portfolio, beside a gold fund card representing a researched investment idea.</desc>
+  <defs>
+    <filter id="lift" x="-20%" y="-25%" width="140%" height="155%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#3f4535" flood-opacity=".16"/>
+    </filter>
+  </defs>
+  <ellipse cx="160" cy="135" rx="137" ry="9" fill="#758168" opacity=".16"/>
+  <path d="M126 70c20-13 43-13 64 0" stroke="#839077" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 6"/>
+
+  <g filter="url(#lift)" transform="rotate(-5 86 73)">
+    <rect x="24" y="14" width="124" height="116" rx="14" fill="#fffef9" stroke="#536a56" stroke-width="2.5"/>
+    <path d="M25 28c0-7 6-13 13-13h96c7 0 13 6 13 13v30H25V28Z" fill="#dce9df"/>
+    <path d="M25 58h122" stroke="#536a56" stroke-width="2"/>
+    <circle cx="43" cy="36" r="11" fill="#536a56"/>
+    <path d="M39 36h8m-4-4v8" stroke="#fffef9" stroke-width="2" stroke-linecap="round"/>
+    <text x="64" y="42" fill="#344b3c" font-family="Arial, sans-serif" font-size="17" font-weight="700">ETF</text>
+    <rect x="41" y="76" width="19" height="20" rx="4" fill="#7e9a80"/>
+    <rect x="68" y="76" width="19" height="20" rx="4" fill="#abc0aa"/>
+    <rect x="95" y="76" width="19" height="20" rx="4" fill="#d6e2d2"/>
+    <rect x="121" y="76" width="14" height="20" rx="4" fill="#fffef9" stroke="#739477" stroke-width="2" stroke-dasharray="3 3"/>
+    <path d="m118 100 8 8 8-8" stroke="#536a56" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="41" y="116" fill="#4d6251" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">FILL A GAP</text>
+  </g>
+
+  <g filter="url(#lift)" transform="rotate(5 231 73)">
+    <rect x="172" y="14" width="124" height="116" rx="14" fill="#fffef9" stroke="#877246" stroke-width="2.5"/>
+    <path d="M173 28c0-7 6-13 13-13h96c7 0 13 6 13 13v30H173V28Z" fill="#f2e6c8"/>
+    <path d="M173 58h122" stroke="#877246" stroke-width="2"/>
+    <circle cx="191" cy="36" r="11" fill="#9a7b43"/>
+    <path d="m191 29 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z" fill="#fffef9"/>
+    <text x="212" y="42" fill="#67532f" font-family="Arial, sans-serif" font-size="17" font-weight="700">ETF</text>
+    <path d="m188 95 22-12 18 7 19-19 29 8" stroke="#9a7b43" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="188" cy="95" r="4" fill="#d6ba7f" stroke="#877246" stroke-width="1.5"/>
+    <circle cx="210" cy="83" r="4" fill="#d6ba7f" stroke="#877246" stroke-width="1.5"/>
+    <circle cx="228" cy="90" r="4" fill="#d6ba7f" stroke="#877246" stroke-width="1.5"/>
+    <circle cx="247" cy="71" r="4" fill="#d6ba7f" stroke="#877246" stroke-width="1.5"/>
+    <circle cx="276" cy="79" r="4" fill="#d6ba7f" stroke="#877246" stroke-width="1.5"/>
+    <text x="188" y="116" fill="#80683d" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">BACK AN IDEA</text>
+  </g>
+</svg>
