@@ -84,6 +84,17 @@ test("Chime is searchable and classified as a Financials stock", async () => {
   assert.ok((await new MockQuoteProvider().getQuote("CHYM")).priceCents > 0);
 });
 
+test("HIMZ is searchable as a leveraged single-company ETF", async () => {
+  const { MockQuoteProvider, searchDirectory } = await import("./quotes.js");
+  const byTicker = searchDirectory("HIMZ");
+  assert.equal(byTicker[0]?.ticker, "HIMZ");
+  assert.equal(byTicker[0]?.kind, "ETF");
+  assert.equal(byTicker[0]?.breadth, "SINGLE_ASSET");
+  assert.ok(byTicker[0]?.what?.includes("daily move"));
+  assert.ok(searchDirectory("Defiance Daily Target").some((fund) => fund.ticker === "HIMZ"));
+  assert.ok((await new MockQuoteProvider().getQuote("HIMZ")).priceCents > 0);
+});
+
 test("currently held out-of-index stocks have searchable sector classifications", async () => {
   const { searchDirectory } = await import("./quotes.js");
   const fs = await import("node:fs");

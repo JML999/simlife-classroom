@@ -25,6 +25,7 @@
     "IEF": { "name": "iShares 7-10 Year Treasury ETF", "assetClass": "BOND", "region": "US", "breadth": "TILTED", "capTier": "", "what": "Only medium-term U.S. government bonds." },
     "VNQ": { "name": "Vanguard Real Estate ETF", "assetClass": "REAL_ESTATE", "region": "US", "breadth": "SECTOR", "sector": "Real Estate", "capTier": "ALL", "what": "U.S. property companies only - one sector." },
     "GLD": { "name": "SPDR Gold Shares", "assetClass": "COMMODITY", "region": "GLOBAL", "breadth": "SINGLE_ASSET", "capTier": "", "what": "Gold. One metal, no companies at all." },
+    "HIMZ": { "name": "Defiance Daily Target 2X Long HIMS ETF", "assetClass": "EQUITY", "region": "US", "breadth": "SINGLE_ASSET", "capTier": "", "what": "Targets twice the daily move of Hims & Hers Health stock. Leveraged exposure to one company, not a diversified fund." },
     "XLK": { "name": "Technology Select Sector SPDR", "assetClass": "EQUITY", "region": "US", "breadth": "SECTOR", "sector": "Information Technology", "capTier": "LARGE", "what": "Technology companies only." },
     "XLF": { "name": "Financial Select Sector SPDR", "assetClass": "EQUITY", "region": "US", "breadth": "SECTOR", "sector": "Financials", "capTier": "LARGE", "what": "Banks, insurers and financial companies only." },
     "XLE": { "name": "Energy Select Sector SPDR", "assetClass": "EQUITY", "region": "US", "breadth": "SECTOR", "sector": "Energy", "capTier": "LARGE", "what": "Oil, gas and energy companies only." },
