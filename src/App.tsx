@@ -2484,7 +2484,7 @@ function EtfDirectory({ onOpenInvesting, stockMission = false }: { onOpenInvesti
   return <details className="panel etf-directory" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary><span><strong>Explore ETFs on SimLife</strong><small>Browse tickers, fund names, and what they cover</small></span><span className="etf-directory-chevron" aria-hidden="true">⌄</span></summary>
     <div className="etf-directory-content">
-      <p className="hint">Use a ticker below in Investing to look up the fund and buy it.{stockMission ? " ETFs are available to trade, but do not count toward this module’s six-stock goal." : " Single asset funds do not count toward this module’s two-ETF goal."}</p>
+      <p className="hint">Use a ticker below in Investing to look up the fund and buy it.{stockMission ? " ETFs are available to trade, but do not count toward this module’s six-stock goal." : " Bitcoin and Ethereum funds count toward this module’s two-ETF goal. Gold and leveraged single-company funds do not."}</p>
       <button className="ghost" onClick={onOpenInvesting}>Open Investing →</button>
       {error ? <div className="error" role="alert">{error} <button className="ghost" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div> : !funds ? <LoadingState label="Loading available ETFs" kind="cards" /> : groups.map((group) => {
         const items = funds.filter((fund) => fund.breadth === group.breadth);
@@ -2788,7 +2788,7 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
     {err && <div className="error" role="alert">{err}</div>}
     {post.submission && <div className="notice" role="status"><strong>Submitted ✓ · {new Date(post.submission.createdAt).toLocaleString()}</strong> Your teacher can review both ETF choices and your explanations.</div>}
     <section className="panel"><div className="section-kicker">The assignment</div><p className="mission-brief-body">{post.body}</p>
-      <p className="hint">The two ETFs must be different current holdings. Broad, sector, and thematic ETFs count; single asset products do not. Check each fund’s holdings and risks before choosing.</p>
+      <p className="hint">The two ETFs must be different current holdings. Broad, sector, thematic, Bitcoin, and Ethereum funds count. Gold and leveraged single-company funds do not. Check each fund’s holdings and risks before choosing.</p>
     </section>
     <EtfDirectory onOpenInvesting={onOpenInvesting} />
     <section className="panel goals-card" aria-label="ETF evidence"><div className="panel-heading"><div><h3>Where you stand</h3><p className="hint">Checked against the ETFs you hold now. Trades update after Refresh.</p></div><div className="goals-score"><strong>{Math.min(mission.qualifyingEtfs.length, 2)}/2</strong><span>ETFs held</span></div></div>

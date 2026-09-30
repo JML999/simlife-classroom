@@ -202,3 +202,31 @@ test("ETF mission requires two different current fund holdings and two explanati
   await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VXUS" } }), /two different ETFs/);
   await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VTI" } }), /you currently hold/);
 });
+
+test("ETF mission counts Bitcoin and Ethereum funds and accepts them in submissions", async () => {
+  const student = "crypto-etf-student";
+  const now = new Date().toISOString();
+  await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES (?, 'Crypto ETF Student', 'student', 'post-class', ?)`, [student, now]);
+  await db.run(`INSERT INTO accounts (id, user_id, cash_cents, created_at) VALUES ('crypto-etf-account', ?, 0, ?)`, [student, now]);
+  const post = await posts.createClassPost({ kind: "etf_mission", title: "Crypto ETF choices", body: "Explain two different ETF choices." });
+  await posts.setClassPostStatus(post.id, "published"); post.status = "published";
+  const add = async (ticker: string) => db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+    VALUES (?, 'crypto-etf-account', 'buy', -1000, ?, 1000000, 1000, ?, ?)`, [`crypto-buy-${ticker}`, ticker, `crypto-key-${ticker}`, now]);
+  await add("IBIT");
+  await add("GLD");
+  await add("HIMZ");
+  assert.equal((await posts.etfMissionState(post, student)).met, false);
+  await add("ETHA");
+  const state = await posts.etfMissionState(post, student);
+  assert.equal(state.met, true);
+  assert.deepEqual(state.qualifyingEtfs.map((fund: any) => fund.ticker).sort(), ["ETHA", "IBIT"]);
+  const response = { gapTicker: "IBIT", convictionTicker: "ETHA", gapExplanation: "IBIT adds Bitcoin exposure to my portfolio.", convictionExplanation: "ETHA increases my exposure to Ethereum." };
+  await posts.submitEtfMission({ post, userId: student, response });
+  assert.equal((await posts.latestClassPostSubmission(post.id, student))?.evidence.met, true);
+  for (const ticker of ["GLD", "HIMZ"]) {
+    await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: ticker } }), /two different ETFs/);
+  }
+  const cryptoTickers = ["ARKB", "BITB", "FBTC", "GBTC", "HODL", "IBIT", "ETHA", "ETHE", "ETHW", "FETH"];
+  for (const ticker of cryptoTickers.filter((ticker) => !["IBIT", "ETHA"].includes(ticker))) await add(ticker);
+  assert.deepEqual((await posts.etfMissionState(post, student)).qualifyingEtfs.map((fund: any) => fund.ticker).sort(), cryptoTickers.sort());
+});

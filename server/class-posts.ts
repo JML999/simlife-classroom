@@ -149,7 +149,7 @@ export async function portfolioMissionState(post: ClassPost, userId: string): Pr
   };
 }
 
-/** Count current fund holdings, including sector and thematic funds, but not single-asset products. */
+/** Count current fund holdings, including crypto funds; other single-asset products are excluded. */
 export async function etfMissionState(post: ClassPost, userId: string): Promise<any> {
   if (post.kind !== "etf_mission") throw new ClassPostError("INVALID_INPUT", "This post is not an ETF mission.");
   const { holdings } = await holdingsFor(userId, () => null);
@@ -157,7 +157,7 @@ export async function etfMissionState(post: ClassPost, userId: string): Promise<
     const meta = tickerMeta(holding.ticker);
     return meta?.kind === "ETF" ? [{ ticker: holding.ticker, shares: holding.shares, assetClass: meta.assetClass, region: meta.region, breadth: meta.breadth, what: meta.what || "" }] : [];
   });
-  const qualifyingEtfs = etfs.filter((fund) => fund.breadth !== "SINGLE_ASSET");
+  const qualifyingEtfs = etfs.filter((fund) => fund.breadth !== "SINGLE_ASSET" || fund.assetClass === "CRYPTO");
   return { etfs, qualifyingEtfs, checks: { twoEtfs: qualifyingEtfs.length >= 2 }, met: qualifyingEtfs.length >= 2 };
 }
 
