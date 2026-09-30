@@ -561,6 +561,31 @@ button.tile-link:hover:not(:disabled) { color: #263792; background: transparent;
   .etf-goal-fields { padding: 20px 18px 23px; }
 }
 
+.etf-directory { padding: 0; overflow: hidden; }
+.etf-directory summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 21px 24px; cursor: pointer; list-style: none; background: linear-gradient(120deg, #edf0e4, #faf9f3); }
+.etf-directory summary::-webkit-details-marker { display: none; }
+.etf-directory summary strong { display: block; font-family: var(--serif); font-size: 22px; }
+.etf-directory summary small { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.etf-directory summary:focus-visible { outline: 2px solid var(--olive); outline-offset: -4px; }
+.etf-directory-chevron { color: var(--olive); font-size: 24px; }
+.etf-directory[open] .etf-directory-chevron { transform: rotate(180deg); }
+.etf-directory-content { padding: 0 24px 24px; border-top: 1px solid var(--line); }
+.etf-directory-content > .hint { margin: 18px 0 12px; }
+.etf-directory-group { margin-top: 26px; }
+.etf-directory-group h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 0 12px; font-size: 15px; }
+.etf-directory-group h4 span { color: var(--muted); font-size: 11px; font-weight: 400; }
+.etf-directory-group ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.etf-directory-group li { min-width: 0; padding: 15px; background: #faf9f5; border: 1px solid var(--line); border-radius: 10px; }
+.etf-directory-fund-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 27px; margin-bottom: 8px; }
+.etf-directory-fund-head > strong { color: var(--olive-dark); font-family: var(--mono); font-size: 16px; }
+.etf-directory-fund-name { display: block; font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.etf-directory-group li p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.etf-directory-group li.etf-directory-energy { border-color: #adb99f; background: #eef2e9; }
+@media (max-width: 520px) {
+  .etf-directory summary { padding: 18px; }
+  .etf-directory-content { padding: 0 18px 20px; }
+}
+
 .goals-card .panel-heading h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 21px; font-weight: 550; }
 .goals-score { display: flex; flex: none; gap: 18px; text-align: right; }
 .goals-score strong { display: block; color: var(--olive-dark); font-family: var(--serif); font-size: 30px; font-weight: 550; font-variant-numeric: tabular-nums; line-height: 1; }

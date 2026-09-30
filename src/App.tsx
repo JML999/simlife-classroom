@@ -2459,6 +2459,47 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
 // checked live against my real portfolio, (3) write it up once the evidence is
 // there. The write-up is LOCKED until every goal is met, so nobody faces four
 // empty textboxes before they have done the trading that makes them answerable.
+interface EtfDirectoryFund { ticker: string; name: string; breadth: string; what: string }
+
+function EtfDirectory({ onOpenInvesting, stockMission = false }: { onOpenInvesting: () => void; stockMission?: boolean }) {
+  const [funds, setFunds] = useState<EtfDirectoryFund[] | null>(null);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!open || funds) return;
+    let cancelled = false;
+    setError("");
+    api<{ funds: EtfDirectoryFund[] }>("/api/etfs").then((result) => {
+      if (!cancelled) setFunds(result.funds);
+    }).catch((e: any) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [open, funds, attempt]);
+  const groups = [
+    { title: "Broad market", breadth: "BROAD" },
+    { title: "Growth, dividends, and other tilts", breadth: "TILTED" },
+    { title: "Sector funds", breadth: "SECTOR" },
+    { title: "Single asset and leveraged funds", breadth: "SINGLE_ASSET" },
+  ];
+  return <details className="panel etf-directory" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary><span><strong>Explore ETFs on SimLife</strong><small>Browse tickers, fund names, and what they cover</small></span><span className="etf-directory-chevron" aria-hidden="true">⌄</span></summary>
+    <div className="etf-directory-content">
+      <p className="hint">Use a ticker below in Investing to look up the fund and buy it.{stockMission ? " ETFs are available to trade, but do not count toward this module’s six-stock goal." : " Single asset funds do not count toward this module’s two-ETF goal."}</p>
+      <button className="ghost" onClick={onOpenInvesting}>Open Investing →</button>
+      {error ? <div className="error" role="alert">{error} <button className="ghost" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div> : !funds ? <LoadingState label="Loading available ETFs" kind="cards" /> : groups.map((group) => {
+        const items = funds.filter((fund) => fund.breadth === group.breadth);
+        return items.length > 0 && <section className="etf-directory-group" key={group.breadth} aria-label={group.title}>
+          <h4>{group.title}<span>{items.length} funds</span></h4>
+          <ul>{items.map((fund) => <li key={fund.ticker} className={fund.ticker === "XLE" ? "etf-directory-energy" : undefined}>
+            <div className="etf-directory-fund-head"><strong>{fund.ticker}</strong>{fund.ticker === "XLE" && <span className="sector-chip now">Energy</span>}</div>
+            <span className="etf-directory-fund-name">{fund.name}</span><p>{fund.what}</p>
+          </li>)}</ul>
+        </section>;
+      })}
+    </div>
+  </details>;
+}
+
 function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   id: string; moduleNumber?: number; onBack: () => void; onOpenInvesting: () => void;
 }) {
@@ -2582,6 +2623,8 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
           )}
         </div>
       </section>
+
+      <EtfDirectory onOpenInvesting={onOpenInvesting} stockMission />
 
       <section className="panel goals-card" aria-label="Where you stand">
         <div className="panel-heading">
@@ -2747,6 +2790,7 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
     <section className="panel"><div className="section-kicker">The assignment</div><p className="mission-brief-body">{post.body}</p>
       <p className="hint">The two ETFs must be different current holdings. Broad, sector, and thematic ETFs count; single asset products do not. Check each fund’s holdings and risks before choosing.</p>
     </section>
+    <EtfDirectory onOpenInvesting={onOpenInvesting} />
     <section className="panel goals-card" aria-label="ETF evidence"><div className="panel-heading"><div><h3>Where you stand</h3><p className="hint">Checked against the ETFs you hold now. Trades update after Refresh.</p></div><div className="goals-score"><strong>{Math.min(mission.qualifyingEtfs.length, 2)}/2</strong><span>ETFs held</span></div></div>
       <ol className="goal-list"><li className={`goal-item${mission.met ? " done" : ""}`}><span className="goal-tick" aria-hidden="true">{mission.met ? "✓" : "○"}</span><div><div className="goal-label">Hold two different ETFs</div><div className="goal-detail">One addresses an area with little exposure; the other backs an area you want to emphasize.</div></div></li></ol>
       {mission.etfs.length > 0 && <div className="mission-holdings"><strong>ETFs you hold now</strong><div className="mission-holdings-list">{mission.etfs.map((fund: any) => <div className="mission-holding" key={fund.ticker}><strong>{fund.ticker}</strong><span>{fund.breadth === "BROAD" ? "Broad" : fund.breadth.toLowerCase().replace("_", " ")} · {fund.what}</span></div>)}</div></div>}

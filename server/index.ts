@@ -28,7 +28,7 @@ import { deletionStatus, deleteEmptyStudent, StudentAdminError } from "./student
 import {
   importRosterProfiles, onboardingStatus, claimRosterProfile, listRosterProfiles, approveRosterProfile, assignRosterProfile, applyRosterProfile, OnboardingError,
 } from "./onboarding.js";
-import { makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
+import { loadDirectory, makeQuoteProvider, normalizeTicker, QuoteError } from "./quotes.js";
 import { ensureDemoUsers, DEMO_IDS } from "./seed.js";
 import { createBillDraft, listBillDrafts, sendBillDraft, updateBillDraft } from "./bill-drafts.js";
 import {
@@ -299,6 +299,10 @@ app.post("/api/onboarding/claim", requireAuth, async (req, res) => {
 app.get("/api/search", requireAuth, async (req, res) => {
   const results = await quotes.search(String(req.query["q"] || ""));
   res.json({ results, delayed: true });
+});
+
+app.get("/api/etfs", requireAuth, (_req, res) => {
+  res.json({ funds: loadDirectory().filter((security) => security.kind === "ETF") });
 });
 
 app.get("/api/quotes", requireAuth, async (req, res) => {
