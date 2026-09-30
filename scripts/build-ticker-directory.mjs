@@ -55,6 +55,9 @@ const EXTRA_STOCKS = [
   ["CHYM", "Chime Financial, Inc.", "Financials", "Consumer Finance", "LARGE"],
   ["WING", "Wingstop Inc.", "Consumer Discretionary", "Restaurants", "MID"],
   ["GEG", "Great Elm Group, Inc.", "Financials", "Asset Management & Custody Banks", "SMALL"],
+  ["JAGX", "Jaguar Health, Inc.", "Health Care", "Pharmaceuticals", "SMALL"],
+  ["AEMD", "Aethlon Medical, Inc.", "Health Care", "Health Care Equipment", "SMALL"],
+  ["BENF", "Beneficient", "Financials", "Diversified Financial Services", "SMALL"],
   // Foreign ADR picks students ask for: not S&P 500, so no table row exists.
   ["TM", "Toyota Motor Corp.", "Consumer Discretionary", "Automobiles", "LARGE"],
   ["ADDYY", "adidas AG", "Consumer Discretionary", "Footwear", "LARGE"],

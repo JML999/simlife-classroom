@@ -2461,7 +2461,7 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
 // empty textboxes before they have done the trading that makes them answerable.
 interface EtfDirectoryFund { ticker: string; name: string; breadth: string; what: string }
 
-function EtfDirectory({ onOpenInvesting, stockMission = false }: { onOpenInvesting: () => void; stockMission?: boolean }) {
+function EtfDirectory({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [funds, setFunds] = useState<EtfDirectoryFund[] | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -2484,7 +2484,7 @@ function EtfDirectory({ onOpenInvesting, stockMission = false }: { onOpenInvesti
   return <details className="panel etf-directory" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary><span><strong>Explore ETFs on SimLife</strong><small>Browse tickers, fund names, and what they cover</small></span><span className="etf-directory-chevron" aria-hidden="true">⌄</span></summary>
     <div className="etf-directory-content">
-      <p className="hint">Use a ticker below in Investing to look up the fund and buy it.{stockMission ? " ETFs are available to trade, but do not count toward this module’s six-stock goal." : " Bitcoin and Ethereum funds count toward this module’s two-ETF goal. Gold and leveraged single-company funds do not."}</p>
+      <p className="hint">Use a ticker below in Investing to look up the fund and buy it. Bitcoin and Ethereum funds count toward this module’s two-ETF goal. Gold and leveraged single-company funds do not.</p>
       <button className="ghost" onClick={onOpenInvesting}>Open Investing →</button>
       {error ? <div className="error" role="alert">{error} <button className="ghost" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div> : !funds ? <LoadingState label="Loading available ETFs" kind="cards" /> : groups.map((group) => {
         const items = funds.filter((fund) => fund.breadth === group.breadth);
@@ -2623,8 +2623,6 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
           )}
         </div>
       </section>
-
-      <EtfDirectory onOpenInvesting={onOpenInvesting} stockMission />
 
       <section className="panel goals-card" aria-label="Where you stand">
         <div className="panel-heading">
