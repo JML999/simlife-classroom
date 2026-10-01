@@ -122,6 +122,27 @@ test("selling a stock and buying a replacement can still complete the mission", 
   assert.equal(state.met, true);
 });
 
+test("Wendy's counts as a current stock and its sector can complete Module 2", async () => {
+  const now = new Date().toISOString();
+  await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES ('wendys-student', 'Wendys Student', 'student', 'post-class', ?)`, [now]);
+  await db.run(`INSERT INTO accounts (id, user_id, cash_cents, created_at) VALUES ('wendys-account', 'wendys-student', 0, ?)`, [now]);
+  const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
+  const add = async (ticker: string) => db.run(`INSERT INTO ledger (id, account_id, kind, amount_cents, ticker, qty_micro, price_cents, idempotency_key, created_at)
+    VALUES (?, 'wendys-account', 'buy', -1000, ?, 1000000, 1000, ?, ?)`, [`wendys-buy-${ticker}`, ticker, `wendys-key-${ticker}`, now]);
+  for (const ticker of ["AAPL", "MSFT", "BAC", "KO", "CEG"]) await add(ticker);
+  assert.deepEqual((await posts.portfolioMissionState(mission, "wendys-student")).counts, { companies: 5, sectors: 4 });
+  await add("WEN");
+  const state = await posts.portfolioMissionState(mission, "wendys-student");
+  assert.deepEqual(state.counts, { companies: 6, sectors: 5 });
+  assert.equal(state.met, true);
+  assert.ok(state.companies.some((stock: any) => stock.ticker === "WEN" && stock.sector === "Consumer Discretionary"));
+  assert.ok(!state.uncounted.some((stock: any) => stock.ticker === "WEN"));
+  await posts.submitPortfolioMission({ post: mission, userId: "wendys-student", response: {
+    picks: [{ ticker: "WEN", thesis: "Restaurant demand." }, { ticker: "BAC", thesis: "Banking." }, { ticker: "KO", thesis: "Beverages." }],
+    reflection: "These businesses span sectors with different sources of demand.",
+  } });
+});
+
 test("mission explains the five-company four-sector portfolio shown by the student", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES ('post-scenario', 'Scenario', 'student', 'post-class', ?)`, [new Date().toISOString()]);

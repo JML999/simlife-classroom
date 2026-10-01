@@ -54,6 +54,7 @@ const EXTRA_STOCKS = [
   ["CROX", "Crocs, Inc.", "Consumer Discretionary", "Footwear", "MID"],
   ["CHYM", "Chime Financial, Inc.", "Financials", "Consumer Finance", "LARGE"],
   ["WING", "Wingstop Inc.", "Consumer Discretionary", "Restaurants", "MID"],
+  ["WEN", "The Wendy's Company", "Consumer Discretionary", "Restaurants", "SMALL"],
   ["GEG", "Great Elm Group, Inc.", "Financials", "Asset Management & Custody Banks", "SMALL"],
   ["JAGX", "Jaguar Health, Inc.", "Health Care", "Pharmaceuticals", "SMALL"],
   ["AEMD", "Aethlon Medical, Inc.", "Health Care", "Health Care Equipment", "SMALL"],

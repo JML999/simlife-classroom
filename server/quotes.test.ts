@@ -99,12 +99,12 @@ test("currently held out-of-index stocks have searchable sector classifications"
   const { searchDirectory } = await import("./quotes.js");
   const fs = await import("node:fs");
   const directory = JSON.parse(fs.readFileSync(new URL("./ticker-directory.json", import.meta.url), "utf8"));
-  for (const [ticker, sector] of [["WING", "Consumer Discretionary"], ["GEG", "Financials"], ["JAGX", "Health Care"], ["AEMD", "Health Care"], ["BENF", "Financials"]]) {
+  for (const [ticker, sector] of [["WING", "Consumer Discretionary"], ["WEN", "Consumer Discretionary"], ["GEG", "Financials"], ["JAGX", "Health Care"], ["AEMD", "Health Care"], ["BENF", "Financials"]]) {
     assert.ok(searchDirectory(ticker).some((result) => result.ticker === ticker));
     assert.equal(directory.meta[ticker].kind, "STOCK");
     assert.equal(directory.meta[ticker].sector, sector);
   }
-  for (const [ticker, name] of [["JAGX", "Jaguar Health"], ["AEMD", "Aethlon Medical"], ["BENF", "Beneficient"]]) {
+  for (const [ticker, name] of [["WEN", "Wendy"], ["JAGX", "Jaguar Health"], ["AEMD", "Aethlon Medical"], ["BENF", "Beneficient"]]) {
     assert.ok(searchDirectory(name).some((result) => result.ticker === ticker));
   }
 });
