@@ -1653,7 +1653,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
       <WheelFace angle={angle} options={options} />
       <div className="life-event-controls">
         <div className="field"><label htmlFor="life-event-student">Student</label><select id="life-event-student" value={studentId} disabled={busy} onChange={(e) => { setStudentId(e.target.value); setResult(null); }}><option value="">Choose a student…</option>{students.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></div>
-        <div className="life-wheel-actions"><button className="ghost" disabled={options.length !== 10} onClick={() => setPresenting(true)}>Present wheel</button><button disabled={!studentId || busy || options.length !== 10} onClick={spin}>{busy ? "Spinning…" : todayEvent ? `Replay ${selectedName}'s spin` : `Spin for ${selectedName}`}</button></div>
+        <div className="life-wheel-actions"><button className="ghost" disabled={options.length === 0} onClick={() => setPresenting(true)}>Present wheel</button><button disabled={!studentId || busy || options.length === 0} onClick={spin}>{busy ? "Spinning…" : todayEvent ? `Replay ${selectedName}'s spin` : `Spin for ${selectedName}`}</button></div>
         <p className="small">Students need an assigned job and paycheck before spinning. Bills arrive in their mailbox; nothing is withdrawn automatically.</p>
         {resultCard}
       </div>
@@ -1667,7 +1667,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
           {error && <div className="error" role="alert">{error}</div>}
           {busy ? <div className="life-wheel-passing" aria-hidden="true">{passingIndex === null ? "Here we go…" : `Passing: ${options[passingIndex]?.title || ""}`}</div> : result ? <>{resultCard}<button onClick={() => { setStudentId(""); setResult(null); }}>Next student</button></> : <>
             <div className="field"><label htmlFor="life-event-stage-student">Student</label><select id="life-event-stage-student" value={studentId} onChange={(e) => { setStudentId(e.target.value); setResult(null); }}><option value="">Choose a student…</option>{students.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></div>
-            <button disabled={!studentId || options.length !== 10} onClick={spin}>{todayEvent ? "Replay today’s spin" : "Spin the wheel"}</button>
+            <button disabled={!studentId || options.length === 0} onClick={spin}>{todayEvent ? "Replay today’s spin" : "Spin the wheel"}</button>
           </>}
           <button className="life-wheel-sound" disabled={busy} onClick={() => setSoundOn(!soundOn)} aria-pressed={soundOn}>{soundOn ? "Sound on ♪" : "Sound off"}</button>
         </div>
