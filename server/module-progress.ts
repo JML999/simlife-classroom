@@ -21,6 +21,7 @@
 import { q, one } from "./db.js";
 import { classModuleCatalog, hiddenClassModuleKeys } from "./class-modules.js";
 import { getActivity, attemptsFor, draftFor, answerKeyFor } from "./sorting.js";
+import { collegeDraftFor, collegePartsDone } from "./college.js";
 import { getClassPost, portfolioMissionState, etfMissionState, latestClassPostSubmission } from "./class-posts.js";
 
 export type ModuleStatus = "not_started" | "in_progress" | "submitted";
@@ -31,10 +32,11 @@ export interface ModuleSummary {
   id: string;
   moduleNumber: number;
   title: string;
+  container?: "investing" | "college";
   status: ModuleStatus;
   partsDone: number;
   partsTotal: number;
-  partsLabel: "placed" | "correct" | "goals";
+  partsLabel: "placed" | "correct" | "goals" | "answers";
   detail?: Record<string, any>;
 }
 
@@ -104,6 +106,10 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     if (!post) continue;
     for (const s of students) {
       if (submittedPosts[s.id]?.has(post.id)) continue;
+      if (post.kind === "college_pathways") {
+        if (await collegeDraftFor(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+        continue;
+      }
       const state = post.kind === "etf_mission" ? await etfMissionState(post, s.id) : await portfolioMissionState(post, s.id);
       if (post.kind === "etf_mission" ? state.etfs.length > 0 : state.counts.companies > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
     }
@@ -200,6 +206,14 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       const post = await getClassPost(mod.id);
       if (!post) continue;
       const submission = await latestClassPostSubmission(post.id, userId);
+      if (post.kind === "college_pathways") {
+        const draft = await collegeDraftFor(post.id, userId);
+        const response = submission?.response ?? draft?.response ?? null;
+        out.push({ key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, container: "college", title: mod.title,
+          status: submission ? "submitted" : draft ? "in_progress" : "not_started", partsDone: collegePartsDone(response), partsTotal: 15, partsLabel: "answers",
+          detail: { missionKind: "college_pathways", submittedAt: submission?.createdAt ?? null, draftAt: draft?.updatedAt ?? null, response } });
+        continue;
+      }
       if (post.kind === "etf_mission") {
         const state = await etfMissionState(post, userId);
         const saved = submission?.evidence ?? state;

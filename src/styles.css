@@ -803,3 +803,47 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
   .leaderboard-podium-card { flex: 0 0 min(80vw, 260px); min-height: 140px; scroll-snap-align: start; }
 }
 @media (prefers-reduced-motion: reduce) { .life-wheel-stage { scroll-behavior: auto; } }
+
+/* Learning routes and the college comparison share the Class page’s spacing. */
+.learning-route-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; margin: 24px 0 36px; }
+.learning-route-card { display: flex; flex-direction: column; padding: 0; overflow: hidden; text-align: left; color: var(--ink); background: #fffefb; border: 1px solid var(--line); border-radius: 20px; }
+.learning-route-card:hover { border-color: var(--olive); box-shadow: 0 10px 30px rgba(45,53,35,.08); }
+.learning-route-art { display: grid; place-items: center; height: 200px; background: #e9eddc; }
+.route-college .learning-route-art { background: #e8efeb; }
+.learning-route-art img { width: 80%; height: 180px; object-fit: contain; }
+.learning-route-card > div:last-child { padding: 26px; }
+.learning-route-card h3 { margin: 10px 0; font-family: var(--serif); font-size: 32px; line-height: 1.15; }
+.learning-route-card p { font-family: var(--sans); margin: 0 0 22px; font-size: 15px; line-height: 1.6; }
+.route-open { display: block; margin-top: 22px; color: var(--olive); font-weight: 700; }
+.module-route-visibility { margin-top: 24px; }
+.module-route-visibility h3 { margin-bottom: 14px; }
+.college-assignment { padding-bottom: 160px; }
+.college-assignment > .panel { margin: 24px 0; }
+.college-brief { display: grid; grid-template-columns: minmax(0,1fr) 230px; gap: 30px; align-items: center; background: #edf1e7; }
+.college-brief h3, .college-comparison h3, .college-next-step h3 { font-family: var(--serif); font-size: 30px; margin: 10px 0 16px; }
+.college-brief p { line-height: 1.7; }
+.college-brief img { width: 100%; }
+.college-path-heading, .college-comparison-row { display: grid; grid-template-columns: minmax(160px,.8fr) repeat(2,minmax(0,1fr)); gap: 22px; }
+.college-path-heading { padding: 18px 0; color: var(--olive); font-size: 20px; }
+.college-comparison-row { align-items: start; border-top: 1px solid var(--line); padding: 22px 0; }
+.college-question strong { display: block; font-size: 16px; line-height: 1.4; }
+.college-question span { display: block; margin-top: 10px; color: #626757; font-size: 13px; line-height: 1.6; }
+.college-assignment .field { margin: 0; min-width: 0; gap: 10px; }
+.college-assignment .field label { font-family: var(--sans); font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none; line-height: 1.5; }
+.college-assignment textarea, .college-assignment select { width: 100%; font-size: 15px; padding: 13px; line-height: 1.55; background: #fff; }
+.college-mobile-label { display: none; }
+.college-decision-fields { display: grid; gap: 24px; }
+.college-review-paths { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; }
+.college-response-review p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.college-action-bar { gap: 22px; }
+.college-action-bar .row { flex-shrink: 0; }
+@media(max-width:780px) {
+  .learning-route-grid, .college-brief, .college-review-paths { grid-template-columns: 1fr; }
+  .college-brief img { display: none; }
+  .college-path-heading { display: none; }
+  .college-comparison-row { grid-template-columns: 1fr; gap: 18px; }
+  .college-mobile-label { display: block; }
+  .college-action-bar { flex-direction: column; align-items: stretch; }
+  .college-action-bar .row { justify-content: flex-end; }
+  .college-assignment { padding-bottom: 230px; }
+}

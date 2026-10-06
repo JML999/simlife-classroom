@@ -924,6 +924,7 @@ function TeacherSortDetail({ mod }: { mod: any }) {
 // then the submitted write-up (picks + reflection) when there is one.
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
+  if (d.missionKind === "college_pathways") return <div className="module-submission"><p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : d.draftAt ? `Draft saved ${new Date(d.draftAt).toLocaleString()}` : "Not started"}</p>{d.response && <CollegeResponseReview response={d.response} />}</div>;
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   if (d.missionKind === "etf_mission") return <div className="module-submission">
     <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · ETFs held: {(d.qualifyingEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
@@ -1325,7 +1326,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                       {mods.map((mod: any) => (
                         <details className="module-row" key={mod.key}>
                           <summary>
-                            <span className="module-row-name">Module {mod.moduleNumber} · {mod.title}</span>
+                            <span className="module-row-name">{mod.container === "college" ? "College" : "Investing"} · Module {mod.moduleNumber} · {mod.title}</span>
                             <span className="module-row-parts">{mod.partsDone}/{mod.partsTotal} {mod.partsLabel}</span>
                             <span className={mod.status === "submitted" ? "badge-paid" : mod.status === "in_progress" ? "badge-ready" : "badge-due"}>
                               {mod.status === "submitted" ? "Submitted" : mod.status === "in_progress" ? "In progress" : "Not started"}
@@ -2181,14 +2182,14 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 
 // Shared frame for module cards; each activity has its own illustration.
 function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
-  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf";
+  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college";
 }) {
   return (
     <div className={`module-cover${art === "etf" ? " module-cover-etf" : ""}`}>
       <span className="module-kind">{moduleNumber ? `Module ${moduleNumber} · ${kindLabel}` : kindLabel}</span>
       {submitted && <span className="module-complete">Submitted ✓</span>}
       <div className="module-cover-art" aria-hidden="true">
-        {art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
+        {art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
           <svg viewBox="0 0 280 132" fill="none">
             <circle cx="140" cy="32" r="18" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
             <text x="140" y="39" textAnchor="middle" fontSize="20" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
@@ -2238,7 +2239,8 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
 function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
   const [posts, setPosts] = useState<any[] | null>(null);
-  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf"; id: string; moduleNumber?: number } | null>(null);
+  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college"; id: string; moduleNumber?: number } | null>(null);
+  const [container, setContainer] = useState<"investing" | "college" | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -2257,14 +2259,20 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   if (open?.kind === "mission") return <PortfolioMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
   if (open?.kind === "etf") return <EtfMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
 
+  if (open?.kind === "college") return <CollegeAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
+
   const announcements = posts?.filter((post) => post.kind === "announcement") ?? [];
   const missions = posts?.filter((post) => post.kind === "portfolio_mission") ?? [];
   const etfMissions = posts?.filter((post) => post.kind === "etf_mission") ?? [];
+  const collegePosts = posts?.filter(post => post.kind === "college_pathways") ?? [];
   const modules = [
+    ...collegePosts.map(post => ({ kind: "college" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...missions.map((post) => ({ kind: "mission" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...etfMissions.map((post) => ({ kind: "etf" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...(activities ?? []).map((activity) => ({ kind: "sort" as const, moduleNumber: activity.moduleNumber, createdAt: activity.createdAt, data: activity })),
   ].sort((a, b) => Number(a.moduleNumber || 999) - Number(b.moduleNumber || 999) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  const visibleModules = modules.filter(m => container === "college" ? m.kind === "college" : m.kind !== "college");
+  const routeName = container === "college" ? "Is College Right for Me?" : "Investing";
   const empty = activities?.length === 0 && posts?.length === 0;
 
   return (
@@ -2272,10 +2280,11 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       <div className="page-intro">
         <div>
           <div className="eyebrow">Class</div>
-          <h2>Modules</h2>
-          <p>Read the brief, do the work in SimLife, and submit the thinking behind your decisions.</p>
+          <h2>{container ? routeName : "Your learning routes"}</h2>
+          <p>{container === "college" ? "Explore your options after high school and take one next step." : container === "investing" ? "Build your portfolio and explain the thinking behind your decisions." : "Choose a route to find its assignments and your saved work."}</p>
         </div>
       </div>
+      {container && <button className="class-back" onClick={() => setContainer(null)}>← All learning routes</button>}
       {err && <div className="error" role="alert">{err}</div>}
       {(activities === null || posts === null) && !err && <LoadingState label="Loading class modules" kind="modules" />}
       {announcements.length > 0 && <section className="class-announcements" aria-label="Announcements">
@@ -2285,9 +2294,21 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       {empty && (
         <div className="panel"><p className="hint">Nothing posted yet. Check back after class.</p></div>
       )}
-      {modules.length > 0 && <div className="section-kicker">Assignments and practice</div>}
+      {!container && activities !== null && posts !== null && <div className="learning-route-grid">{(["investing", "college"] as const).map(route => {
+        const items = modules.filter(m => route === "college" ? m.kind === "college" : m.kind !== "college");
+        const completed = items.filter(m => m.kind === "sort" ? m.data.attempts > 0 : !!m.data.submittedAt).length;
+        return <button className={`learning-route-card route-${route}`} key={route} onClick={() => setContainer(route)}>
+          <div className="learning-route-art" aria-hidden="true"><img src={route === "college" ? "/module-art/college-paths.svg" : "/module-art/two-etf-goals.svg"} alt="" /></div>
+          <div><span className="eyebrow">Learning route</span><h3>{route === "college" ? "Is College Right for Me?" : "Investing"}</h3><p>{route === "college" ? "Compare education and career paths. Find a next step that fits you." : "Learn about stocks, sectors, and ETFs through your own portfolio."}</p><span className="small">{completed} of {items.length} {items.length === 1 ? "assignment" : "assignments"} submitted</span><span className="route-open">Explore assignments →</span></div>
+        </button>;
+      })}</div>}
+      {container && <><div className="section-kicker">Assignments and practice</div>
+      {activities !== null && posts !== null && visibleModules.length === 0 && <div className="panel"><p>No assignments are shown in this route yet.</p></div>}
       <div className="module-grid">
-        {modules.map((module) => module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
+        {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "college", id: post.id, moduleNumber: post.moduleNumber })}>
+          <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art="college" />
+          <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt ? "badge-paid" : "badge-due"}>{post.submittedAt ? "Submitted" : post.hasDraft ? "Draft saved" : "Not started"}</span></div>
+        </button>; })() : module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.etfs.length ? "In progress" : "Not started";
           return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "etf", id: post.id, moduleNumber: post.moduleNumber })}>
             <ModuleCover moduleNumber={post.moduleNumber} kindLabel="ETF mission" submitted={!!post.submittedAt} art="etf" />
@@ -2327,9 +2348,76 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
             </div>
           </button>
           ); })())}
-      </div>
+      </div></>}
     </div>
   );
+}
+
+const COLLEGE_PATH_FIELDS = [
+  ["name", "Path name", "Example: community college, then transfer"],
+  ["goal", "Career or opportunity", "What could this path lead to?"],
+  ["training", "Education or training", "What qualification, program, or training would you need?"],
+  ["advantages", "Two advantages for you", "Consider your interests, opportunities, flexibility, and support."],
+  ["drawbacks", "Two costs or drawbacks", "Consider money, time, location, or things you would give up."],
+  ["questions", "What you still need to know", "What would you need to find out before choosing this path?"],
+] as const;
+const emptyCollegeResponse = () => ({ paths: [Object.fromEntries(COLLEGE_PATH_FIELDS.map(([key]) => [key, ""])), Object.fromEntries(COLLEGE_PATH_FIELDS.map(([key]) => [key, ""]))], leaning: "", reason: "", nextStep: "" });
+function CollegeResponseReview({ response }: { response: any }) {
+  return <div className="college-response-review"><div className="college-review-paths">{(response.paths || []).map((path: any, index: number) => <div key={index}><h4>Path {index === 0 ? "A" : "B"}: {path.name}</h4>{COLLEGE_PATH_FIELDS.slice(1).map(([key, label]) => <p key={key}><strong>{label}:</strong> {path[key]}</p>)}</div>)}</div><p><strong>Leaning:</strong> {response.leaning === "undecided" ? "Still exploring" : `Path ${response.leaning}`}. {response.reason}</p><p><strong>This week’s next step:</strong> {response.nextStep}</p></div>;
+}
+function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNumber?: number; onBack: () => void }) {
+  const [post, setPost] = useState<any>(null);
+  const [response, setResponse] = useState<any>(emptyCollegeResponse);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
+  const confirmation = useRef(uid());
+  const draftKey = useRef("");
+  useEffect(() => {
+    let alive = true;
+    api<any>(`/api/class/posts/${id}`).then(data => {
+      if (!alive) return;
+      draftKey.current = `simlife-college:${data.studentId}:${id}`;
+      let saved = data.draft?.response ?? data.submission?.response ?? emptyCollegeResponse();
+      try {
+        const local = JSON.parse(localStorage.getItem(draftKey.current) || "null");
+        if (local && local.updatedAt > (data.draft?.updatedAt || data.submission?.createdAt || "")) saved = local.response;
+      } catch { /* The server draft remains available if device storage is unavailable. */ }
+      setPost(data); setResponse(saved); setSubmittedAt(data.submission?.createdAt ?? null);
+      if (data.draft) setNotice("Your saved draft is ready to continue.");
+    }).catch(e => { if (alive) setError(e.message); });
+    return () => { alive = false; };
+  }, [id]);
+  const update = (next: any) => {
+    setResponse(next); setNotice("Changes saved on this device. Save draft to keep them on your account."); confirmation.current = uid();
+    try { localStorage.setItem(draftKey.current, JSON.stringify({ response: next, updatedAt: new Date().toISOString() })); }
+    catch { setNotice("Device storage is unavailable. Use Save draft to keep your work."); }
+  };
+  const save = async (submit: boolean) => {
+    setBusy(true); setError("");
+    try {
+      const result = await api<any>(`/api/class/posts/${id}/${submit ? "submit" : "draft"}`, {
+        method: submit ? "POST" : "PUT", body: JSON.stringify({ response, idempotencyKey: confirmation.current }),
+      });
+      if (submit) { setSubmittedAt(result.submittedAt); try { localStorage.removeItem(draftKey.current); } catch { /* Submission is already saved on the server. */ } setNotice("Submitted. Your teacher can review both paths and your next step."); }
+      else setNotice("Draft saved to your account. You can continue on another device.");
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const done = response.paths.reduce((sum: number, path: any) => sum + COLLEGE_PATH_FIELDS.filter(([key]) => String(path[key] || "").trim()).length, 0) + ["leaning", "reason", "nextStep"].filter(key => String(response[key] || "").trim()).length;
+  if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading college assignment" kind="detail" />}</div>;
+  return <div className="class-section college-assignment">
+    <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
+    <section className="panel college-brief"><div><span className="eyebrow">Assignment 1</span><h3>Two paths. Your next step.</h3><p>{post.body}</p><p className="small">A short, thoughtful answer is enough. You don’t have to commit to a career today.</p></div><img src="/module-art/college-paths.svg" alt="" /></section>
+    {submittedAt && <div className="notice">Submitted {new Date(submittedAt).toLocaleString()}. You can revise your answers and submit an updated comparison.</div>}
+    <section className="panel college-comparison"><h3>Compare your options</h3><p>Choose two routes that are realistic for you. You can also compare two schools or programs.</p>
+      <div className="college-path-heading"><span>Question</span><strong>Path A</strong><strong>Path B</strong></div>
+      {COLLEGE_PATH_FIELDS.map(([key, label, hint]) => <div className="college-comparison-row" key={key}><div className="college-question"><strong>{label}</strong><span>{hint}</span></div>{[0, 1].map(index => <div className="field" key={index}><label className="college-mobile-label" htmlFor={`college-${index}-${key}`}>Path {index === 0 ? "A" : "B"}: {label}</label><textarea id={`college-${index}-${key}`} aria-label={`Path ${index === 0 ? "A" : "B"}: ${label}`} rows={key === "name" ? 2 : 3} maxLength={6000} disabled={busy} value={response.paths[index][key]} onChange={e => update({ ...response, paths: response.paths.map((path: any, i: number) => i === index ? { ...path, [key]: e.target.value } : path) })} /></div>)}</div>)}
+    </section>
+    <section className="panel college-next-step"><span className="eyebrow">Your decision so far</span><h3>What comes next?</h3><div className="college-decision-fields"><div className="field"><label htmlFor="college-leaning">Which path are you leaning toward?</label><select id="college-leaning" value={response.leaning} disabled={busy} onChange={e => update({ ...response, leaning: e.target.value })}><option value="">Choose…</option><option value="A">Path A</option><option value="B">Path B</option><option value="undecided">Still exploring</option></select></div><div className="field"><label htmlFor="college-reason">Why? What matters most to you?</label><textarea id="college-reason" rows={3} value={response.reason} maxLength={6000} disabled={busy} onChange={e => update({ ...response, reason: e.target.value })} /></div><div className="field"><label htmlFor="college-step">One specific step you can take this week</label><textarea id="college-step" rows={3} value={response.nextStep} maxLength={6000} disabled={busy} onChange={e => update({ ...response, nextStep: e.target.value })} placeholder="Name an application, scholarship search, program inquiry, or person you’ll contact." /></div></div></section>
+    {error && <div className="error" role="alert">{error}</div>}
+    <div className="module-action-bar college-action-bar"><div><strong>{done}/15 responses complete</strong><p role="status">{notice || "Save a draft while you work. Submit when your comparison is complete."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 15} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated comparison" : "Submit comparison"}</button></div></div>
+  </div>;
 }
 
 function LeaderboardSection() {
@@ -3080,7 +3168,7 @@ function TeacherModuleVisibility({ classId, refreshKey, onChanged }: { classId: 
     {err && <div className="error" role="alert">{err}</div>}
     {classId && !loaded && !err && <LoadingState label="Loading module visibility" kind="panel" />}
     {classId && loaded && modules.length === 0 && <p className="small">No published modules yet. Publish a sector sort or assignment first.</p>}
-    {classId && modules.length > 0 && <div className="module-visibility-grid">{modules.map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : module.postKind === "etf_mission" ? "ETF mission" : "Portfolio mission"}</small></span></label>)}</div>}
+    {classId && modules.length > 0 && (["investing", "college"] as const).map(route => <section className="module-route-visibility" key={route}><h3>{route === "college" ? "Is College Right for Me?" : "Investing"}</h3><div className="module-visibility-grid">{modules.filter(module => module.container === route).map((module) => <label key={module.key} className={hidden.has(module.key) ? "module-hidden" : ""}><input type="checkbox" checked={!hidden.has(module.key)} disabled={busy} onChange={() => toggle(module.key)} /><span><strong>Module {module.moduleNumber}</strong>{module.title}<small>{module.kind === "sort" ? "Sector practice" : module.postKind === "college_pathways" ? "College & career" : module.postKind === "etf_mission" ? "ETF mission" : "Portfolio mission"}</small></span></label>)}</div></section>)}
     {classId && loaded && <div className="module-save-state" aria-live="polite">{busy ? "Saving…" : saved ? "Saved ✓" : `${modules.length - hidden.size} shown · ${hidden.size} hidden`}</div>}
     {loaded && drafts.length > 0 && <div className="module-draft-list"><strong>Upcoming assignment drafts</strong><p className="small">Drafts are already hidden from students. Publish one when you're ready; it will then appear in the numbered module list above, where each period can show or hide it.</p>{drafts.map((post) => <div className="module-draft-row" key={post.id}><span><b>{post.title}</b><small>{post.kind === "etf_mission" ? "ETF assignment" : "Portfolio assignment"} · {post.classId ? "one period" : "every period"} · draft</small></span><button className="ghost" onClick={() => { const desk = document.querySelector<HTMLDetailsElement>(".class-post-desk"); if (desk) { desk.open = true; desk.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Manage draft</button></div>)}</div>}
   </div>;
@@ -3149,7 +3237,7 @@ function TeacherClassPosts({ classes, defaultClassId, onModulesChanged }: { clas
       {open === "etf_mission" && <p className="hint">Built-in evidence: two different current ETF holdings · an explanation of how each serves its goal.</p>}
       <div className="row"><button disabled={busy || title.trim().length < 2 || body.trim().length < 2} onClick={createPost}>Save draft</button><button className="ghost" onClick={() => setOpen("")}>Cancel</button></div>
     </div>}
-    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : post.kind === "etf_mission" ? "ETF assignment · numbered module" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
+    {posts.length > 0 && <div className="class-post-list">{posts.map((post) => <div className="class-post-row" key={post.id}><div><span className="small">{post.kind === "announcement" ? "Announcement · message only" : post.kind === "college_pathways" ? "College assignment" : post.kind === "etf_mission" ? "ETF assignment · numbered module" : "Portfolio assignment · numbered module"} · {post.classId ? classes.find((c) => c.id === post.classId)?.name || "One class" : "Every class"}</span><strong>{post.title}</strong></div><span className={post.status === "published" ? "badge-paid" : "badge-due"}>{post.status}</span><div className="row">{post.status !== "published" && <button disabled={busy} onClick={() => status(post.id, "published")}>Publish</button>}{post.status === "published" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "draft")}>Unpublish</button>}{post.status !== "archived" && <button className="ghost" disabled={busy} onClick={() => status(post.id, "archived")}>Archive</button>}</div></div>)}</div>}
     </div>
   </details>;
 }

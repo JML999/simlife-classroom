@@ -7,9 +7,10 @@ export interface ClassModuleCatalogItem {
   kind: ClassModuleKind;
   id: string;
   title: string;
-  postKind?: "portfolio_mission" | "etf_mission";
+  postKind?: "portfolio_mission" | "etf_mission" | "college_pathways";
   createdAt: string;
   moduleNumber: number;
+  container: "investing" | "college";
 }
 
 export const classModuleKey = (kind: ClassModuleKind, id: string) => `${kind}:${id}`;
@@ -20,14 +21,18 @@ export async function classModuleCatalog(classId: string | null): Promise<ClassM
     ? await q<any>(`SELECT id, title, created_at FROM sort_activities WHERE status = 'published' AND (class_id = ? OR class_id IS NULL)`, [classId])
     : await q<any>(`SELECT id, title, created_at FROM sort_activities WHERE status = 'published' AND class_id IS NULL`);
   const postRows = classId
-    ? await q<any>(`SELECT id, kind, title, created_at FROM class_posts WHERE status = 'published' AND kind IN ('portfolio_mission', 'etf_mission') AND (class_id = ? OR class_id IS NULL)`, [classId])
-    : await q<any>(`SELECT id, kind, title, created_at FROM class_posts WHERE status = 'published' AND kind IN ('portfolio_mission', 'etf_mission') AND class_id IS NULL`);
+    ? await q<any>(`SELECT id, kind, title, created_at FROM class_posts WHERE status = 'published' AND kind IN ('portfolio_mission', 'etf_mission', 'college_pathways') AND (class_id = ? OR class_id IS NULL)`, [classId])
+    : await q<any>(`SELECT id, kind, title, created_at FROM class_posts WHERE status = 'published' AND kind IN ('portfolio_mission', 'etf_mission', 'college_pathways') AND class_id IS NULL`);
+  const counters = { investing: 0, college: 0 };
   return [
     ...sortRows.map((row) => ({ key: classModuleKey("sort", row.id), kind: "sort" as const, id: row.id, title: row.title, createdAt: row.created_at })),
-    ...postRows.map((row) => ({ key: classModuleKey("post", row.id), kind: "post" as const, id: row.id, title: row.title, postKind: row.kind as "portfolio_mission" | "etf_mission", createdAt: row.created_at })),
+    ...postRows.map((row) => ({ key: classModuleKey("post", row.id), kind: "post" as const, id: row.id, title: row.title, postKind: row.kind as "portfolio_mission" | "etf_mission" | "college_pathways", createdAt: row.created_at })),
   ]
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key))
-    .map((item, index) => ({ ...item, moduleNumber: index + 1 }));
+    .map(item => {
+      const container = "postKind" in item && item.postKind === "college_pathways" ? "college" : "investing";
+      return { ...item, container, moduleNumber: ++counters[container] };
+    });
 }
 
 export async function hiddenClassModuleKeys(classId: string | null): Promise<Set<string>> {

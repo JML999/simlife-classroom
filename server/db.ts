@@ -545,6 +545,13 @@ export async function initSchema(): Promise<void> {
       is_paycheck INTEGER NOT NULL, withheld_cents INTEGER NOT NULL, created_at TEXT NOT NULL
     )`,
 
+    `CREATE TABLE IF NOT EXISTS class_post_drafts (
+      post_id TEXT NOT NULL REFERENCES class_posts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      response TEXT NOT NULL, updated_at TEXT NOT NULL,
+      PRIMARY KEY(post_id, user_id)
+    )`,
+
     // Per-class module visibility. Store what is hidden, not what is visible:
     // newly published modules therefore appear by default without a backfill.
     // Hiding is presentation-only and never deletes progress or submissions.

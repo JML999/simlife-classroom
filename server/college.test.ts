@@ -1,0 +1,72 @@
+import "./env.js";
+import os from "node:os";
+import path from "node:path";
+import { before, test } from "node:test";
+import assert from "node:assert/strict";
+process.env.SIMLIFE_DB_PATH = path.join(os.tmpdir(), `simlife-college-${process.pid}.db`);
+delete process.env.SIMLIFE_DATABASE_URL;
+const db = await import("./db.js");
+const college = await import("./college.js");
+const posts = await import("./class-posts.js");
+const modules = await import("./class-modules.js");
+const progress = await import("./module-progress.js");
+const id = "cpost_college_paths_v1";
+const response = { paths: ["College", "Apprenticeship"].map(name => ({ name, goal: "A career I enjoy", training: "Program and practical experience", advantages: "Support and experience", drawbacks: "Time and cost", questions: "Entry requirements" })), leaning: "undecided", reason: "I need to compare the programs.", nextStep: "Ask the adviser about entry requirements this week." };
+before(async () => {
+  await db.initSchema();
+  for (const c of ["college-class", "other-class"]) await db.run(`INSERT INTO classes (id,name,join_code,created_at) VALUES (?,?,?,?)`, [c,c,c,db.nowIso()]);
+  for (const [u, role, c] of [["student-a","student","college-class"],["student-b","student","other-class"],["teacher","teacher",null]]) await db.run(`INSERT INTO users (id,name,role,class_id,created_at) VALUES (?,?,?,?,?)`,[u,u,role,c,db.nowIso()]);
+  await college.ensureCollegeAssignment();
+});
+test("college has its own numbering and boot preserves teacher edits", async () => {
+  const post = (await posts.getClassPost(id))!;
+  const mission = await posts.createClassPost({kind:"portfolio_mission",title:"Investing",body:"Buy stocks"});
+  await posts.setClassPostStatus(mission.id,"published");
+  const catalog = await modules.classModuleCatalog("college-class");
+  assert.equal(catalog.find(m => m.id === id)?.moduleNumber,1);
+  assert.equal(catalog.find(m => m.id === id)?.container,"college");
+  assert.equal(catalog.find(m => m.id === mission.id)?.moduleNumber,1);
+  await db.run(`UPDATE class_posts SET title = ? WHERE id = ?`,["Teacher title",id]);
+  await college.ensureCollegeAssignment();
+  assert.equal((await posts.getClassPost(id))?.title,"Teacher title");
+  await db.run(`UPDATE class_posts SET title = ? WHERE id = ?`,[post.title,id]);
+  // Keep this test's portfolio fixture out of the college progress checks.
+  await posts.setClassPostStatus(mission.id,"archived");
+});
+test("incomplete drafts are private, trimmed and appear in teacher progress", async () => {
+  const post = (await posts.getClassPost(id))!;
+  await college.saveCollegeDraft(post,"student-a",{paths:[{name:"  College  "}]});
+  assert.equal((await college.collegeDraftFor(id,"student-a"))?.response.paths[0].name,"College");
+  assert.equal(await college.collegeDraftFor(id,"student-b"),null);
+  const detail = (await progress.studentModuleDetail("student-a"))[0];
+  assert.equal(detail.status,"in_progress"); assert.equal(detail.partsDone,1);
+  assert.equal((await progress.moduleProgress("college-class")).students["student-a"].started,1);
+  await assert.rejects(college.submitCollegePaths({post,userId:"student-a",response:{paths:[{name:"College"}]}}),/Compare both paths/);
+});
+test("submission needs no holdings, accepts still exploring and retries safely", async () => {
+  const post = (await posts.getClassPost(id))!;
+  assert.equal((await college.submitCollegePaths({post,userId:"student-a",response,idempotencyKey:"college-submit"})).deduped,false);
+  assert.equal((await college.submitCollegePaths({post,userId:"student-a",response,idempotencyKey:"college-submit"})).deduped,true);
+  assert.equal(await college.collegeDraftFor(id,"student-a"),null);
+  const detail = (await progress.studentModuleDetail("student-a"))[0];
+  assert.equal(detail.status,"submitted"); assert.equal(detail.partsDone,15);
+  assert.deepEqual(detail.detail?.response,response);
+  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response,idempotencyKey:"college-submit"}),/already used/);
+  await assert.rejects(college.submitCollegePaths({post,userId:"student-a",response:{...response,reason:"Changed"},idempotencyKey:"college-submit"}),/already used/);
+  await college.submitCollegePaths({post,userId:"student-a",response:{...response,reason:"Changed"},idempotencyKey:"college-revise"});
+  assert.equal((await posts.latestClassPostSubmission(id,"student-a"))?.response.reason,"Changed");
+});
+test("visibility, class scope, role and status enforce access without deleting work", async () => {
+  const post = (await posts.getClassPost(id))!;
+  await modules.replaceHiddenClassModules("college-class",[`post:${id}`]);
+  await assert.rejects(college.saveCollegeDraft(post,"student-a",response),/not found/);
+  assert.equal((await progress.studentModuleDetail("student-a")).length,0);
+  await college.saveCollegeDraft(post,"student-b",response);
+  await modules.replaceHiddenClassModules("college-class",[]);
+  assert.equal((await progress.studentModuleDetail("student-a"))[0].status,"submitted");
+  await assert.rejects(college.saveCollegeDraft(post,"teacher",response),/not found/);
+  await assert.rejects(college.saveCollegeDraft({...post,classId:"other-class"},"student-a",response),/not found/);
+  await assert.rejects(college.saveCollegeDraft({...post,status:"archived"},"student-a",response),/not found/);
+  assert.throws(() => college.cleanCollegeResponse({...response,leaning:"anything"}),/Choose path/);
+  assert.throws(() => college.cleanCollegeResponse({paths:[{name:42}]}),/must be text/);
+});

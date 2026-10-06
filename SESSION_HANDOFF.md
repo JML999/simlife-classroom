@@ -387,3 +387,12 @@ Still open:
    no cron exists yet (Render cron or manual).
 2. Teacher-side leaderboard view + competitions (plan §6-7) not built.
 3. These changes NOT pushed yet at time of writing — push on user go.
+
+## 2026-10-06 — Learning routes and college pathway comparison
+
+- Class now opens two containers: **Investing** (existing modules 1–3) and **Is College Right for Me?** (independent numbering).
+- First college assignment: **My next step after high school**. Compare two realistic paths: career/opportunity, training, two advantages, two costs/drawbacks, unanswered questions; then explain a leaning (still exploring allowed) and one action this week.
+- `server/college.ts` inserts the shared published assignment idempotently at boot. Existing per-period hide checkboxes control visibility; boot preserves teacher edits/status. No portfolio or borrowing requirement.
+- Work saves locally while typing; Save draft persists to `class_post_drafts`, Submit appends `class_post_submissions` and clears the server draft. Teacher student drawer shows saved drafts and submitted comparisons. College cover is `public/module-art/college-paths.svg`.
+- Verification: 122/122 server tests, typecheck, build; isolated browser verified route grouping, three existing investing modules, reload recovery, account drafts, submission, teacher review/visibility grouping, and mobile width.
+- Changes prepared locally; deployment requires pushing main. Browser fixtures/screenshots are in `/tmp/simlife-college-check` (temporary).

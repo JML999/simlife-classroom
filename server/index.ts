@@ -42,6 +42,7 @@ import {
 import {
   classModuleCatalog, classModuleKey, hiddenClassModuleKeys, replaceHiddenClassModules,
 } from "./class-modules.js";
+import { collegeDraftFor, saveCollegeDraft, submitCollegePaths, ensureCollegeAssignment } from "./college.js";
 import { moduleProgress, studentModuleDetail } from "./module-progress.js";
 import { leaderboardFor, STABLE_MIN_RETURN_BP } from "./leaderboard.js";
 import { ensureLeaderboardFresh } from "./leaderboard-refresh.js";
@@ -988,7 +989,8 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
     if (key && hidden.has(key)) continue;
     const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
     const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
-    out.push({ ...post, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
+    const draft = post.kind === "college_pathways" ? await collegeDraftFor(post.id, user.id) : null;
+    out.push({ ...post, hasDraft: !!draft, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
   }
   res.json({ posts: out });
 });
@@ -1006,7 +1008,20 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
   }
   const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
   const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
-  res.json({ ...post, submission, mission });
+  const draft = post.kind === "college_pathways" ? await collegeDraftFor(post.id, user.id) : null;
+  res.json({ ...post, submission, mission, draft, studentId: user.id });
+});
+
+app.put("/api/class/posts/:id/draft", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user || user.role !== "student") { res.status(403).json({ error: "Student access only." }); return; }
+  const post = await getClassPost(String(req.params.id));
+  if (!post) { res.status(404).json({ error: "Assignment not found." }); return; }
+  try { res.json(await saveCollegeDraft(post, user.id, req.body?.response)); }
+  catch (err) {
+    if (err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message }); return; }
+    throw err;
+  }
 });
 
 // ---- Leaderboard: percent-only, public class periods, never students' dollars --
@@ -1057,7 +1072,7 @@ app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Mission not found." }); return;
   }
   try {
-    res.json(await (post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
+    res.json(await (post.kind === "college_pathways" ? submitCollegePaths : post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
       post, userId: user.id, response: req.body?.response,
       idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
     }));
@@ -1499,6 +1514,7 @@ async function boot() {  validateProductionEnv();
   await ensureColumn("bills", "document_body", "TEXT");
   await ensureColumn("bill_disputes", "resolved_by", "TEXT");
   await ensureColumn("bill_disputes", "resolve_key", "TEXT");
+  await ensureCollegeAssignment();
   if (demoEnabled()) await ensureDemoUsers();
   app.listen(PORT, HOST, () => {
     console.log(`[simlife] api on http://${HOST}:${PORT} (quotes: ${quotes.providerName})`);
