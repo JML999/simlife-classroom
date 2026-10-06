@@ -56,6 +56,8 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   throw new Error("PORT/SIMLIFE_PORT must be a valid TCP port.");
 }
 const app = express();
+// Four research routes plus sources can exceed the ordinary small-form limit.
+app.use("/api/class/posts", express.json({ limit: "1mb" }));
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 
@@ -990,7 +992,7 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
     const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
     const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
     const draft = post.kind === "college_pathways" ? await collegeDraftFor(post.id, user.id) : null;
-    out.push({ ...post, hasDraft: !!draft, body: post.kind === "announcement" ? post.body : undefined, submittedAt: submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
+    out.push({ ...post, hasDraft: !!draft, body: post.kind === "announcement" ? post.body : undefined, hasEarlierSubmission: post.kind === "college_pathways" && !!submission && submission.response?.version !== 2, submittedAt: post.kind === "college_pathways" && submission?.response?.version !== 2 ? null : submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
   }
   res.json({ posts: out });
 });

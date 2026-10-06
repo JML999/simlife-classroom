@@ -36,7 +36,7 @@ export interface ModuleSummary {
   status: ModuleStatus;
   partsDone: number;
   partsTotal: number;
-  partsLabel: "placed" | "correct" | "goals" | "answers";
+  partsLabel: "placed" | "correct" | "goals" | "answers" | "sections";
   detail?: Record<string, any>;
 }
 
@@ -91,10 +91,13 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
   }
   if (postIds.length) {
     const marks = postIds.map(() => "?").join(",");
-    const subs = await q<{ post_id: string; user_id: string }>(
-      `SELECT DISTINCT post_id, user_id FROM class_post_submissions WHERE post_id IN (${marks})`, postIds,
+    const subs = await q<{ post_id: string; user_id: string; response: string; kind: string }>(
+      `SELECT s.post_id, s.user_id, s.response, p.kind FROM class_post_submissions s JOIN class_posts p ON p.id = s.post_id WHERE s.post_id IN (${marks})`, postIds,
     );
-    for (const r of subs) (submittedPosts[r.user_id] ??= new Set()).add(r.post_id);
+    for (const r of subs) {
+      if (r.kind === "college_pathways" && JSON.parse(r.response).version !== 2) continue;
+      (submittedPosts[r.user_id] ??= new Set()).add(r.post_id);
+    }
   }
 
   // Any current stock holding counts as work started, even before either
@@ -107,7 +110,7 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     for (const s of students) {
       if (submittedPosts[s.id]?.has(post.id)) continue;
       if (post.kind === "college_pathways") {
-        if (await collegeDraftFor(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+        if (await collegeDraftFor(post.id, s.id) || await latestClassPostSubmission(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
         continue;
       }
       const state = post.kind === "etf_mission" ? await etfMissionState(post, s.id) : await portfolioMissionState(post, s.id);
@@ -208,10 +211,11 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       const submission = await latestClassPostSubmission(post.id, userId);
       if (post.kind === "college_pathways") {
         const draft = await collegeDraftFor(post.id, userId);
-        const response = submission?.response ?? draft?.response ?? null;
+        const currentSubmission = submission?.response?.version === 2 ? submission : null;
+        const response = currentSubmission?.response ?? draft?.response ?? submission?.response ?? null;
         out.push({ key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, container: "college", title: mod.title,
-          status: submission ? "submitted" : draft ? "in_progress" : "not_started", partsDone: collegePartsDone(response), partsTotal: 15, partsLabel: "answers",
-          detail: { missionKind: "college_pathways", submittedAt: submission?.createdAt ?? null, draftAt: draft?.updatedAt ?? null, response } });
+          status: currentSubmission ? "submitted" : draft || submission ? "in_progress" : "not_started", partsDone: response?.version === 2 ? collegePartsDone(response) : 0, partsTotal: 5, partsLabel: "sections",
+          detail: { missionKind: "college_pathways", submittedAt: currentSubmission?.createdAt ?? null, earlierSubmittedAt: submission && !currentSubmission ? submission.createdAt : null, draftAt: draft?.updatedAt ?? null, response } });
         continue;
       }
       if (post.kind === "etf_mission") {

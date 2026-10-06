@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { COLLEGE_ROUTES, COLLEGE_RESEARCH_TOPICS, COLLEGE_PROGRAM_FIELDS, emptyCollegeResearch, collegeRouteDone, collegeResearchDone, collegeInstitution, type CollegeResearchResponse, type RouteAnswer } from "../shared/college-research.js";
 import { createPortal } from "react-dom";
 import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
@@ -924,7 +925,7 @@ function TeacherSortDetail({ mod }: { mod: any }) {
 // then the submitted write-up (picks + reflection) when there is one.
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
-  if (d.missionKind === "college_pathways") return <div className="module-submission"><p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : d.draftAt ? `Draft saved ${new Date(d.draftAt).toLocaleString()}` : "Not started"}</p>{d.response && <CollegeResponseReview response={d.response} />}</div>;
+  if (d.missionKind === "college_pathways") return <div className="module-submission"><p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : d.draftAt ? `Draft saved ${new Date(d.draftAt).toLocaleString()}` : d.earlierSubmittedAt ? `Earlier version submitted ${new Date(d.earlierSubmittedAt).toLocaleString()} · revised worksheet not submitted yet` : "Not started"}</p>{d.response && <CollegeResponseReview response={d.response} />}</div>;
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   if (d.missionKind === "etf_mission") return <div className="module-submission">
     <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · ETFs held: {(d.qualifyingEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
@@ -2240,7 +2241,6 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
   const [posts, setPosts] = useState<any[] | null>(null);
   const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college"; id: string; moduleNumber?: number } | null>(null);
-  const [container, setContainer] = useState<"investing" | "college" | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -2271,8 +2271,6 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
     ...etfMissions.map((post) => ({ kind: "etf" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...(activities ?? []).map((activity) => ({ kind: "sort" as const, moduleNumber: activity.moduleNumber, createdAt: activity.createdAt, data: activity })),
   ].sort((a, b) => Number(a.moduleNumber || 999) - Number(b.moduleNumber || 999) || String(a.createdAt).localeCompare(String(b.createdAt)));
-  const visibleModules = modules.filter(m => container === "college" ? m.kind === "college" : m.kind !== "college");
-  const routeName = container === "college" ? "Is College Right for Me?" : "Investing";
   const empty = activities?.length === 0 && posts?.length === 0;
 
   return (
@@ -2280,11 +2278,10 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       <div className="page-intro">
         <div>
           <div className="eyebrow">Class</div>
-          <h2>{container ? routeName : "Your learning routes"}</h2>
-          <p>{container === "college" ? "Explore your options after high school and take one next step." : container === "investing" ? "Build your portfolio and explain the thinking behind your decisions." : "Choose a route to find its assignments and your saved work."}</p>
+          <h2>Your class assignments</h2>
+          <p>Browse your assignments below. Open a module to continue your saved work.</p>
         </div>
       </div>
-      {container && <button className="class-back" onClick={() => setContainer(null)}>← All learning routes</button>}
       {err && <div className="error" role="alert">{err}</div>}
       {(activities === null || posts === null) && !err && <LoadingState label="Loading class modules" kind="modules" />}
       {announcements.length > 0 && <section className="class-announcements" aria-label="Announcements">
@@ -2294,20 +2291,15 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
       {empty && (
         <div className="panel"><p className="hint">Nothing posted yet. Check back after class.</p></div>
       )}
-      {!container && activities !== null && posts !== null && <div className="learning-route-grid">{(["investing", "college"] as const).map(route => {
-        const items = modules.filter(m => route === "college" ? m.kind === "college" : m.kind !== "college");
-        const completed = items.filter(m => m.kind === "sort" ? m.data.attempts > 0 : !!m.data.submittedAt).length;
-        return <button className={`learning-route-card route-${route}`} key={route} onClick={() => setContainer(route)}>
-          <div className="learning-route-art" aria-hidden="true"><img src={route === "college" ? "/module-art/college-paths.svg" : "/module-art/two-etf-goals.svg"} alt="" /></div>
-          <div><span className="eyebrow">Learning route</span><h3>{route === "college" ? "Is College Right for Me?" : "Investing"}</h3><p>{route === "college" ? "Compare education and career paths. Find a next step that fits you." : "Learn about stocks, sectors, and ETFs through your own portfolio."}</p><span className="small">{completed} of {items.length} {items.length === 1 ? "assignment" : "assignments"} submitted</span><span className="route-open">Explore assignments →</span></div>
-        </button>;
-      })}</div>}
-      {container && <><div className="section-kicker">Assignments and practice</div>
-      {activities !== null && posts !== null && visibleModules.length === 0 && <div className="panel"><p>No assignments are shown in this route yet.</p></div>}
+      {activities !== null && posts !== null && (["investing", "college"] as const).map(route => {
+        const visibleModules = modules.filter(m => route === "college" ? m.kind === "college" : m.kind !== "college");
+        if (!visibleModules.length) return null;
+        return <section className="class-module-section" key={route} aria-label={route === "college" ? "Is College Right for Me?" : "Investing"}>
+          <div className="class-module-section-heading"><span className="eyebrow">{route === "college" ? "Education & career" : "Portfolio & markets"}</span><h3>{route === "college" ? "Is College Right for Me?" : "Investing"}</h3><p>{route === "college" ? "Research the options. Compare their financial and academic trade-offs." : "Learn about stocks, sectors, and ETFs through your own portfolio."}</p></div>
       <div className="module-grid">
         {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "college", id: post.id, moduleNumber: post.moduleNumber })}>
           <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art="college" />
-          <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt ? "badge-paid" : "badge-due"}>{post.submittedAt ? "Submitted" : post.hasDraft ? "Draft saved" : "Not started"}</span></div>
+          <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt ? "badge-paid" : "badge-due"}>{post.submittedAt ? "Submitted" : post.hasDraft ? "Draft saved" : post.hasEarlierSubmission ? "Earlier work saved · revised assignment" : "Not started"}</span></div>
         </button>; })() : module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.etfs.length ? "In progress" : "Not started";
           return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "etf", id: post.id, moduleNumber: post.moduleNumber })}>
@@ -2348,7 +2340,8 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
             </div>
           </button>
           ); })())}
-      </div></>}
+      </div></section>;
+      })}
     </div>
   );
 }
@@ -2361,13 +2354,33 @@ const COLLEGE_PATH_FIELDS = [
   ["drawbacks", "Two costs or drawbacks", "Consider money, time, location, or things you would give up."],
   ["questions", "What you still need to know", "What would you need to find out before choosing this path?"],
 ] as const;
-const emptyCollegeResponse = () => ({ paths: [Object.fromEntries(COLLEGE_PATH_FIELDS.map(([key]) => [key, ""])), Object.fromEntries(COLLEGE_PATH_FIELDS.map(([key]) => [key, ""]))], leaning: "", reason: "", nextStep: "" });
 function CollegeResponseReview({ response }: { response: any }) {
+  if (response.version === 2) return <CollegeResearchReview response={response} />;
   return <div className="college-response-review"><div className="college-review-paths">{(response.paths || []).map((path: any, index: number) => <div key={index}><h4>Path {index === 0 ? "A" : "B"}: {path.name}</h4>{COLLEGE_PATH_FIELDS.slice(1).map(([key, label]) => <p key={key}><strong>{label}:</strong> {path[key]}</p>)}</div>)}</div><p><strong>Leaning:</strong> {response.leaning === "undecided" ? "Still exploring" : `Path ${response.leaning}`}. {response.reason}</p><p><strong>This week’s next step:</strong> {response.nextStep}</p></div>;
+}
+function CollegeResearchReview({ response }: { response: any }) {
+  return <div className="college-response-review">{COLLEGE_ROUTES.map((route, index) => { const answer = response.routes?.[index]; if (!answer) return null;
+    return <section className="college-review-route" key={route.id}><h4>{route.title} · {collegeInstitution(answer, index)}</h4>
+      {COLLEGE_RESEARCH_TOPICS.map(topic => <p key={topic.id}><strong>{topic.title}:</strong> {answer.research?.[topic.id]?.program} — {answer.research?.[topic.id]?.figure}<br />{answer.research?.[topic.id]?.source}</p>)}
+      <div className="college-review-paths">{answer.programs?.map((program: any, i: number) => <div key={i}><h4>{i === 0 ? "Financially promising" : "Financially challenging"}</h4>{COLLEGE_PROGRAM_FIELDS.map(([key, label]) => <p key={key}><strong>{label}:</strong> {program[key]}</p>)}</div>)}</div>
+    </section>;
+  })}<h4>Two paths that fit me</h4><p>{response.reflection}</p>{response.previousWork && <details><summary>Earlier worksheet answers</summary><CollegeResponseReview response={response.previousWork} /></details>}</div>;
+}
+function CollegeExplorer({ response }: { response: any }) {
+  const choices = COLLEGE_ROUTES.flatMap((route, i) => [0, 1].map(j => ({ id: `${i}:${j}`, route: route.title, school: collegeInstitution(response.routes[i], i), answer: response.routes[i].programs[j] })));
+  const [left, setLeft] = useState("0:0");
+  const [right, setRight] = useState("1:0");
+  return <section className="panel college-explorer"><span className="eyebrow">Unlocked after submission</span><h3>Explore your researched paths</h3><p>Put two of your submitted programs side by side. These figures come from your research; review the sources and assumptions before comparing them.</p>
+    <div className="college-explorer-selects">{[[left, setLeft], [right, setRight]].map(([value, setter], i) => <div className="field" key={i}><label htmlFor={`explorer-${i}`}>Compare option {i === 0 ? "A" : "B"}</label><select id={`explorer-${i}`} value={value as string} onChange={e => (setter as (value: string) => void)(e.target.value)}>{choices.map(choice => <option key={choice.id} value={choice.id}>{choice.route} · {choice.answer.program}</option>)}</select></div>)}</div>
+    <div className="college-program-grid">{[left, right].map((value, i) => { const choice = choices.find(c => c.id === value)!; return <article className="college-program-card" key={i}><span className="eyebrow">Option {i === 0 ? "A" : "B"} · {choice.route}</span><h4>{choice.answer.program}</h4><p>{choice.school}</p>{COLLEGE_PROGRAM_FIELDS.slice(1).map(([key, label]) => <p key={key}><strong>{label}:</strong> {choice.answer[key]}</p>)}</article>; })}</div>
+    <p className="small">Try comparing two routes to the same career. Check whether pay describes comparable workers and whether the tuition estimate covers the full qualification.</p>
+  </section>;
 }
 function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNumber?: number; onBack: () => void }) {
   const [post, setPost] = useState<any>(null);
-  const [response, setResponse] = useState<any>(emptyCollegeResponse);
+  const [response, setResponse] = useState<CollegeResearchResponse>(emptyCollegeResearch);
+  const [submittedWork, setSubmittedWork] = useState<any>(null);
+  const [earlierWork, setEarlierWork] = useState<any>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2378,45 +2391,56 @@ function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNum
     let alive = true;
     api<any>(`/api/class/posts/${id}`).then(data => {
       if (!alive) return;
-      draftKey.current = `simlife-college:${data.studentId}:${id}`;
-      let saved = data.draft?.response ?? data.submission?.response ?? emptyCollegeResponse();
+      draftKey.current = `simlife-college:v2:${data.studentId}:${id}`;
+      const previous = data.draft?.response?.version !== 2 && data.draft?.response || data.submission?.response?.version !== 2 && data.submission?.response || null;
+      let saved = data.draft?.response?.version === 2 ? data.draft.response : data.submission?.response?.version === 2 ? data.submission.response : { ...emptyCollegeResearch(), ...(previous ? { previousWork: previous } : {}) };
       try {
         const local = JSON.parse(localStorage.getItem(draftKey.current) || "null");
-        if (local && local.updatedAt > (data.draft?.updatedAt || data.submission?.createdAt || "")) saved = local.response;
-      } catch { /* The server draft remains available if device storage is unavailable. */ }
-      setPost(data); setResponse(saved); setSubmittedAt(data.submission?.createdAt ?? null);
-      if (data.draft) setNotice("Your saved draft is ready to continue.");
+        if (local?.response?.version === 2 && local.updatedAt > (data.draft?.updatedAt || data.submission?.createdAt || "")) saved = local.response;
+        if (!previous) { const old = JSON.parse(localStorage.getItem(`simlife-college:${data.studentId}:${id}`) || "null"); if (old?.response?.paths) { saved = { ...saved, previousWork: old.response }; setEarlierWork(old.response); } }
+      } catch { /* Account drafts remain available without device storage. */ }
+      setEarlierWork(previous || saved.previousWork || null);
+      setPost(data); setResponse(saved);
+      if (data.submission?.response?.version === 2) { setSubmittedAt(data.submission.createdAt); setSubmittedWork(data.submission.response); }
+      if (data.draft?.response?.version === 2) setNotice("Your saved research draft is ready to continue.");
     }).catch(e => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, [id]);
-  const update = (next: any) => {
+  const update = (next: CollegeResearchResponse) => {
     setResponse(next); setNotice("Changes saved on this device. Save draft to keep them on your account."); confirmation.current = uid();
     try { localStorage.setItem(draftKey.current, JSON.stringify({ response: next, updatedAt: new Date().toISOString() })); }
-    catch { setNotice("Device storage is unavailable. Use Save draft to keep your work."); }
+    catch { setNotice("Use Save draft to keep your work on your account."); }
   };
+  const changeRoute = (index: number, next: RouteAnswer) => update({ ...response, routes: response.routes.map((route, i) => i === index ? next : route) });
   const save = async (submit: boolean) => {
     setBusy(true); setError("");
     try {
-      const result = await api<any>(`/api/class/posts/${id}/${submit ? "submit" : "draft"}`, {
-        method: submit ? "POST" : "PUT", body: JSON.stringify({ response, idempotencyKey: confirmation.current }),
-      });
-      if (submit) { setSubmittedAt(result.submittedAt); try { localStorage.removeItem(draftKey.current); } catch { /* Submission is already saved on the server. */ } setNotice("Submitted. Your teacher can review both paths and your next step."); }
-      else setNotice("Draft saved to your account. You can continue on another device.");
+      const result = await api<any>(`/api/class/posts/${id}/${submit ? "submit" : "draft"}`, { method: submit ? "POST" : "PUT", body: JSON.stringify({ response, idempotencyKey: confirmation.current }) });
+      if (submit) { setSubmittedAt(result.submittedAt); setSubmittedWork(response); try { localStorage.removeItem(draftKey.current); } catch { /* Already saved on server. */ } setNotice("Research submitted. Your comparison explorer is now unlocked below."); }
+      else setNotice("Draft saved to your account. Continue on another device whenever you need.");
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
-  const done = response.paths.reduce((sum: number, path: any) => sum + COLLEGE_PATH_FIELDS.filter(([key]) => String(path[key] || "").trim()).length, 0) + ["leaning", "reason", "nextStep"].filter(key => String(response[key] || "").trim()).length;
+  const done = collegeResearchDone(response);
   if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading college assignment" kind="detail" />}</div>;
   return <div className="class-section college-assignment">
     <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
-    <section className="panel college-brief"><div><span className="eyebrow">Assignment 1</span><h3>Two paths. Your next step.</h3><p>{post.body}</p><p className="small">A short, thoughtful answer is enough. You don’t have to commit to a career today.</p></div><img src="/module-art/college-paths.svg" alt="" /></section>
-    {submittedAt && <div className="notice">Submitted {new Date(submittedAt).toLocaleString()}. You can revise your answers and submit an updated comparison.</div>}
-    <section className="panel college-comparison"><h3>Compare your options</h3><p>Choose two routes that are realistic for you. You can also compare two schools or programs.</p>
-      <div className="college-path-heading"><span>Question</span><strong>Path A</strong><strong>Path B</strong></div>
-      {COLLEGE_PATH_FIELDS.map(([key, label, hint]) => <div className="college-comparison-row" key={key}><div className="college-question"><strong>{label}</strong><span>{hint}</span></div>{[0, 1].map(index => <div className="field" key={index}><label className="college-mobile-label" htmlFor={`college-${index}-${key}`}>Path {index === 0 ? "A" : "B"}: {label}</label><textarea id={`college-${index}-${key}`} aria-label={`Path ${index === 0 ? "A" : "B"}: ${label}`} rows={key === "name" ? 2 : 3} maxLength={6000} disabled={busy} value={response.paths[index][key]} onChange={e => update({ ...response, paths: response.paths.map((path: any, i: number) => i === index ? { ...path, [key]: e.target.value } : path) })} /></div>)}</div>)}
-    </section>
-    <section className="panel college-next-step"><span className="eyebrow">Your decision so far</span><h3>What comes next?</h3><div className="college-decision-fields"><div className="field"><label htmlFor="college-leaning">Which path are you leaning toward?</label><select id="college-leaning" value={response.leaning} disabled={busy} onChange={e => update({ ...response, leaning: e.target.value })}><option value="">Choose…</option><option value="A">Path A</option><option value="B">Path B</option><option value="undecided">Still exploring</option></select></div><div className="field"><label htmlFor="college-reason">Why? What matters most to you?</label><textarea id="college-reason" rows={3} value={response.reason} maxLength={6000} disabled={busy} onChange={e => update({ ...response, reason: e.target.value })} /></div><div className="field"><label htmlFor="college-step">One specific step you can take this week</label><textarea id="college-step" rows={3} value={response.nextStep} maxLength={6000} disabled={busy} onChange={e => update({ ...response, nextStep: e.target.value })} placeholder="Name an application, scholarship search, program inquiry, or person you’ll contact." /></div></div></section>
+    <section className="panel college-brief"><div><span className="eyebrow">Research first</span><h3>Four routes. Two kinds of evidence.</h3><ol><li>Use independent sources to research pay and employment within each route.</li><li>Visit the selected school’s site. Investigate one financially promising and one financially challenging program it offers.</li><li>Explain two paths that make financial and academic sense for you.</li></ol><p className="small">A lower-paying career can still be financially sensible. Consider tuition, training time, employment prospects, and personal fit together.</p></div><img src="/module-art/college-paths.svg" alt="" /></section>
+    <section className="panel college-research-guide"><h3>Where to research</h3><p><a href="https://www.newyorkfed.org/research/college-labor-market" target="_blank" rel="noreferrer">New York Fed: bachelor’s majors</a> · <a href="https://www.bls.gov/ooh/" target="_blank" rel="noreferrer">BLS: occupations, pay, training & job outlook</a> · <a href="https://collegescorecard.ed.gov/" target="_blank" rel="noreferrer">College Scorecard: schools & program outcomes</a></p><p className="small">Starting pay, early-career pay, and overall median pay describe different workers. Job growth, unemployment, and placement are different measures; identify which you use. If a figure is unavailable, document what you checked and use the closest relevant career evidence.</p><p className="college-cost-note"><strong>Cost estimate:</strong> total published tuition and required fees for the expected program length, <strong>before financial aid and excluding living expenses</strong>. Include the source and your calculation or scope. We’ll study aid and student loans later.</p></section>
+    {earlierWork && <details className="panel college-earlier-work"><summary>Your earlier worksheet answers are preserved</summary><p>This assignment has been revised. Complete the four-route research below; you can still refer to your earlier answers.</p><CollegeResponseReview response={earlierWork} /></details>}
+    {submittedAt && <div className="notice">Research submitted {new Date(submittedAt).toLocaleString()}. You can revise and resubmit. The explorer uses your last submitted answers.</div>}
+    {COLLEGE_ROUTES.map((route, index) => { const answer = response.routes[index]; const ready = collegeRouteDone(answer); return <details className="panel college-route-worksheet" key={route.id} open={index === 0 ? true : undefined}>
+      <summary><span className="college-route-number">{index + 1}</span><span><strong>{route.title}</strong><small>{collegeInstitution(answer, index) || "Choose an institution"}</small></span><span className={ready ? "badge-paid" : "badge-due"}>{ready ? "Complete" : "Research"}</span></summary>
+      <div className="college-route-content"><p>{route.hint}</p><div className="field"><label htmlFor={`school-${route.id}`}>Institution to investigate</label><select id={`school-${route.id}`} value={answer.institution} disabled={busy} onChange={e => changeRoute(index, { ...answer, institution: e.target.value })}><option value="default">{route.institution}</option><option value="other">Other — choose my own institution</option></select></div>
+      {answer.institution === "other" ? <div className="field college-other-school"><label htmlFor={`other-${route.id}`}>Name of your institution</label><input id={`other-${route.id}`} value={answer.otherInstitution} maxLength={6000} disabled={busy} onChange={e => changeRoute(index, { ...answer, otherInstitution: e.target.value })} /></div> : <p><a href={route.url} target="_blank" rel="noreferrer">Visit {route.institution} ↗</a></p>}
+      <div className="college-stage-heading"><span className="eyebrow">Part A · Independent research</span><h3>What do the broader outcomes show?</h3><p>Compare programs or careers within this route. Your examples do not have to be offered at the selected school. Aim for the highest/lowest outcomes you can support with your sources.</p></div>
+      {COLLEGE_RESEARCH_TOPICS.map(topic => <div className="college-research-item" key={topic.id}><h4>{topic.title}</h4><p className="small">{topic.hint}</p><div className="college-research-fields">{([["program", "Major / program / career"], ["figure", "Published figure & what it measures"], ["source", "Independent source link(s)"]] as const).map(([key, label]) => <div className="field" key={key}><label htmlFor={`${route.id}-${topic.id}-${key}`}>{label}</label><textarea id={`${route.id}-${topic.id}-${key}`} rows={3} maxLength={6000} disabled={busy} value={answer.research[topic.id][key]} onChange={e => changeRoute(index, { ...answer, research: { ...answer.research, [topic.id]: { ...answer.research[topic.id], [key]: e.target.value } } })} /></div>)}</div></div>)}
+      <div className="college-stage-heading"><span className="eyebrow">Part B · School investigation</span><h3>Which offered programs make financial sense?</h3><p>Review this school’s offerings. Use outside earnings and employment evidence to assess the options. The same program may appear in more than one research answer.</p></div>
+      <div className="college-program-grid">{answer.programs.map((program, j) => <article className={`college-program-card ${j === 0 ? "promising" : "challenging"}`} key={j}><span className="eyebrow">Program {j + 1}</span><h4>{j === 0 ? "Financially promising" : "Financially challenging"}</h4>{COLLEGE_PROGRAM_FIELDS.map(([key, label, hint]) => <div className="field" key={key}><label htmlFor={`${route.id}-program-${j}-${key}`}>{label}</label><span className="college-field-hint">{hint}</span><textarea id={`${route.id}-program-${j}-${key}`} rows={key === "explanation" || key === "sources" ? 3 : 2} maxLength={6000} disabled={busy} value={program[key]} onChange={e => changeRoute(index, { ...answer, programs: answer.programs.map((p, i) => i === j ? { ...p, [key]: e.target.value } : p) })} /></div>)}</article>)}</div>
+      </div></details>; })}
+    <section className="panel college-next-step"><span className="eyebrow">Final reflection</span><h3>Two paths that fit you</h3><div className="field"><label htmlFor="college-reflection">Describe two specific paths that make financial and academic sense for you.</label><p className="college-field-hint">Use your research to compare tuition, training time, earning potential, employment prospects, and fit with your interests and strengths. Explain why you would consider each.</p><textarea id="college-reflection" rows={6} maxLength={6000} disabled={busy} value={response.reflection} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
     {error && <div className="error" role="alert">{error}</div>}
-    <div className="module-action-bar college-action-bar"><div><strong>{done}/15 responses complete</strong><p role="status">{notice || "Save a draft while you work. Submit when your comparison is complete."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 15} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated comparison" : "Submit comparison"}</button></div></div>
+    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeRouteDone).length}/4 routes researched · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{notice || "Save your research as you go. Submit to unlock the comparison explorer."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated research" : "Submit research"}</button></div></div>
+    {submittedWork ? <CollegeExplorer response={submittedWork} /> : <section className="panel college-explorer-lock"><span className="eyebrow">Your next step</span><h3>Comparison explorer</h3><p>Complete and submit your research to unlock a tool for comparing the programs you found.</p></section>}
   </div>;
 }
 

@@ -405,3 +405,14 @@ Still open:
 - Recomputed today's snapshot with current Finnhub quotes atomically: account $398.12, TWR -0.46% (previous inflated +24.69%). Earlier snapshots unchanged. Subsequent normal refreshes use corrected shares.
 - Verified production readback, cash ledger invariant, and idempotent rerun (already corrected, no changes).
 - Original record/account/snapshots backup is `data/maintenance/etha-split-2026-10-06.json.local` (ignored, mode600), also in `/tmp/simlife-etha-split-backup-1791299432608.json`. No secrets in the backup. No app deployment needed for this data correction.
+
+## 2026-10-06 — Revised college research worksheet and scrolling Class page
+
+- Class shows all assignments on one scrolling page, under Investing and Is College Right for Me? headings; removed clickable route bins. Investing module numbers and visibility remain intact.
+- College assignment revised to **Explore four paths after high school**. Routes: four-year/VSU, community/GSU Perimeter, art/SCAD, trade-tech/SRTC Thomasville. Each defaults to its named school with Other revealing a required custom name.
+- Per route: independent higher/lower pay and stronger/weaker employment research (program/career, published figure/measure, sources), then one promising and one challenging school-offered program. Each records program, career, earnings, duration, rough total tuition/fees before aid excluding living expenses, sources, and financial trade-off. Final reflection compares two personally suitable paths.
+- Shared model `shared/college-research.ts`, response version2. Submission requires all four researched routes plus reflection; drafts allow incomplete work. College request bodies allow1MB so full research drafts can save.
+- Shared brief upgrades once at boot (responseVersion2), preserving visibility, teacher custom title, earlier drafts and submissions. Earlier work stays reviewable; earlier-version submissions don't count as completing the revised worksheet. New drafts carry earlier answers forward.
+- After submission, a comparison explorer lets students choose any two of their eight researched programs. It uses their last submitted evidence, rather than providing assignment answers beforehand. Teacher drawer shows all route research and programs.
+- Browser verified one scrolling page/all4 modules, defaults and custom school field, legacy draft preservation, account draft/reload, >100KB draft saving, full submission, explorer gate/reload, teacher review, and mobile width. Screenshots/fixtures `/tmp/simlife-research-check`.
+- Local revision prepared; not pushed or applied to production yet.
