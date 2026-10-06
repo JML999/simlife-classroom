@@ -89,3 +89,70 @@ test("career wedges use the highest and lowest five percent of assigned pay in t
   assert.equal(saved?.event_key, "promotion");
   assert.equal(JSON.parse(saved!.payload).wheelIndex, 9);
 });
+
+
+test("highest earners receive the Arby's job even when a non-career event is drawn", async () => {
+  await db.run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES ('auto-class', 'Automatic Class', 'AUTO', 0, ?)`, [now.toISOString()]);
+  for (let i = 0; i < 20; i++) {
+    await db.run(`INSERT INTO users (id, name, role, class_id, job_title, job_pay_cents, created_at)
+      VALUES (?, ?, 'student', 'auto-class', 'Test job', ?, ?)`, [`auto-${i}`, `auto-${i}`, 40000 + i * 10000, now.toISOString()]);
+  }
+  const top = await life.spinLifeEvent({ classId: "auto-class", studentId: "auto-19", actorId: "teacher", now, drawIndex: 0 });
+  assert.equal(top.key, "layoff");
+  assert.equal(top.index, 9, "animation must land on a career twist rather than inheritance");
+  assert.equal(top.newJobTitle, "Cashier at Arby's");
+  assert.equal(top.newPayCents, 40000);
+  assert.equal((await db.q(`SELECT id FROM income_postings WHERE user_id = 'auto-19'`)).length, 0);
+  const next = await life.spinLifeEvent({ classId: "auto-class", studentId: "auto-18", actorId: "teacher", now, drawIndex: 0 });
+  assert.equal(next.key, "inheritance", "earlier layoffs must not move another student into the top bracket");
+  const repeat = await life.spinLifeEvent({ classId: "auto-class", studentId: "auto-19", actorId: "teacher", now, drawIndex: 4 });
+  assert.equal(repeat.id, top.id);
+  assert.equal(repeat.newJobTitle, "Cashier at Arby's");
+});
+
+test("credit-card spin creates one $750 claim and wages repay it exactly once", async () => {
+  const bank = await import("./bank.js");
+  await db.run(`INSERT INTO users (id, name, role, class_id, job_title, job_pay_cents, created_at) VALUES ('claim-student', 'Claim Student', 'student', 'wheel-class', 'Electrician', 85000, ?)`, [now.toISOString()]);
+  const event = await life.spinLifeEvent({ classId: "wheel-class", studentId: "claim-student", actorId: "teacher", now, drawIndex: 10 });
+  assert.equal(event.key, "credit_card_garnishment");
+  assert.equal(event.index, 10);
+  assert.equal((await (await import("./student-admin.js")).deletionStatus("claim-student")).canDelete, false);
+  // Recovery of a pending event must not create another claim.
+  await db.run(`UPDATE life_events SET status = 'pending' WHERE id = ?`, [event.id]);
+  await life.spinLifeEvent({ classId: "wheel-class", studentId: "claim-student", actorId: "teacher", now });
+  assert.equal((await bank.bankSummaryFor("claim-student")).garnishments.length, 1);
+  const pay = (batchId: string, amountCents: number, isPaycheck = true) => bank.issueIncomeBatch({ actorId: "teacher", batchId, isPaycheck, items: [{ userId: "claim-student", label: "Pay", amountCents }] });
+  const first = await pay("claim-pay-1", 30000);
+  assert.equal(first.withheldCents, 30000); assert.equal(first.depositedCents, 0);
+  assert.equal((await bank.bankSummaryFor("claim-student")).garnishments[0].remainingCents, 45000);
+  assert.equal((await pay("claim-pay-1", 30000)).posted, 0);
+  assert.equal((await bank.bankSummaryFor("claim-student")).garnishments[0].remainingCents, 45000);
+  await assert.rejects(() => pay("claim-pay-1", 30000, false), /withholding setting/);
+  const bonus = await pay("claim-bonus", 10000, false);
+  assert.equal(bonus.withheldCents, 0);
+  assert.equal((await bank.bankSummaryFor("claim-student")).garnishments[0].remainingCents, 45000);
+  await bank.postIncome({ userId: "claim-student", actorId: "teacher", label: "Inheritance", amountCents: 5000, idempotencyKey: "claim-gift" });
+  assert.equal((await bank.bankSummaryFor("claim-student")).garnishments[0].remainingCents, 45000);
+  const final = await pay("claim-pay-2", 60000);
+  assert.equal(final.withheldCents, 45000); assert.equal(final.depositedCents, 15000);
+  const settled = await bank.bankSummaryFor("claim-student");
+  assert.equal(settled.garnishments[0].remainingCents, 0);
+  assert.equal(settled.garnishments[0].paidCents, 75000);
+  assert.equal(settled.checkingCents, 30000);
+  const ordinary = await pay("claim-pay-3", 30000);
+  assert.equal(ordinary.withheldCents, 0); assert.equal(ordinary.depositedCents, 30000);
+  assert.equal((await bank.checkBankInvariant("claim-student")).ok, true);
+  assert.equal((await db.q(`SELECT id FROM bank_journal WHERE kind = 'wage_garnishment' AND related_id = ?`, [settled.garnishments[0].id])).length, 2);
+});
+
+test("concurrent wages cannot overpay a claim, and batch failures roll back its repayments", async () => {
+  const bank = await import("./bank.js");
+  await db.run(`INSERT INTO users (id, name, role, class_id, job_title, job_pay_cents, created_at) VALUES ('atomic-claim', 'Atomic Claim', 'student', 'wheel-class', 'Electrician', 85000, ?)`, [now.toISOString()]);
+  await bank.createWageClaim({ userId: "atomic-claim", sourceKey: "atomic-claim", title: "Credit card", amountCents: 75000 });
+  await assert.rejects(() => bank.issueIncomeBatch({ actorId: "teacher", batchId: "rollback-claim", isPaycheck: true, items: [{ userId: "atomic-claim", label: "Pay", amountCents: 40000 }, { userId: "zz-missing-student", label: "Pay", amountCents: 40000 }] }), /not found/);
+  assert.equal((await bank.bankSummaryFor("atomic-claim")).garnishments[0].paidCents, 0);
+  const runs = await Promise.all(["atomic-1", "atomic-2"].map(batchId => bank.issueIncomeBatch({ actorId: "teacher", batchId, isPaycheck: true, items: [{ userId: "atomic-claim", label: "Pay", amountCents: 40000 }] })));
+  assert.equal(runs.reduce((sum, r) => sum + r.withheldCents, 0), 75000);
+  assert.equal((await bank.bankSummaryFor("atomic-claim")).checkingCents, 5000);
+  assert.equal((await bank.checkBankInvariant("atomic-claim")).ok, true);
+});

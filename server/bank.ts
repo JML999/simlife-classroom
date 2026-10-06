@@ -706,6 +706,7 @@ export async function accrueSavingsForUser(userId: string, now = new Date()): Pr
 
 export async function bankSummaryFor(userId: string): Promise<{
   checkingCents: number; savingsCents: number; bills: Bill[]; recent: JournalEntry[];
+  garnishments: { id: string; title: string; amountCents: number; paidCents: number; remainingCents: number }[];
   savingsInterest: { apyBps: number; apy: number; label: string; asOf: string; earnedCents: number; projection: { years: number; balanceCents: number; interestCents: number }[] };
 }> {
   const { one, q } = await import("./db.js");
@@ -715,6 +716,8 @@ export async function bankSummaryFor(userId: string): Promise<{
   const acct = await one<{ id: string; checking_cents: number; savings_cents: number }>(
     `SELECT id, checking_cents, savings_cents FROM bank_accounts WHERE user_id = ?`, [userId],
   );
+  const claims = await q<{ id: string; title: string; amount_cents: number; paid_cents: number }>(`SELECT * FROM wage_claims WHERE user_id = ? ORDER BY created_at, id`, [userId]);
+  const garnishments = claims.map(c => ({ id: c.id, title: c.title, amountCents: Number(c.amount_cents), paidCents: Number(c.paid_cents), remainingCents: Number(c.amount_cents) - Number(c.paid_cents) }));
   const byUser = await q<Bill>(`SELECT * FROM bills WHERE user_id = ? ORDER BY CASE WHEN paid_at IS NULL THEN 0 ELSE 1 END, due_at ASC`, [userId]);
   const disputes = await q<BillDispute>(
     `SELECT d.* FROM bill_disputes d JOIN bills b ON b.id = d.bill_id WHERE b.user_id = ? ORDER BY d.created_at DESC`, [userId],
@@ -740,7 +743,7 @@ export async function bankSummaryFor(userId: string): Promise<{
     return { years, balanceCents, interestCents: balanceCents - savings };
   });
   return {
-    checkingCents: Number(acct?.checking_cents || 0), savingsCents: savings, bills: withStatus, recent,
+    checkingCents: Number(acct?.checking_cents || 0), savingsCents: savings, bills: withStatus, recent, garnishments,
     savingsInterest: acct ? { ...rate, earnedCents: Number(earned?.cents || 0), projection } : emptyInterest,
   };
 }
@@ -759,12 +762,47 @@ export async function checkBankInvariant(userId: string): Promise<{ checking: nu
   return { checking: acct.checking_cents, checkingSum: c, savings: acct.savings_cents, savingsSum: s, ok: acct.checking_cents === c && acct.savings_cents === s };
 }
 
+/** Classroom wage claims. Bank-account locks serialize claims and paycheck deductions. */
+export async function createWageClaim(opts: { userId: string; sourceKey: string; title: string; amountCents: number }) {
+  requirePositiveCents(opts.amountCents, "Claim amount");
+  return withTx(async t => {
+    await getOrCreateBankAccount(t, opts.userId);
+    const prior = await t.one<{ id: string; user_id: string; amount_cents: number }>(`SELECT * FROM wage_claims WHERE source_key = ?`, [opts.sourceKey]);
+    if (prior) {
+      if (prior.user_id !== opts.userId || Number(prior.amount_cents) !== opts.amountCents) throw new BankError("IDEMPOTENCY_CONFLICT", "Claim already exists with different details.");
+      return prior.id;
+    }
+    const id = newId("wage");
+    await t.run(`INSERT INTO wage_claims (id, user_id, source_key, title, amount_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, opts.userId, opts.sourceKey, opts.title, opts.amountCents, nowIso()]);
+    return id;
+  });
+}
+
+async function withholdWages(t: Tx, acct: BankAccount, amount: number, key: string, actorId: string): Promise<number> {
+  const claims = await t.q<{ id: string; title: string; amount_cents: number; paid_cents: number }>(
+    `SELECT * FROM wage_claims WHERE user_id = ? AND paid_cents < amount_cents ORDER BY created_at, id`,
+    // account owner, not an ID supplied by the client
+    [(await t.one<{ user_id: string }>(`SELECT user_id FROM bank_accounts WHERE id = ?`, [acct.id]))!.user_id]);
+  let available = amount;
+  for (const claim of claims) {
+    const deducted = Math.min(available, Number(claim.amount_cents) - Number(claim.paid_cents));
+    if (!deducted) break;
+    await insertJournal(t, { id: newId("bj"), bank_account_id: acct.id, kind: "wage_garnishment",
+      checking_leg: -deducted, savings_leg: 0, memo: `Classroom garnishment: ${claim.title}. ${fmtCents(Number(claim.amount_cents) - Number(claim.paid_cents) - deducted)} remaining.`,
+      actor_id: actorId, idempotency_key: `garnish:${key}:${claim.id}`, related_id: claim.id });
+    await t.run(`UPDATE wage_claims SET paid_cents = paid_cents + ? WHERE id = ?`, [deducted, claim.id]);
+    available -= deducted;
+  }
+  return amount - available;
+}
+
 /** Class-wide paycheck issuance: one transaction for the whole batch.
  *  Per-row idempotency keys (`${batchId}:${userId}`) make retries resume
  *  instead of double-paying. Any validation failure rolls back everything. */
 export async function issueIncomeBatch(opts: {
-  actorId: string; batchId: string; items: { userId: string; label: string; amountCents: number }[];
-}): Promise<{ posted: number; batchId: string }> {
+  actorId: string; batchId: string; isPaycheck?: boolean; items: { userId: string; label: string; amountCents: number }[];
+}): Promise<{ posted: number; batchId: string; withheldCents: number; depositedCents: number }> {
   if (!opts.batchId) throw new BankError("INVALID_INPUT", "Batch id is required.");
   if (!opts.items.length) throw new BankError("EMPTY_BATCH", "Nothing to post — select at least one student.");
   for (const it of opts.items) {
@@ -783,7 +821,7 @@ export async function issueIncomeBatch(opts: {
   // Postgres deadlock). Sorting by userId makes every writer agree.
   const ordered = [...opts.items].sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
   return withTx(async (t) => {
-    let posted = 0;
+    let posted = 0, withheldCents = 0, depositedCents = 0;
     for (const it of ordered) {
       const key = `${opts.batchId}:${it.userId}`;
       const acct = await getOrCreateBankAccount(t, it.userId);
@@ -792,6 +830,8 @@ export async function issueIncomeBatch(opts: {
         if (await journalOwner(t, existing) !== it.userId || existing.kind !== "income" || existing.checking_leg !== it.amountCents) {
           throw new BankError("IDEMPOTENCY_CONFLICT", "That paycheck batch id was already used for different details.");
         }
+        const record = await t.one<{ is_paycheck: number }>(`SELECT is_paycheck FROM paycheck_records WHERE request_key = ?`, [key]);
+        if (record && Boolean(record.is_paycheck) !== Boolean(opts.isPaycheck)) throw new BankError("IDEMPOTENCY_CONFLICT", "This batch was already issued with a different withholding setting.");
         continue;
       }
       const postingId = newId("inc");
@@ -805,10 +845,13 @@ export async function issueIncomeBatch(opts: {
         checking_leg: it.amountCents, savings_leg: 0,
         memo: it.label.trim(), actor_id: opts.actorId, idempotency_key: key, related_id: postingId,
       });
-      await t.run(`UPDATE bank_accounts SET checking_cents = ? WHERE id = ?`, [acct.checkingCents + it.amountCents, acct.id]);
+      const withheld = opts.isPaycheck ? await withholdWages(t, acct, it.amountCents, key, opts.actorId) : 0;
+      await t.run(`INSERT INTO paycheck_records (request_key, user_id, is_paycheck, withheld_cents, created_at) VALUES (?, ?, ?, ?, ?)`, [key, it.userId, opts.isPaycheck ? 1 : 0, withheld, nowIso()]);
+      await t.run(`UPDATE bank_accounts SET checking_cents = ? WHERE id = ?`, [acct.checkingCents + it.amountCents - withheld, acct.id]);
+      withheldCents += withheld; depositedCents += it.amountCents - withheld;
       posted++;
     }
-    return { posted, batchId: opts.batchId };
+    return { posted, batchId: opts.batchId, withheldCents, depositedCents };
   });
 }
 

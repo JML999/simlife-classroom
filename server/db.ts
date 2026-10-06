@@ -532,6 +532,19 @@ export async function initSchema(): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sl_life_events_class_date ON life_events(class_id, event_date)`,
 
+    `CREATE TABLE IF NOT EXISTS wage_claims (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source_key TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+      paid_cents INTEGER NOT NULL DEFAULT 0 CHECK(paid_cents >= 0 AND paid_cents <= amount_cents),
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_wage_claims_user ON wage_claims(user_id)`,
+    `CREATE TABLE IF NOT EXISTS paycheck_records (
+      request_key TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      is_paycheck INTEGER NOT NULL, withheld_cents INTEGER NOT NULL, created_at TEXT NOT NULL
+    )`,
+
     // Per-class module visibility. Store what is hidden, not what is visible:
     // newly published modules therefore appear by default without a backfill.
     // Hiding is presentation-only and never deletes progress or submissions.

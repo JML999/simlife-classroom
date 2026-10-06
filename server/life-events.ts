@@ -1,7 +1,7 @@
 /** Teacher-run classroom wheel. Every result changes a real SimLife record. */
 import { randomInt } from "node:crypto";
 import { newId, nowIso, one, q, run, withTx } from "./db.js";
-import { issueBillBatch, postIncome } from "./bank.js";
+import { issueBillBatch, postIncome, createWageClaim } from "./bank.js";
 
 export class LifeEventError extends Error {
   code: "INVALID_INPUT" | "NOT_FOUND" | "NOT_READY";
@@ -19,6 +19,7 @@ export const LIFE_EVENT_OPTIONS = [
   { key: "parking_ticket", title: "Parking ticket", type: "bill", amountCents: 4000, description: "A $40 ticket arrives, due in 7 days." },
   { key: "promotion", title: "Promotion", type: "job", amountCents: 0, description: "Your future paychecks increase." },
   { key: "layoff", title: "Laid off, then rehired", type: "job", amountCents: 0, description: "Your new job is Cashier at Arby's. Future paychecks are smaller." },
+  { key: "credit_card_garnishment", title: "Unpaid credit card", type: "garnishment", amountCents: 75000, description: "A $750 credit-card claim takes future paychecks until repaid. Any paycheck amount above the remaining debt goes to checking. Simplified classroom rule." },
 ] as const;
 
 type EventRow = { id: string; user_id: string; class_id: string; event_date: string; event_key: string; payload: string; status: string; created_at: string; applied_at: string | null };
@@ -64,6 +65,8 @@ async function applyEvent(row: EventRow, actorId: string): Promise<void> {
         dueAt: new Date(new Date(row.created_at).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         sender: "SimLife", documentTitle: option.title,
         documentBody: `Life event: ${option.title}. ${option.description} Pay this bill from checking by the due date.` }] });
+  } else if (option.type === "garnishment") {
+    await createWageClaim({ userId: row.user_id, sourceKey: `life:${row.id}`, title: option.title, amountCents: option.amountCents });
   } else {
     const payload = JSON.parse(row.payload);
     // Absolute saved values make a retry safe if the first response is lost.
@@ -83,26 +86,27 @@ export async function spinLifeEvent(opts: { classId: string; studentId: string; 
     const existing = await tx.one<EventRow>(`SELECT * FROM life_events WHERE user_id = ? AND event_date = ?`, [opts.studentId, eventDate]);
     if (existing) return existing;
     if (!student.job_title || !Number(student.job_pay_cents)) throw new LifeEventError("NOT_READY", "Assign this student a job and paycheck before spinning.");
-    const index = opts.drawIndex ?? randomInt(LIFE_EVENT_OPTIONS.length);
+    let index = opts.drawIndex ?? randomInt(LIFE_EVENT_OPTIONS.length);
     if (!Number.isInteger(index) || index < 0 || index >= LIFE_EVENT_OPTIONS.length) throw new LifeEventError("INVALID_INPUT", "Invalid wheel result.");
-    const pays = index >= 8 ? await tx.q<PayRow>(
-      `SELECT id, job_pay_cents FROM users WHERE class_id = ? AND role = 'student' AND job_pay_cents > 0`, [opts.classId]) : [];
-    if (index >= 8) {
-      // A prior spin today must not shift everyone else's percentile bracket.
-      const earlier = await tx.q<{ user_id: string; payload: string }>(
-        `SELECT user_id, payload FROM life_events WHERE class_id = ? AND event_date = ?`, [opts.classId, eventDate]);
-      const payBeforeSpin = new Map(earlier.map((event) => {
-        const prior = Number(JSON.parse(event.payload).previousPayCents);
-        return [event.user_id, prior] as const;
-      }));
-      for (const row of pays) {
-        const prior = payBeforeSpin.get(row.id);
-        if (prior && prior > 0) row.job_pay_cents = prior;
-      }
+    const pays = await tx.q<PayRow>(
+      `SELECT id, job_pay_cents FROM users WHERE class_id = ? AND role = 'student' AND job_pay_cents > 0`, [opts.classId]);
+    // A prior spin today must not shift everyone else's percentile bracket.
+    const earlier = await tx.q<{ user_id: string; payload: string }>(
+      `SELECT user_id, payload FROM life_events WHERE class_id = ? AND event_date = ?`, [opts.classId, eventDate]);
+    const payBeforeSpin = new Map(earlier.map((event) => {
+      const prior = Number(JSON.parse(event.payload).previousPayCents);
+      return [event.user_id, prior] as const;
+    }));
+    for (const row of pays) {
+      const prior = payBeforeSpin.get(row.id);
+      if (prior && prior > 0) row.job_pay_cents = prior;
     }
-    const tier = index >= 8 ? careerTier(student.id, pays) : "middle";
+    const tier = careerTier(student.id, pays);
+    // High earners receive the career twist on every spin, even when a cash or bill wedge was drawn.
+    // Keep the animated landing consistent with the actual event.
+    if (tier === "top" && index !== 8 && index !== 9) index = 9;
     // Both career wedges are surprises. Pay rank determines the outcome at the extremes.
-    const outcomeIndex = tier === "top" ? 9 : tier === "bottom" ? 8 : index;
+    const outcomeIndex = tier === "top" ? 9 : tier === "bottom" && (index === 8 || index === 9) ? 8 : index;
     const option = LIFE_EVENT_OPTIONS[outcomeIndex];
     const previousPay = Number(student.job_pay_cents);
     const isDeliveryDriver = /door\s*dash/i.test(student.job_title || "");
@@ -116,7 +120,7 @@ export async function spinLifeEvent(opts: { classId: string; studentId: string; 
         } : {}) }
       : option.key === "layoff"
         ? { wheelIndex: index, previousPayCents: previousPay, newJobTitle: "Cashier at Arby's", newPayCents: Math.max(1, Math.min(40000, Math.round(previousPay * .85))) }
-        : {};
+        : { previousPayCents: previousPay };
     const id = newId("life");
     await tx.run(`INSERT INTO life_events (id, user_id, class_id, event_date, event_key, payload, status, created_at)
       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?) ON CONFLICT(user_id, event_date) DO NOTHING`,

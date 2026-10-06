@@ -1127,6 +1127,7 @@ app.get("/api/bank", requireAuth, async (req, res) => {
     savingsCents: bank.savingsCents,
     savingsInterest: bank.savingsInterest,
     bills: bank.bills,
+    garnishments: bank.garnishments,
     recent: bank.recent,
     brokerage: { cashCents: pf.cashCents, portfolioCents: pf.portfolioCents },
     job: { title: (user as any).job_title ?? null, payCents: (user as any).job_pay_cents ?? null },
@@ -1242,6 +1243,7 @@ app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
             COALESCE(b.checking_cents, 0) AS checking_cents,
             COALESCE(b.savings_cents, 0) AS savings_cents,
             COALESCE(a.cash_cents, 0) AS brokerage_cents,
+            COALESCE((SELECT SUM(w.amount_cents - w.paid_cents) FROM wage_claims w WHERE w.user_id = u.id), 0) AS garnishment_cents,
             (SELECT COUNT(*) FROM bills bl WHERE bl.user_id = u.id AND bl.paid_at IS NULL) AS bills_due,
             (SELECT COUNT(*) FROM bills bl WHERE bl.user_id = u.id AND bl.paid_at IS NULL AND bl.due_at < ?) AS bills_late
      FROM users u LEFT JOIN classes c ON c.id = u.class_id
@@ -1268,8 +1270,14 @@ app.post("/api/teacher/income/preview", requireCurrentTeacher, async (req, res) 
     const cents = assigned ? null : Math.round(dollars * 100);
     const missing = assigned ? students.filter((s) => !(Number(s.job_pay_cents) > 0)) : [];
     if (missing.length) { res.status(400).json({ error: `Assigned pay is missing for: ${missing.map((s) => s.name).join(", ")}.` }); return; }
-    const items = students.map((s) => ({ ...s, amountCents: assigned ? Number(s.job_pay_cents) : cents! }));
-    res.json({ students: items, mode: assigned ? "assigned" : "flat", perStudentCents: cents, totalCents: items.reduce((sum, s) => sum + s.amountCents, 0), count: students.length });
+    const isPaycheck = req.body?.isPaycheck !== false;
+    const items = await Promise.all(students.map(async s => {
+      const amountCents = assigned ? Number(s.job_pay_cents) : cents!;
+      const debt = await one<{ cents: number }>(`SELECT COALESCE(SUM(amount_cents - paid_cents), 0) AS cents FROM wage_claims WHERE user_id = ?`, [s.id]);
+      const withheldCents = isPaycheck ? Math.min(amountCents, Number(debt?.cents || 0)) : 0;
+      return { ...s, amountCents, withheldCents, depositedCents: amountCents - withheldCents };
+    }));
+    res.json({ withheldCents: items.reduce((sum, s) => sum + s.withheldCents, 0), depositedCents: items.reduce((sum, s) => sum + s.depositedCents, 0), students: items, mode: assigned ? "assigned" : "flat", perStudentCents: cents, totalCents: items.reduce((sum, s) => sum + s.amountCents, 0), count: students.length });
   } catch (err) { bankError(res, err); }
 });
 
@@ -1292,10 +1300,10 @@ app.post("/api/teacher/income/issue", requireCurrentTeacher, async (req, res) =>
     const cents = assigned ? 0 : Math.round(dollars * 100);
     const items = students.map((s) => ({ userId: s.id, label, amountCents: assigned ? Number(s.job_pay_cents) : cents }));
     const r = await issueIncomeBatch({
-      actorId: teacher.userId, batchId,
+      actorId: teacher.userId, batchId, isPaycheck: req.body?.isPaycheck !== false,
       items,
     });
-    res.json({ ok: true, posted: r.posted, batchId: r.batchId, count: students.length, totalCents: items.reduce((sum, item) => sum + item.amountCents, 0) });
+    res.json({ ok: true, posted: r.posted, batchId: r.batchId, count: students.length, withheldCents: r.withheldCents, depositedCents: r.depositedCents, totalCents: items.reduce((sum, item) => sum + item.amountCents, 0) });
   } catch (err) { bankError(res, err); }
 });
 

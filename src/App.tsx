@@ -556,6 +556,7 @@ function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfo
 
 function describeBankEntry(e: any): string {
   if (e.kind === "income") return "Paycheck / deposit";
+  if (e.kind === "wage_garnishment") return "Wage garnishment repayment";
   if (e.kind === "opening_balance") return "Confirmed opening balance";
   if (e.kind === "transfer") return "Transfer";
   if (e.kind === "transfer_to_brokerage") return "Moved to brokerage";
@@ -763,6 +764,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
         <div className="wallet-art" aria-hidden="true"><span>💵</span><strong>👛</strong><i>★</i></div>
       </div>
       {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
+      <WageClaimStatus claims={bank?.garnishments || []} />
       {unpaidTotal > 0 && (
         <div className="money-reminder" role="note"><span>🔔</span><div><strong>{money(unpaidTotal)} is still spoken for</strong><p>You have {unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}. Your checking balance is not the same as money available to invest.</p></div></div>
       )}
@@ -1399,6 +1401,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                   </div>
                   <p className="hint">Leave fields blank and Save to clear. Saving never touches the job above.</p>
                 </div>
+                <WageClaimStatus claims={profile.bank?.garnishments || []} />
                 {(() => {
                   const ref = refById[profileId];
                   if (!ref) return null;
@@ -1541,14 +1544,22 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
   );
 }
 
-const WHEEL_LABELS = ["Inheritance", "Tax refund", "Side gig", "Rebate", "Flat tire", "Phone repair", "Urgent care", "Parking ticket", "Career twist", "Career twist"];
+function WageClaimStatus({ claims }: { claims: any[] }) {
+  if (!claims?.length) return null;
+  return <section className="panel wage-claim-status"><h3>Wage garnishment</h3><p className="small">Classroom rule: future paychecks repay the debt first. Any remainder reaches checking.</p>{claims.map(c => <p key={c.id}><strong>{c.title}</strong>: {money(c.paidCents)} of {money(c.amountCents)} repaid. <strong>{c.remainingCents ? `${money(c.remainingCents)} remaining` : "Paid off. Regular pay resumes."}</strong></p>)}</section>;
+}
+
+const WHEEL_LABELS = ["Inheritance", "Tax refund", "Side gig", "Rebate", "Flat tire", "Phone repair", "Urgent care", "Parking ticket", "Career twist", "Career twist", "Credit-card debt"];
 const SPIN_DURATION = 6800;
 
 function WheelFace({ angle, options, presenting = false }: { angle: number; options: any[]; presenting?: boolean }) {
+  const step = 360 / Math.max(1, options.length);
+  const colors = ["#dfbd77", "#8d9d77", "#e7d7a5", "#b9c6a2", "#d4a994", "#9fa67d", "#ecc79f", "#a8bca6", "#d9bf89", "#c2ab9a", "#c99185"];
+  const background = `conic-gradient(from ${-step / 2}deg, ${options.flatMap((_, i) => [`${colors[i % colors.length]} ${i * step}deg ${(i + 1) * step - .8}deg`, `#62654c ${(i + 1) * step - .8}deg ${(i + 1) * step}deg`]).join(", ")})`;
   return <div className={`life-wheel-wrap${presenting ? " is-presenting" : ""}`}>
     <div className="life-wheel-pointer" aria-hidden="true">▼</div>
-    <div className="life-wheel" style={{ transform: `rotate(${angle}deg)` }} aria-hidden="true">
-      {options.map((option, index) => <span className="life-wheel-option" key={option.key} style={{ transform: `translate(-50%, -50%) rotate(${index * 36}deg) translateY(var(--wheel-label-offset)) rotate(${-index * 36}deg)` }}>{WHEEL_LABELS[index]}</span>)}
+    <div className="life-wheel" style={{ transform: `rotate(${angle}deg)`, background }} aria-hidden="true">
+      {options.map((option, index) => <span className="life-wheel-option" key={option.key} style={{ transform: `translate(-50%, -50%) rotate(${index * step}deg) translateY(var(--wheel-label-offset)) rotate(${-index * step}deg)` }}>{WHEEL_LABELS[index]}</span>)}
       <span className="life-wheel-hub">SIMLIFE</span>
     </div>
   </div>;
@@ -1606,7 +1617,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
     try {
       const r = await api<any>("/api/teacher/life-events/spin", { method: "POST", body: JSON.stringify({ classId, studentId }) });
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const target = ((-r.event.index * 36 - angleRef.current) % 360 + 360) % 360 + (reducedMotion ? 0 : 2160);
+      const target = ((-r.event.index * (360 / options.length) - angleRef.current) % 360 + 360) % 360 + (reducedMotion ? 0 : 2160);
       const startAngle = angleRef.current;
       const startTime = performance.now();
       let lastIndex = -1;
@@ -1617,7 +1628,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
         const current = startAngle + target * eased;
         angleRef.current = current;
         setAngle(current);
-        const index = ((Math.round(-current / 36) % 10) + 10) % 10;
+        const index = ((Math.round(-current / (360 / options.length)) % options.length) + options.length) % options.length;
         if (index !== lastIndex) {
           lastIndex = index;
           setPassingIndex(index);
@@ -1681,6 +1692,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
   const [payLabel, setPayLabel] = useState("Weekly paycheck");
   const [payDollars, setPayDollars] = useState("");
   const [payMode, setPayMode] = useState<"assigned" | "flat">("assigned");
+  const [isPaycheck, setIsPaycheck] = useState(true);
   const [payPreview, setPayPreview] = useState<any>(null);
   const payBatch = useRef("");
   // Bill form
@@ -1759,7 +1771,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
     try {
       const r = await api<any>("/api/teacher/income/preview", {
         method: "POST",
-        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, mode: payMode, dollars: Number(payDollars) }),
+        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, mode: payMode, isPaycheck, dollars: Number(payDollars) }),
       });
       payBatch.current = uid();
       setPayPreview(r);
@@ -1771,9 +1783,9 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
     try {
       const r = await api<any>("/api/teacher/income/issue", {
         method: "POST",
-        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, mode: payMode, dollars: Number(payDollars), batchId: payBatch.current }),
+        body: JSON.stringify({ classId, studentIds: ids, label: payLabel, mode: payMode, isPaycheck, dollars: Number(payDollars), batchId: payBatch.current }),
       });
-      setNotice(r.posted === 0 ? "That paycheck batch was already posted — no duplicate deposits were made." : `Posted ${money(r.totalCents)} to ${r.posted} student${r.posted === 1 ? "" : "s"}.`);
+      setNotice(r.posted === 0 ? "That paycheck batch was already posted — no duplicate deposits were made." : `Issued ${money(r.totalCents)}: ${money(r.withheldCents)} repaid debt and ${money(r.depositedCents)} reached checking for ${r.posted} student${r.posted === 1 ? "" : "s"}.`);
       setPayPreview(null); setPayDollars("");
       await load(); onChanged();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -1970,6 +1982,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
       {!classId && <div className="notice">Choose a period above to issue paychecks or bills. Issuance is always scoped to one period.</div>}
 
+      {classId && summary.some((s: any) => Number(s.garnishment_cents) > 0) && <div className="panel"><h2>Active wage claims</h2><p className="hint">Simplified classroom rule: paychecks repay these balances before reaching checking. Withholding stops when paid.</p>{summary.filter((s: any) => Number(s.garnishment_cents) > 0).map((s: any) => <p key={s.id}><strong>{s.name}</strong>: {money(s.garnishment_cents)} remaining</p>)}</div>}
       {classId && <LifeEventWheel key={classId} classId={classId} students={summary} onApplied={() => { void load(); onChanged(); }} />}
 
       <div className="panel">
@@ -1978,9 +1991,9 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
         {checked.size > 0 && (
           <div className="row" style={{ marginBottom: 8, background: "#eef0ff", padding: 8, borderRadius: 10 }} role="toolbar" aria-label="Selected student actions">
             <span className="small"><strong>{checked.size} student{checked.size === 1 ? "" : "s"} selected</strong></span>
-            <button style={{ background: "#dff2dc", borderColor: "#8fce8f", color: "#2c7a2f", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Bonus"); setPayMode("flat"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send bonuses</button>
+            <button style={{ background: "#dff2dc", borderColor: "#8fce8f", color: "#2c7a2f", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Bonus"); setIsPaycheck(false); setPayMode("flat"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send bonuses</button>
             <button style={{ background: "#fbdcdc", borderColor: "#e88", color: "#b3261e", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillMode("flat"); setBillTitle("Fine"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send fines</button>
-            <button style={{ background: "#dfe3ff", borderColor: "#8f9bf0", color: "#353dc6", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Weekly paycheck"); setPayMode("assigned"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send paychecks</button>
+            <button style={{ background: "#dfe3ff", borderColor: "#8f9bf0", color: "#353dc6", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setPayLabel("Weekly paycheck"); setIsPaycheck(true); setPayMode("assigned"); setPayPreview(null); document.getElementById("send-paychecks")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send paychecks</button>
             <button style={{ background: "#fdf0c3", borderColor: "#e3c25a", color: "#8a6d00", borderRadius: 999, padding: "7px 13px" }} onClick={() => { setBillMode("assigned_rent"); setBillTitle("Rent"); setBillPreview(null); document.getElementById("send-bills")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Send expenses</button>
             <button className="ghost" onClick={() => setChecked(new Set())}>Clear</button>
           </div>
@@ -2073,7 +2086,8 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
         <div className="grid2">
           <div className="panel" id="send-paychecks">
             <h2>Send paychecks</h2>
-            <p className="hint">Deposits land in checking. Use each student's assigned pay or enter one flat amount.</p>
+            <p className="hint">Paychecks repay active wage claims first. Any remainder goes to checking.</p>
+            <label className="small"><input type="checkbox" checked={isPaycheck} onChange={e => { setIsPaycheck(e.target.checked); setPayPreview(null); }} /> Apply wage garnishment (uncheck for a bonus or other deposit)</label>
             <div className="field"><label>Label</label><input value={payLabel} onChange={(e) => { setPayLabel(e.target.value); setPayPreview(null); }} placeholder="Weekly paycheck" /></div>
             <div className="field" style={{ marginTop: 8 }}><label>Pay source</label><select value={payMode} onChange={(e) => { setPayMode(e.target.value as any); setPayPreview(null); }}><option value="assigned">Each student's assigned paycheck</option><option value="flat">One amount for everyone</option></select></div>
             {payMode === "flat" && <div className="field" style={{ marginTop: 8 }}><label>Dollars per student</label><input value={payDollars} onChange={(e) => { setPayDollars(e.target.value); setPayPreview(null); }} placeholder="1500.00" inputMode="decimal" /></div>}
@@ -2083,7 +2097,8 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
             {payPreview && (
               <div className="confirm">
                 <p><strong>Confirm:</strong> post <strong>{money(payPreview.totalCents)}</strong> total to {payPreview.count} students labeled “{payLabel}”?</p>
-                <p className="small">{payPreview.students.slice(0, 6).map((s: any) => `${s.name}: ${money(s.amountCents)}`).join(" · ")}{payPreview.count > 6 ? ` · +${payPreview.count - 6} more` : ""}</p>
+                <p className="small">Debt repayment: <strong>{money(payPreview.withheldCents)}</strong>. To checking: <strong>{money(payPreview.depositedCents)}</strong>.</p>
+                <p className="small">{payPreview.students.slice(0, 6).map((s: any) => `${s.name}: ${money(s.amountCents)} pay, ${money(s.withheldCents)} withheld, ${money(s.depositedCents)} deposited`).join(" · ")}{payPreview.count > 6 ? ` · +${payPreview.count - 6} more` : ""}</p>
                 <div className="row"><button disabled={busy} onClick={issuePay}>Yes, post paychecks</button><button className="ghost" onClick={() => setPayPreview(null)}>Cancel</button></div>
               </div>
             )}
@@ -2123,7 +2138,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
               <div className="confirm">
                 {billPreview.mode && billPreview.mode !== "flat" ? (
                   <><p><strong>Confirm:</strong> issue “{billPreview.title}” at each student's assigned {billPreview.mode === "assigned_rent" ? "rent" : "car payment"} ({money(billPreview.totalCents)} total to {billPreview.count} students), due {new Date(billPreview.dueAt).toLocaleDateString()}{billPreview.lateFeeCents > 0 ? `, ${money(billPreview.lateFeeCents)} late fee` : ""}?</p>
-                  <p className="small">{billPreview.students.slice(0, 6).map((s: any) => `${s.name}: ${money(s.amountCents)}`).join(" · ")}{billPreview.count > 6 ? ` · +${billPreview.count - 6} more` : ""}</p></>
+                  <p className="small">{billPreview.students.slice(0, 6).map((s: any) => `${s.name}: ${money(s.amountCents)} pay, ${money(s.withheldCents)} withheld, ${money(s.depositedCents)} deposited`).join(" · ")}{billPreview.count > 6 ? ` · +${billPreview.count - 6} more` : ""}</p></>
                 ) : (
                   <p><strong>Confirm:</strong> issue “{billPreview.title}” ({money(billPreview.perStudentCents)} × {billPreview.count} students = {money(billPreview.totalCents)}), due {new Date(billPreview.dueAt).toLocaleDateString()}{billPreview.lateFeeCents > 0 ? `, ${money(billPreview.lateFeeCents)} late fee` : ""}?</p>
                 )}
