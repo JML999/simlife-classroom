@@ -396,3 +396,12 @@ Still open:
 - Work saves locally while typing; Save draft persists to `class_post_drafts`, Submit appends `class_post_submissions` and clears the server draft. Teacher student drawer shows saved drafts and submitted comparisons. College cover is `public/module-art/college-paths.svg`.
 - Verification: 122/122 server tests, typecheck, build; isolated browser verified route grouping, three existing investing modules, reload recovery, account drafts, submission, teacher review/visibility grouping, and mobile width.
 - Changes prepared locally; deployment requires pushing main. Browser fixtures/screenshots are in `/tmp/simlife-college-check` (temporary).
+
+## 2026-10-06 — Manual ETHA reverse-split correction (production complete)
+
+- User authorized a one-time manual correction rather than a corporate-actions feature.
+- SEC confirmed ETHA 1-for-3 effective 2026-10-06. Production audit found only Aniya Bates (3rd period) affected, one $50 purchase on Sep 30, no sells.
+- Applied guarded `scripts/correct-etha-split-2026-10.ts --apply`: normalized that purchase to 816593 micro-shares (0.816593 shares), split-adjusted unit cost $61.23, retained $50 total cost/date and recorded original 2.449779 shares/$20.41 in its reason. Brokerage cash stayed $126.30. No automated split handling was added.
+- Recomputed today's snapshot with current Finnhub quotes atomically: account $398.12, TWR -0.46% (previous inflated +24.69%). Earlier snapshots unchanged. Subsequent normal refreshes use corrected shares.
+- Verified production readback, cash ledger invariant, and idempotent rerun (already corrected, no changes).
+- Original record/account/snapshots backup is `data/maintenance/etha-split-2026-10-06.json.local` (ignored, mode600), also in `/tmp/simlife-etha-split-backup-1791299432608.json`. No secrets in the backup. No app deployment needed for this data correction.
