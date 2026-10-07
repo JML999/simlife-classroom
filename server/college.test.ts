@@ -49,7 +49,7 @@ test("incomplete drafts are private, trimmed and appear in teacher progress", as
   const detail = (await progress.studentModuleDetail("student-a"))[0];
   assert.equal(detail.status,"in_progress"); assert.equal(detail.partsDone,0); assert.equal(detail.partsTotal,5);
   assert.equal((await progress.moduleProgress("college-class")).students["student-a"].started,1);
-  await assert.rejects(college.submitCollegePaths({post,userId:"student-a",response:shared.emptyCollegeResearch()}),/Finish the research/);
+  await assert.rejects(college.submitCollegePaths({post,userId:"student-a",response:shared.emptyCollegeResearch()}),/Finish the independent research/);
 });
 test("four-route submission needs no holdings and retries safely", async () => {
   const post = (await posts.getClassPost(id))!;
@@ -83,10 +83,10 @@ test("visibility, class scope, role and status enforce access without deleting w
 test("Other requires a name, every route needs evidence, and prior work survives", async () => {
   const post = (await posts.getClassPost(id))!;
   const other = structuredClone(response); other.routes[0].institution = "other";
-  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response:other}),/Finish the research/);
+  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response:other}),/Finish the independent research/);
   other.routes[0].otherInstitution = "My university";
   other.routes[3].research.weakEmployment.source = "";
-  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response:other}),/Finish the research/);
+  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response:other}),/Finish the independent research/);
   other.routes[3].research.weakEmployment.source = "https://www.bls.gov/ooh/";
   other.previousWork = {paths:[{name:"Earlier option"}],leaning:"",reason:"",nextStep:""};
   await college.saveCollegeDraft(post,"student-b",other);
@@ -111,9 +111,21 @@ test("brief migrates once without changing visibility or losing earlier submissi
   await college.ensureCollegeAssignment();
   const migrated = (await posts.getClassPost(id))!;
   assert.equal(migrated.title,"Teacher custom title"); assert.equal(migrated.status,"draft"); assert.equal(migrated.spec.responseVersion,2);
-  assert.match(migrated.body,/tuition/);
+  assert.match(migrated.body,/employment/);
   assert.deepEqual(await posts.latestClassPostSubmission(id,"student-a"),before);
   await db.run(`UPDATE class_posts SET body = 'Teacher edited brief' WHERE id = ?`,[id]);
   await college.ensureCollegeAssignment();
   assert.equal((await posts.getClassPost(id))?.body,"Teacher edited brief");
+});
+
+test("independent research and reflection submit with every former Part B field blank", async () => {
+  await posts.setClassPostStatus(id,"published");
+  const post = (await posts.getClassPost(id))!;
+  const researchOnly = structuredClone(response);
+  for (const route of researchOnly.routes) route.programs = [];
+  assert.equal(shared.collegeResearchDone(researchOnly),5);
+  await college.submitCollegePaths({post,userId:"student-a",response:researchOnly,idempotencyKey:"research-only-submit"});
+  const saved = await posts.latestClassPostSubmission(id,"student-a");
+  assert.equal(saved?.response.routes[0].research.highPay.program,"Research example");
+  assert.equal(saved?.response.routes[0].programs[0].program,"");
 });

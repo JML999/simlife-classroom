@@ -31,8 +31,7 @@ export function collegeRouteDone(route: RouteAnswer | undefined): boolean {
   const filled = (v: unknown) => typeof v === "string" && !!v.trim();
   return !!route && ["default", "other"].includes(route.institution)
     && (route.institution !== "other" || filled(route.otherInstitution))
-    && COLLEGE_RESEARCH_TOPICS.every(t => ["program", "figure", "source"].every(k => filled((route.research?.[t.id] as any)?.[k])))
-    && [0, 1].every(i => COLLEGE_PROGRAM_FIELDS.every(([k]) => filled(route.programs?.[i]?.[k])));
+    && COLLEGE_RESEARCH_TOPICS.every(t => ["program", "figure", "source"].every(k => filled((route.research?.[t.id] as any)?.[k])));
 }
 export function collegeResearchDone(value: CollegeResearchResponse): number {
   return COLLEGE_ROUTES.filter((_, i) => collegeRouteDone(value.routes?.[i])).length + (value.reflection?.trim() ? 1 : 0);

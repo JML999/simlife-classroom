@@ -26,7 +26,7 @@ export function cleanCollegeResponse(value: any, complete = false): CollegeRespo
     });
     response.reflection = clean(value.reflection);
     if (value.previousWork?.paths && value.previousWork.version !== 2) response.previousWork = cleanCollegeResponse(value.previousWork);
-    if (complete && collegeResearchDone(response) !== 5) throw new ClassPostError("INVALID_INPUT", "Finish the research and both program comparisons for all four routes, then your reflection.");
+    if (complete && collegeResearchDone(response) !== 5) throw new ClassPostError("INVALID_INPUT", "Finish the independent research for all four routes, then your reflection.");
     return response;
   }
   const paths = [0, 1].map(i => Object.fromEntries(COLLEGE_FIELDS.map(k => [k, clean(value?.paths?.[i]?.[k])])) as CollegePath);
@@ -86,14 +86,14 @@ export async function submitCollegePaths(opts: { post: ClassPost; userId: string
 export async function ensureCollegeAssignment() {
   const id = "cpost_college_paths_v1";
   const title = "Explore four paths after high school";
-  const summary = "Research pay and employment, investigate four schools, and compare two paths that fit you.";
-  const body = "For each of four education routes, research higher and lower pay and stronger and weaker employment prospects using independent sources. Then review the selected school’s offerings and identify one financially promising and one financially challenging program. Record the program, career, typical annual earnings, training duration, a rough total tuition-and-fees estimate before aid (excluding living expenses), sources, and the financial trade-off. Finish by explaining two specific paths that make financial and academic sense for you. Research first; the comparison explorer unlocks after you submit.";
+  const summary = "Research pay and employment across four education routes, then compare two paths that fit you.";
+  const body = "For each of four education routes, research higher and lower pay and stronger and weaker employment prospects using independent sources. Record the major, program or career, the published figure and what it measures, and your source links. Finish by explaining two specific paths that make financial and academic sense for you, considering earning potential, employment prospects, and fit with your interests and strengths. Research first; the comparison explorer unlocks after you submit.";
   await run(`INSERT INTO class_posts (id, kind, class_id, title, summary, body, spec, hero_url, status, created_at)
-    VALUES (?, 'college_pathways', NULL, ?, ?, ?, '{"responseVersion":2}', '/module-art/college-paths.svg', 'published', ?)
+    VALUES (?, 'college_pathways', NULL, ?, ?, ?, '{"responseVersion":2,"worksheetRevision":3}', '/module-art/college-paths.svg', 'published', ?)
     ON CONFLICT(id) DO NOTHING`, [id, title, summary, body, nowIso()]);
   const existing = await one<{ spec: string; title: string }>(`SELECT spec, title FROM class_posts WHERE id = ?`, [id]);
-  if (existing && JSON.parse(existing.spec || "{}").responseVersion !== 2) {
-    const spec = { ...JSON.parse(existing.spec || "{}"), responseVersion: 2 };
+  if (existing && JSON.parse(existing.spec || "{}").worksheetRevision !== 3) {
+    const spec = { ...JSON.parse(existing.spec || "{}"), responseVersion: 2, worksheetRevision: 3 };
     await run(`UPDATE class_posts SET title = ?, summary = ?, body = ?, spec = ? WHERE id = ? AND spec = ?`,
       [existing.title === "My next step after high school" ? title : existing.title, summary, body, JSON.stringify(spec), id, existing.spec]);
   }

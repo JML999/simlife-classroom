@@ -416,3 +416,11 @@ Still open:
 - After submission, a comparison explorer lets students choose any two of their eight researched programs. It uses their last submitted evidence, rather than providing assignment answers beforehand. Teacher drawer shows all route research and programs.
 - Browser verified one scrolling page/all4 modules, defaults and custom school field, legacy draft preservation, account draft/reload, >100KB draft saving, full submission, explorer gate/reload, teacher review, and mobile width. Screenshots/fixtures `/tmp/simlife-research-check`.
 - Local revision prepared; not pushed or applied to production yet.
+
+## 2026-10-07 — Simplify college assignment to independent research only
+
+- Removed Part B school/program investigations from all four route forms, including tuition/time fields. Institution selectors, independent higher/lower-pay and stronger/weaker-employment research, sources, and final reflection remain.
+- Shared completion rules now require only the four independent research sections plus reflection. Server no longer requires former Part B fields. Existing Part B data is retained and remains reviewable by teachers.
+- Post-submit explorer now compares independent research findings rather than the removed program cards. Updated instructions/reflection remove cost and duration requirements. Boot migrates the shared brief once via worksheetRevision3, preserving visibility and saved work.
+- Verified browser absence of Part B, 48 research fields, draft/reload, submission with no Part B answers, unlocked explorer, teacher review, and mobile width. All126 tests/typecheck/build pass.
+- Prepared locally; not pushed yet.
