@@ -247,8 +247,9 @@ export async function repairOpeningReturns(classId: string): Promise<number> {
   const rows = await q<{
     id: string; user_id: string; value_cents: number; net_contributed_cents: number;
     period_return_bp: number; twr_bp: number;
-  }>(`SELECT id, user_id, value_cents, net_contributed_cents, period_return_bp, twr_bp
-        FROM leaderboard_snapshots WHERE class_id = ? ORDER BY user_id, as_of_date`, [classId]);
+  }>(`SELECT s.id, s.user_id, s.value_cents, s.net_contributed_cents, s.period_return_bp, s.twr_bp
+        FROM leaderboard_snapshots s JOIN users u ON u.id = s.user_id
+        WHERE u.class_id = ? AND u.role = 'student' ORDER BY s.user_id, s.as_of_date`, [classId]);
   let repaired = 0;
   let userId = "";
   let cumulative = 0;
@@ -336,9 +337,12 @@ export async function leaderboardFor(
   const sort = opts.sort ?? "percent";
   const stableMinReturnBp = opts.stableMinReturnBp ?? STABLE_MIN_RETURN_BP;
   const stableMinDays = opts.stableMinDays ?? STABLE_MIN_DAYS;
+  // Membership follows the current roster; returns and volatility travel with
+  // the student even when older snapshots were recorded in another class.
   const latest = opts.asOf
     ?? (await one<{ d: string }>(
-      `SELECT MAX(as_of_date) AS d FROM leaderboard_snapshots WHERE class_id = ?`, [classId],
+      `SELECT MAX(s.as_of_date) AS d FROM leaderboard_snapshots s
+        JOIN users u ON u.id = s.user_id WHERE u.class_id = ? AND u.role = 'student'`, [classId],
     ))?.d
     ?? null;
   if (!latest) return { asOfDate: null, entries: [], sort, stableMinReturnBp };
@@ -349,14 +353,15 @@ export async function leaderboardFor(
   }>(
     `SELECT s.user_id, u.name, s.twr_bp, s.value_cents, s.sectors_held, s.top_position_bp, s.holdings_count
        FROM leaderboard_snapshots s JOIN users u ON u.id = s.user_id
-      WHERE s.class_id = ? AND s.as_of_date = ?`,
+      WHERE u.class_id = ? AND u.role = 'student' AND s.as_of_date = ?`,
     [classId, latest],
   );
 
   const baselines = new Map<string, number>();
   if (opts.since) {
     const base = await q<{ user_id: string; twr_bp: number }>(
-      `SELECT user_id, twr_bp FROM leaderboard_snapshots WHERE class_id = ? AND as_of_date = ?`,
+      `SELECT s.user_id, s.twr_bp FROM leaderboard_snapshots s JOIN users u ON u.id = s.user_id
+        WHERE u.class_id = ? AND u.role = 'student' AND s.as_of_date = ?`,
       [classId, opts.since],
     );
     for (const b of base) baselines.set(b.user_id, b.twr_bp);
@@ -366,9 +371,9 @@ export async function leaderboardFor(
   // the same way the return is: all history by default, since `since` when set.
   const daily = new Map<string, number[]>();
   const seriesRows = await q<{ user_id: string; period_return_bp: number }>(
-    `SELECT user_id, period_return_bp FROM leaderboard_snapshots
-      WHERE class_id = ? AND as_of_date <= ?${opts.since ? " AND as_of_date >= ?" : ""}
-      ORDER BY as_of_date`,
+    `SELECT s.user_id, s.period_return_bp FROM leaderboard_snapshots s JOIN users u ON u.id = s.user_id
+      WHERE u.class_id = ? AND u.role = 'student' AND s.as_of_date <= ?${opts.since ? " AND s.as_of_date >= ?" : ""}
+      ORDER BY s.as_of_date`,
     opts.since ? [classId, latest, opts.since] : [classId, latest],
   );
   for (const r of seriesRows) {

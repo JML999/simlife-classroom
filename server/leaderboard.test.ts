@@ -383,3 +383,28 @@ test("stable gains excludes thin history, few sectors, and concentrated holdings
   const all = await lb.leaderboardFor("lbclass5", { sort: "percent" });
   assert.equal(all.entries.length, cases.length, "percent board still includes every student");
 });
+
+test("class transfers immediately move rankings and retain return history", async () => {
+  const original = uid(), destination = uid();
+  for (const id of [original, destination]) {
+    await run(`INSERT INTO classes (id, name, join_code, trading_frozen, created_at) VALUES (?, ?, ?, 0, ?)`,
+      [id, id, uid(), new Date().toISOString()]);
+  }
+  const id = await student(original, 100_000, "Transferred Student");
+  for (let day = 1; day <= 5; day++) {
+    const snap = await lb.buildSnapshot(id, `2026-10-0${day}`, priceOf);
+    await lb.writeSnapshot({ ...snap, twrBp: 100 + day * 50, periodReturnBp: day * 10, sectorsHeld: 3, topPositionBp: 3000 });
+  }
+  const before = await lb.leaderboardFor(original);
+  await run(`UPDATE users SET class_id = ? WHERE id = ?`, [destination, id]);
+  assert.deepEqual((await lb.leaderboardFor(original)).entries, []);
+  assert.deepEqual((await lb.leaderboardFor(destination)).entries, before.entries);
+  assert.equal((await lb.leaderboardFor(destination, { sort: "stable" })).entries[0]?.days, 5);
+  const window = await lb.leaderboardFor(destination, { since: "2026-10-01" });
+  assert.equal(window.entries[0]?.returnBp, lb.returnBetweenBp(150, 350));
+  assert.equal(window.entries[0]?.days, 5);
+  // A late snapshot written under the former class must not restore old membership.
+  assert.equal((await lb.leaderboardFor(original, { asOf: "2026-10-05" })).entries.length, 0);
+  await run(`UPDATE users SET class_id = NULL WHERE id = ?`, [id]);
+  assert.equal((await lb.leaderboardFor(destination)).entries.length, 0);
+});

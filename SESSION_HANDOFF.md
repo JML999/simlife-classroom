@@ -424,3 +424,9 @@ Still open:
 - Post-submit explorer now compares independent research findings rather than the removed program cards. Updated instructions/reflection remove cost and duration requirements. Boot migrates the shared brief once via worksheetRevision3, preserving visibility and saved work.
 - Verified browser absence of Part B, 48 research fields, draft/reload, submission with no Part B answers, unlocked explorer, teacher review, and mobile width. All126 tests/typecheck/build pass.
 - Prepared locally; not pushed yet.
+
+## 2026-10-07 — Princess Blake leaderboard class transfer
+- Production verified Princess Blake (`u_7DwS5Hp20NUku79t`) already saved in `class-p3-2026`; seven snapshots still referenced period 4 and one had no class. Corrected those eight class metadata values in a guarded transaction; all nine snapshots now belong to period 3. Snapshot values and returns verified unchanged.
+- Leaderboard queries now join the current student roster for latest dates, entries, competition baselines, volatility history, and opening-return repair. A class change carries performance history immediately and removes the student from the previous period, independent of snapshot metadata.
+- Regression covers transfer, unchanged return/volatility history, stable eligibility, competition window baseline, explicit old-class dates, and removal from a class.
+- Gate: typecheck, 127/127 tests, build passed. Pushing the durable fix; Render rollout remains unverified.
