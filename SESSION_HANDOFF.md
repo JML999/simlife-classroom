@@ -430,3 +430,11 @@ Still open:
 - Leaderboard queries now join the current student roster for latest dates, entries, competition baselines, volatility history, and opening-return repair. A class change carries performance history immediately and removes the student from the previous period, independent of snapshot metadata.
 - Regression covers transfer, unchanged return/volatility history, stable eligibility, competition window baseline, explicit old-class dates, and removal from a class.
 - Gate: typecheck, 127/127 tests, build passed. Pushing the durable fix; Render rollout remains unverified.
+
+## 2026-10-19 — College module 2: What Does School Cost?
+- Added a separate college module (`cpost_college_costs_v1`, college response version 3), seeded on boot with existing per-period hide controls. Earlier college research and submissions remain independent and intact.
+- Four open school cards: prior school choices prefill from the student's latest account research draft/submission; defaults remain available and Other permits a custom school. Each card has tuition/fees per year, other expenses per year, total per year, and source link. One final reflection asks which school cost surprised them and why.
+- Plain instructions use published annual estimates, Georgia residency where applicable, comparable living arrangements, and no separate living-expense research. Linked official cost pages; SRTC links its cost-information directory with navigation hint. Schools can publish older estimates; the brief asks for the latest year listed. No loan/budget simulation or account charges in this module.
+- Account/device draft saving, submission/revision, independent progress, teacher response review, and a dedicated calculator/college SVG cover are implemented. Server validates nonnegative dollar figures, source URL, all four schools, and reflection; rejects answers intended for the other assignment.
+- Verification: typecheck, all 128 tests, build; isolated browser confirmed school prefill, twelve cost inputs plus one reflection, draft/reload, submission, teacher review, separate research progress, mobile width, no browser errors. Screenshots/check script in `/tmp/simlife-cost-check/`.
+- Built locally; not pushed. Previous leaderboard fix commit 607576f was awaiting a successful push as of last session.

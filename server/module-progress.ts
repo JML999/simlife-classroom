@@ -21,7 +21,7 @@
 import { q, one } from "./db.js";
 import { classModuleCatalog, hiddenClassModuleKeys } from "./class-modules.js";
 import { getActivity, attemptsFor, draftFor, answerKeyFor } from "./sorting.js";
-import { collegeDraftFor, collegePartsDone } from "./college.js";
+import { collegeDraftFor, collegePartsDone, collegeResponseVersion } from "./college.js";
 import { getClassPost, portfolioMissionState, etfMissionState, latestClassPostSubmission } from "./class-posts.js";
 
 export type ModuleStatus = "not_started" | "in_progress" | "submitted";
@@ -91,11 +91,11 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
   }
   if (postIds.length) {
     const marks = postIds.map(() => "?").join(",");
-    const subs = await q<{ post_id: string; user_id: string; response: string; kind: string }>(
-      `SELECT s.post_id, s.user_id, s.response, p.kind FROM class_post_submissions s JOIN class_posts p ON p.id = s.post_id WHERE s.post_id IN (${marks})`, postIds,
+    const subs = await q<{ post_id: string; user_id: string; response: string; kind: string; spec: string }>(
+      `SELECT s.post_id, s.user_id, s.response, p.kind, p.spec FROM class_post_submissions s JOIN class_posts p ON p.id = s.post_id WHERE s.post_id IN (${marks})`, postIds,
     );
     for (const r of subs) {
-      if (r.kind === "college_pathways" && JSON.parse(r.response).version !== 2) continue;
+      if (r.kind === "college_pathways" && JSON.parse(r.response).version !== collegeResponseVersion({ spec: JSON.parse(r.spec || "{}") })) continue;
       (submittedPosts[r.user_id] ??= new Set()).add(r.post_id);
     }
   }
@@ -211,10 +211,10 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       const submission = await latestClassPostSubmission(post.id, userId);
       if (post.kind === "college_pathways") {
         const draft = await collegeDraftFor(post.id, userId);
-        const currentSubmission = submission?.response?.version === 2 ? submission : null;
+        const currentSubmission = submission?.response?.version === collegeResponseVersion(post) ? submission : null;
         const response = currentSubmission?.response ?? draft?.response ?? submission?.response ?? null;
         out.push({ key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, container: "college", title: mod.title,
-          status: currentSubmission ? "submitted" : draft || submission ? "in_progress" : "not_started", partsDone: response?.version === 2 ? collegePartsDone(response) : 0, partsTotal: 5, partsLabel: "sections",
+          status: currentSubmission ? "submitted" : draft || submission ? "in_progress" : "not_started", partsDone: response?.version === collegeResponseVersion(post) ? collegePartsDone(response) : 0, partsTotal: 5, partsLabel: "sections",
           detail: { missionKind: "college_pathways", submittedAt: currentSubmission?.createdAt ?? null, earlierSubmittedAt: submission && !currentSubmission ? submission.createdAt : null, draftAt: draft?.updatedAt ?? null, response } });
         continue;
       }

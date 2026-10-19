@@ -1,3 +1,4 @@
+import { COLLEGE_COSTS_POST_ID, COLLEGE_RESEARCH_POST_ID, emptyCollegeCosts, collegeCostsDone, type CollegeCostsResponse } from "../shared/college-costs.js";
 /** College planning responses are student work, independent of portfolio holdings. */
 import { COLLEGE_ROUTES, COLLEGE_RESEARCH_TOPICS, COLLEGE_PROGRAM_FIELDS, emptyCollegeResearch, collegeResearchDone, type CollegeResearchResponse } from "../shared/college-research.js";
 import { one, run, withTx, newId, nowIso } from "./db.js";
@@ -7,13 +8,26 @@ import { classModuleKey, hiddenClassModuleKeys } from "./class-modules.js";
 export const COLLEGE_FIELDS = ["name", "goal", "training", "advantages", "drawbacks", "questions"] as const;
 export type CollegePath = Record<typeof COLLEGE_FIELDS[number], string>;
 export type CollegeResponse = { paths: CollegePath[]; leaning: string; reason: string; nextStep: string };
-export function cleanCollegeResponse(value: any, complete = false): CollegeResponse | CollegeResearchResponse {
+export function cleanCollegeResponse(value: any, complete = false): CollegeResponse | CollegeResearchResponse | CollegeCostsResponse {
   const clean = (v: unknown) => {
     if (v != null && typeof v !== "string") throw new ClassPostError("INVALID_INPUT", "Answers must be text.");
     const text = String(v ?? "").trim();
     if (text.length > 6000) throw new ClassPostError("INVALID_INPUT", "An answer is too long. Keep each response under 6,000 characters.");
     return text;
   };
+  if (value?.version === 3) {
+    const response = emptyCollegeCosts();
+    response.routes = COLLEGE_ROUTES.map((_, i) => {
+      const route = value.routes?.[i];
+      const institution = clean(route?.institution) || "default";
+      if (!["default", "other"].includes(institution)) throw new ClassPostError("INVALID_INPUT", "Choose the listed institution or Other.");
+      return { institution, otherInstitution: clean(route?.otherInstitution), tuition: clean(route?.tuition),
+        otherExpenses: clean(route?.otherExpenses), total: clean(route?.total), source: clean(route?.source) };
+    });
+    response.reflection = clean(value.reflection);
+    if (complete && collegeCostsDone(response) !== 5) throw new ClassPostError("INVALID_INPUT", "Add three valid dollar amounts and a website link for each school, then answer the reflection.");
+    return response;
+  }
   if (value?.version === 2) {
     const response = emptyCollegeResearch();
     response.routes = COLLEGE_ROUTES.map((_, i) => {
@@ -35,8 +49,18 @@ export function cleanCollegeResponse(value: any, complete = false): CollegeRespo
   if (complete && collegePartsDone(response) !== 15) throw new ClassPostError("INVALID_INPUT", "Compare both paths, explain your choice, and add one next step before submitting.");
   return response;
 }
-export function collegePartsTotal(response: any): number { return response?.version === 2 ? 5 : 15; }
+export function collegePartsTotal(response: any): number { return response?.version === 2 || response?.version === 3 ? 5 : 15; }
+export const collegeResponseVersion = (post: Pick<ClassPost, "spec">): number => post.spec.responseVersion === 3 ? 3 : 2;
+export async function collegeCostsInitialResponse(userId: string) {
+  const row = await one<{ response: string }>(`SELECT response FROM (
+    SELECT response, updated_at AS saved_at FROM class_post_drafts WHERE post_id = ? AND user_id = ?
+    UNION ALL
+    SELECT response, created_at AS saved_at FROM class_post_submissions WHERE post_id = ? AND user_id = ?
+  ) work ORDER BY saved_at DESC LIMIT 1`, [COLLEGE_RESEARCH_POST_ID, userId, COLLEGE_RESEARCH_POST_ID, userId]);
+  return emptyCollegeCosts(row ? JSON.parse(row.response) : undefined);
+}
 export function collegePartsDone(response: any): number {
+  if (response?.version === 3) return collegeCostsDone(response);
   if (response?.version === 2) return collegeResearchDone(response);
   return [0, 1].reduce((n, i) => n + COLLEGE_FIELDS.filter(k => String(response?.paths?.[i]?.[k] || "").trim()).length, 0)
     + ["leaning", "reason", "nextStep"].filter(k => String(response?.[k] || "").trim()).length;
@@ -54,6 +78,7 @@ async function access(post: ClassPost, userId: string) {
 }
 export async function saveCollegeDraft(post: ClassPost, userId: string, value: any) {
   await access(post, userId);
+  if (collegeResponseVersion(post) === 3 && value?.version !== 3 || collegeResponseVersion(post) === 2 && value?.version === 3) throw new ClassPostError("INVALID_INPUT", "These answers belong to a different assignment.");
   const response = cleanCollegeResponse(value);
   const updatedAt = nowIso();
   await run(`INSERT INTO class_post_drafts (post_id, user_id, response, updated_at) VALUES (?, ?, ?, ?)
@@ -63,7 +88,7 @@ export async function saveCollegeDraft(post: ClassPost, userId: string, value: a
 }
 export async function submitCollegePaths(opts: { post: ClassPost; userId: string; response: any; idempotencyKey?: string }) {
   await access(opts.post, opts.userId);
-  if (opts.response?.version !== 2) throw new ClassPostError("INVALID_INPUT", "This assignment has been revised. Complete the four-route research worksheet before submitting.");
+  if (opts.response?.version !== collegeResponseVersion(opts.post)) throw new ClassPostError("INVALID_INPUT", "This assignment has been revised. Complete the four-route research worksheet before submitting.");
   const response = cleanCollegeResponse(opts.response, true);
   return withTx(async tx => {
     // Per-student lock also serializes simultaneous submission retries on Postgres.
@@ -77,7 +102,7 @@ export async function submitCollegePaths(opts: { post: ClassPost; userId: string
     }
     const submittedAt = nowIso();
     await tx.run(`INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [newId("csub"), opts.post.id, opts.userId, JSON.stringify(response), JSON.stringify({ kind: "college_pathways", partsDone: collegePartsDone(response), responseVersion: 2 }), opts.idempotencyKey ?? null, submittedAt]);
+      [newId("csub"), opts.post.id, opts.userId, JSON.stringify(response), JSON.stringify({ kind: "college_pathways", partsDone: collegePartsDone(response), responseVersion: collegeResponseVersion(opts.post) }), opts.idempotencyKey ?? null, submittedAt]);
     await tx.run(`DELETE FROM class_post_drafts WHERE post_id = ? AND user_id = ?`, [opts.post.id, opts.userId]);
     return { submittedAt, deduped: false };
   });
@@ -97,4 +122,13 @@ export async function ensureCollegeAssignment() {
     await run(`UPDATE class_posts SET title = ?, summary = ?, body = ?, spec = ? WHERE id = ? AND spec = ?`,
       [existing.title === "My next step after high school" ? title : existing.title, summary, body, JSON.stringify(spec), id, existing.spec]);
   }
+}
+
+/** A separate module; never replace the earlier research assignment or student work. */
+export async function ensureCollegeCostsAssignment() {
+  await run(`INSERT INTO class_posts (id, kind, class_id, title, summary, body, spec, hero_url, status, created_at)
+    VALUES (?, 'college_pathways', NULL, ?, ?, ?, '{"responseVersion":3}', '/module-art/college-costs.svg', 'published', ?)
+    ON CONFLICT(id) DO NOTHING`, [COLLEGE_COSTS_POST_ID, "What Does School Cost?",
+    "Look up the yearly cost of four schools. Use their published estimates, then share what surprised you.",
+    "For each school, find tuition and fees, other estimated expenses, and the total cost for one academic year. Use Georgia resident/in-state prices where available and the same living arrangement where possible. Copy the source link. Which school’s cost surprised you most, and why?", nowIso()]);
 }

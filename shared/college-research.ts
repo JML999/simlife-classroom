@@ -36,4 +36,4 @@ export function collegeRouteDone(route: RouteAnswer | undefined): boolean {
 export function collegeResearchDone(value: CollegeResearchResponse): number {
   return COLLEGE_ROUTES.filter((_, i) => collegeRouteDone(value.routes?.[i])).length + (value.reflection?.trim() ? 1 : 0);
 }
-export const collegeInstitution = (route: RouteAnswer, index: number) => route.institution === "other" ? route.otherInstitution : COLLEGE_ROUTES[index].institution;
+export const collegeInstitution = (route: Pick<RouteAnswer, "institution" | "otherInstitution">, index: number) => route.institution === "other" ? route.otherInstitution : COLLEGE_ROUTES[index].institution;

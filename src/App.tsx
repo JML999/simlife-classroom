@@ -1,3 +1,4 @@
+import { COLLEGE_COST_LINKS, COLLEGE_COST_FIELDS, emptyCollegeCosts, collegeCostRouteDone, collegeCostsDone, type CostRoute, type CollegeCostsResponse } from "../shared/college-costs.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLLEGE_ROUTES, COLLEGE_RESEARCH_TOPICS, COLLEGE_PROGRAM_FIELDS, emptyCollegeResearch, collegeRouteDone, collegeResearchDone, collegeInstitution, type CollegeResearchResponse, type RouteAnswer } from "../shared/college-research.js";
 import { createPortal } from "react-dom";
@@ -2183,14 +2184,14 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 
 // Shared frame for module cards; each activity has its own illustration.
 function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
-  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college";
+  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college" | "costs";
 }) {
   return (
     <div className={`module-cover${art === "etf" ? " module-cover-etf" : ""}`}>
       <span className="module-kind">{moduleNumber ? `Module ${moduleNumber} · ${kindLabel}` : kindLabel}</span>
       {submitted && <span className="module-complete">Submitted ✓</span>}
       <div className="module-cover-art" aria-hidden="true">
-        {art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
+        {art === "costs" ? <img src="/module-art/college-costs.svg" alt="" /> : art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
           <svg viewBox="0 0 280 132" fill="none">
             <circle cx="140" cy="32" r="18" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
             <text x="140" y="39" textAnchor="middle" fontSize="20" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
@@ -2240,7 +2241,7 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
 function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
   const [posts, setPosts] = useState<any[] | null>(null);
-  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college"; id: string; moduleNumber?: number } | null>(null);
+  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college" | "costs"; id: string; moduleNumber?: number } | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -2259,6 +2260,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   if (open?.kind === "mission") return <PortfolioMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
   if (open?.kind === "etf") return <EtfMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
 
+  if (open?.kind === "costs") return <CollegeCostsAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
   if (open?.kind === "college") return <CollegeAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
 
   const announcements = posts?.filter((post) => post.kind === "announcement") ?? [];
@@ -2297,8 +2299,8 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
         return <section className="class-module-section" key={route} aria-label={route === "college" ? "Is College Right for Me?" : "Investing"}>
           <div className="class-module-section-heading"><span className="eyebrow">{route === "college" ? "Education & career" : "Portfolio & markets"}</span><h3>{route === "college" ? "Is College Right for Me?" : "Investing"}</h3><p>{route === "college" ? "Research the options. Compare their financial and academic trade-offs." : "Learn about stocks, sectors, and ETFs through your own portfolio."}</p></div>
       <div className="module-grid">
-        {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: "college", id: post.id, moduleNumber: post.moduleNumber })}>
-          <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art="college" />
+        {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: post.spec?.responseVersion === 3 ? "costs" : "college", id: post.id, moduleNumber: post.moduleNumber })}>
+          <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art={post.spec?.responseVersion === 3 ? "costs" : "college"} />
           <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt ? "badge-paid" : "badge-due"}>{post.submittedAt ? "Submitted" : post.hasDraft ? "Draft saved" : post.hasEarlierSubmission ? "Earlier work saved · revised assignment" : "Not started"}</span></div>
         </button>; })() : module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.etfs.length ? "In progress" : "Not started";
@@ -2355,6 +2357,7 @@ const COLLEGE_PATH_FIELDS = [
   ["questions", "What you still need to know", "What would you need to find out before choosing this path?"],
 ] as const;
 function CollegeResponseReview({ response }: { response: any }) {
+  if (response.version === 3) return <CollegeCostsReview response={response} />;
   if (response.version === 2) return <CollegeResearchReview response={response} />;
   return <div className="college-response-review"><div className="college-review-paths">{(response.paths || []).map((path: any, index: number) => <div key={index}><h4>Path {index === 0 ? "A" : "B"}: {path.name}</h4>{COLLEGE_PATH_FIELDS.slice(1).map(([key, label]) => <p key={key}><strong>{label}:</strong> {path[key]}</p>)}</div>)}</div><p><strong>Leaning:</strong> {response.leaning === "undecided" ? "Still exploring" : `Path ${response.leaning}`}. {response.reason}</p><p><strong>This week’s next step:</strong> {response.nextStep}</p></div>;
 }
@@ -2376,6 +2379,82 @@ function CollegeExplorer({ response }: { response: any }) {
     <p className="small">Compare earning potential and employment prospects separately, then consider which paths fit your interests and strengths.</p>
   </section>;
 }
+function CollegeCostsReview({ response }: { response: CollegeCostsResponse }) {
+  return <div className="college-response-review">{COLLEGE_ROUTES.map((route, index) => {
+    const answer = response.routes[index];
+    if (!answer) return null;
+    return <section className="college-review-route" key={route.id}><h4>{route.title} · {collegeInstitution(answer, index)}</h4>
+      {COLLEGE_COST_FIELDS.map(([key, label]) => <p key={key}><strong>{label}:</strong> {answer[key]}</p>)}<p><strong>Source:</strong> {answer.source}</p>
+    </section>;
+  })}<h4>Which school’s cost surprised you most, and why?</h4><p>{response.reflection}</p></div>;
+}
+function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; moduleNumber?: number; onBack: () => void }) {
+  const [post, setPost] = useState<any>(null);
+  const [response, setResponse] = useState<CollegeCostsResponse>(emptyCollegeCosts);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
+  const confirmation = useRef(uid());
+  const draftKey = useRef("");
+  useEffect(() => {
+    let alive = true;
+    api<any>(`/api/class/posts/${id}`).then(data => {
+      if (!alive) return;
+      draftKey.current = `simlife-college-costs:${data.studentId}:${id}`;
+      const latest = data.draft && (!data.submission || data.draft.updatedAt > data.submission.createdAt) ? data.draft : null;
+      let saved = latest?.response ?? data.submission?.response ?? data.initialResponse ?? emptyCollegeCosts();
+      try {
+        const local = JSON.parse(localStorage.getItem(draftKey.current) || "null");
+        if (local?.response?.version === 3 && local.updatedAt > (latest?.updatedAt || data.submission?.createdAt || "")) saved = local.response;
+      } catch { /* The account draft remains available. */ }
+      setResponse(saved); setPost(data); setSubmittedAt(data.submission?.createdAt ?? null);
+    }).catch(e => { if (alive) setError(e.message); });
+    return () => { alive = false; };
+  }, [id]);
+  const update = (next: CollegeCostsResponse) => {
+    setResponse(next); confirmation.current = uid();
+    setNotice("Saved on this device. Use Save draft to save to your account.");
+    try { localStorage.setItem(draftKey.current, JSON.stringify({ response: next, updatedAt: new Date().toISOString() })); }
+    catch { setNotice("Use Save draft to save to your account."); }
+  };
+  const changeRoute = (index: number, next: CostRoute) => update({ ...response, routes: response.routes.map((route, i) => i === index ? next : route) });
+  const save = async (submit: boolean) => {
+    setBusy(true); setError("");
+    try {
+      const result = await api<any>(`/api/class/posts/${id}/${submit ? "submit" : "draft"}`, { method: submit ? "POST" : "PUT", body: JSON.stringify({ response, idempotencyKey: confirmation.current }) });
+      if (submit) {
+        setSubmittedAt(result.submittedAt); setNotice("Your school-cost research is submitted.");
+        try { localStorage.removeItem(draftKey.current); } catch { /* Already saved to the account. */ }
+      } else setNotice("Draft saved to your account.");
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading school-cost assignment" kind="detail" />}</div>;
+  const done = collegeCostsDone(response);
+  return <div className="class-section college-assignment college-costs-assignment">
+    <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
+    <section className="panel college-brief"><div><span className="eyebrow">Your task</span><h3>Visit the website. Find the yearly cost.</h3>
+      <p>Your school choices carry over from the last assignment. You can change them below.</p>
+      <ol><li>Open the school’s cost-of-attendance page.</li><li>Copy the three yearly figures and the source link.</li><li>Tell us which cost surprised you.</li></ol>
+      <p className="small">Use Georgia resident/in-state prices where available. Use the same living arrangement across schools where possible. Use one academic year, not one semester, and the latest year listed.</p>
+    </div><img src="/module-art/college-costs.svg" alt="" /></section>
+    {submittedAt && <div className="notice">Submitted {new Date(submittedAt).toLocaleString()}. You can update your answers and submit again.</div>}
+    {COLLEGE_ROUTES.map((route, index) => { const answer = response.routes[index]; return <section className="panel college-cost-school" key={route.id} aria-labelledby={`cost-title-${route.id}`}>
+      <div className="college-cost-heading"><span className="college-route-number">{index + 1}</span><div><span className="eyebrow">{route.title}</span><h3 id={`cost-title-${route.id}`}>{collegeInstitution(answer, index) || "Choose your school"}</h3></div><span className={collegeCostRouteDone(answer) ? "badge-paid" : "badge-due"}>{collegeCostRouteDone(answer) ? "Complete" : "To do"}</span></div>
+      <div className="college-cost-school-choice"><div className="field"><label htmlFor={`cost-school-${route.id}`}>School</label><select id={`cost-school-${route.id}`} value={answer.institution} disabled={busy} onChange={e => changeRoute(index, { ...answer, institution: e.target.value })}><option value="default">{route.institution}</option><option value="other">Other — choose my own school</option></select></div>
+      {answer.institution === "other" && <div className="field"><label htmlFor={`cost-other-${route.id}`}>School name</label><input id={`cost-other-${route.id}`} value={answer.otherInstitution} maxLength={6000} disabled={busy} onChange={e => changeRoute(index, { ...answer, otherInstitution: e.target.value })} /></div>}</div>
+      <p className="college-cost-link"><a href={answer.institution === "default" ? COLLEGE_COST_LINKS[index] : `https://www.google.com/search?q=${encodeURIComponent(`${answer.otherInstitution} official cost of attendance`)}`} target="_blank" rel="noreferrer">{answer.institution === "default" ? "Find school costs" : "Search for your school’s cost page"} ↗</a></p>
+      {answer.institution === "default" && <p className="college-field-hint">{index === 1 ? "Choose the Perimeter College figures, not the Atlanta campus." : index === 3 ? "Look under Price of Attendance for the catalog or program cost sheets. Use a full-year estimate." : "Look for the published Cost of Attendance table."}</p>}
+      <div className="college-cost-figures">{COLLEGE_COST_FIELDS.map(([key, label]) => <div className="field" key={key}><label htmlFor={`cost-${route.id}-${key}`}>{label}</label><div className="college-dollar-input"><span aria-hidden="true">$</span><input id={`cost-${route.id}-${key}`} inputMode="decimal" placeholder="0.00" value={answer[key]} disabled={busy} onChange={e => changeRoute(index, { ...answer, [key]: e.target.value })} /></div></div>)}</div>
+      <p className="college-field-hint">Other expenses = books, supplies, housing, food, transportation, and personal expenses from the school’s estimate. If only tuition and total are listed, subtract tuition and fees from the total. You do not need to research living expenses separately.</p>
+      <div className="field college-cost-source"><label htmlFor={`cost-source-${route.id}`}>Source link</label><input id={`cost-source-${route.id}`} type="url" placeholder="https://…" value={answer.source} maxLength={6000} disabled={busy} onChange={e => changeRoute(index, { ...answer, source: e.target.value })} /></div>
+    </section>; })}
+    <section className="panel college-next-step"><span className="eyebrow">One last question</span><h3>What surprised you?</h3><div className="field"><label htmlFor="cost-reflection">Which school’s cost surprised you most, and why?</label><textarea id="cost-reflection" rows={3} maxLength={6000} value={response.reflection} disabled={busy} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
+    {error && <div className="error" role="alert">{error}</div>}
+    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeCostRouteDone).length}/4 schools completed · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{notice || "Save your draft as you go. Submit when you’re finished."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated answers" : "Submit research"}</button></div></div>
+  </div>;
+}
+
 function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNumber?: number; onBack: () => void }) {
   const [post, setPost] = useState<any>(null);
   const [response, setResponse] = useState<CollegeResearchResponse>(emptyCollegeResearch);
