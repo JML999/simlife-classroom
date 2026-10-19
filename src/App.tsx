@@ -2386,7 +2386,7 @@ function CollegeCostsReview({ response }: { response: CollegeCostsResponse }) {
     return <section className="college-review-route" key={route.id}><h4>{route.title} · {collegeInstitution(answer, index)}</h4>
       {COLLEGE_COST_FIELDS.map(([key, label]) => <p key={key}><strong>{label}:</strong> {answer[key]}</p>)}<p><strong>Source:</strong> {answer.source}</p>
     </section>;
-  })}<h4>Which school’s cost surprised you most, and why?</h4><p>{response.reflection}</p></div>;
+  })}<h4>What did you learn about the cost of education after high school?</h4><p>{response.reflection}</p></div>;
 }
 function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; moduleNumber?: number; onBack: () => void }) {
   const [post, setPost] = useState<any>(null);
@@ -2435,7 +2435,7 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
     <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
     <section className="panel college-brief"><div><span className="eyebrow">Your task</span><h3>Visit the website. Find the yearly cost.</h3>
       <p>Your school choices carry over from the last assignment. You can change them below.</p>
-      <ol><li>Open the school’s cost-of-attendance page.</li><li>Copy the three yearly figures and the source link.</li><li>Tell us which cost surprised you.</li></ol>
+      <ol><li>Open the school’s cost-of-attendance page.</li><li>Copy the three yearly figures and the source link.</li><li>Explain what you learned about the cost.</li></ol>
       <p className="small">Use Georgia resident/in-state prices where available. Use the same living arrangement across schools where possible. Use one academic year, not one semester, and the latest year listed.</p>
     </div><img src="/module-art/college-costs.svg" alt="" /></section>
     {submittedAt && <div className="notice">Submitted {new Date(submittedAt).toLocaleString()}. You can update your answers and submit again.</div>}
@@ -2449,7 +2449,7 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
       <p className="college-field-hint">Other expenses = books, supplies, housing, food, transportation, and personal expenses from the school’s estimate. If only tuition and total are listed, subtract tuition and fees from the total. You do not need to research living expenses separately.</p>
       <div className="field college-cost-source"><label htmlFor={`cost-source-${route.id}`}>Source link</label><input id={`cost-source-${route.id}`} type="url" placeholder="https://…" value={answer.source} maxLength={6000} disabled={busy} onChange={e => changeRoute(index, { ...answer, source: e.target.value })} /></div>
     </section>; })}
-    <section className="panel college-next-step"><span className="eyebrow">One last question</span><h3>What surprised you?</h3><div className="field"><label htmlFor="cost-reflection">Which school’s cost surprised you most, and why?</label><textarea id="cost-reflection" rows={3} maxLength={6000} value={response.reflection} disabled={busy} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
+    <section className="panel college-next-step"><span className="eyebrow">One last question</span><h3>What did you learn?</h3><div className="field"><label htmlFor="cost-reflection">What did you learn about the cost of education after high school?</label><textarea id="cost-reflection" rows={3} maxLength={6000} value={response.reflection} disabled={busy} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeCostRouteDone).length}/4 schools completed · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{notice || "Save your draft as you go. Submit when you’re finished."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated answers" : "Submit research"}</button></div></div>
   </div>;

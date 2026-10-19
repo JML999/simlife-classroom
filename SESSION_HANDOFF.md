@@ -438,3 +438,8 @@ Still open:
 - Account/device draft saving, submission/revision, independent progress, teacher response review, and a dedicated calculator/college SVG cover are implemented. Server validates nonnegative dollar figures, source URL, all four schools, and reflection; rejects answers intended for the other assignment.
 - Verification: typecheck, all 128 tests, build; isolated browser confirmed school prefill, twelve cost inputs plus one reflection, draft/reload, submission, teacher review, separate research progress, mobile width, no browser errors. Screenshots/check script in `/tmp/simlife-cost-check/`.
 - Built locally; not pushed. Previous leaderboard fix commit 607576f was awaiting a successful push as of last session.
+
+## 2026-10-19 — School-cost reflection and cover fit
+- Reflection now asks “What did you learn about the cost of education after high school?” Student instructions, teacher review, and seeded summary/body agree. Existing briefs migrate the original phrases once while retaining custom wording, visibility and student work.
+- Module-directory illustrations are constrained by both available width and cover height, reserving room for the module labels. SVGs/images scale without cropping or overlapping card text.
+- Verified desktop/tablet/mobile cover bounds and updated reflection/brief in browser; screenshot `/tmp/simlife-cost-check/directory-fixed.png`. All 128 tests, typecheck and build passed. User requested push.

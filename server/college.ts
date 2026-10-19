@@ -127,8 +127,16 @@ export async function ensureCollegeAssignment() {
 /** A separate module; never replace the earlier research assignment or student work. */
 export async function ensureCollegeCostsAssignment() {
   await run(`INSERT INTO class_posts (id, kind, class_id, title, summary, body, spec, hero_url, status, created_at)
-    VALUES (?, 'college_pathways', NULL, ?, ?, ?, '{"responseVersion":3}', '/module-art/college-costs.svg', 'published', ?)
+    VALUES (?, 'college_pathways', NULL, ?, ?, ?, '{"responseVersion":3,"worksheetRevision":2}', '/module-art/college-costs.svg', 'published', ?)
     ON CONFLICT(id) DO NOTHING`, [COLLEGE_COSTS_POST_ID, "What Does School Cost?",
-    "Look up the yearly cost of four schools. Use their published estimates, then share what surprised you.",
-    "For each school, find tuition and fees, other estimated expenses, and the total cost for one academic year. Use Georgia resident/in-state prices where available and the same living arrangement where possible. Copy the source link. Which school’s cost surprised you most, and why?", nowIso()]);
+    "Look up the yearly cost of four schools. Use their published estimates, then share what you learned.",
+    "For each school, find tuition and fees, other estimated expenses, and the total cost for one academic year. Use Georgia resident/in-state prices where available and the same living arrangement where possible. Copy the source link. What did you learn about the cost of education after high school?", nowIso()]);
+  const existing = await one<{ spec: string }>(`SELECT spec FROM class_posts WHERE id = ?`, [COLLEGE_COSTS_POST_ID]);
+  if (existing && JSON.parse(existing.spec || "{}").worksheetRevision !== 2) {
+    const spec = { ...JSON.parse(existing.spec || "{}"), worksheetRevision: 2 };
+    await run(`UPDATE class_posts SET summary = REPLACE(summary, ?, ?), body = REPLACE(body, ?, ?), spec = ? WHERE id = ? AND spec = ?`,
+      ["then share what surprised you.", "then share what you learned.",
+       "Which school’s cost surprised you most, and why?", "What did you learn about the cost of education after high school?",
+       JSON.stringify(spec), COLLEGE_COSTS_POST_ID, existing.spec]);
+  }
 }
