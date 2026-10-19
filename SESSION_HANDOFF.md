@@ -443,3 +443,10 @@ Still open:
 - Reflection now asks “What did you learn about the cost of education after high school?” Student instructions, teacher review, and seeded summary/body agree. Existing briefs migrate the original phrases once while retaining custom wording, visibility and student work.
 - Module-directory illustrations are constrained by both available width and cover height, reserving room for the module labels. SVGs/images scale without cropping or overlapping card text.
 - Verified desktop/tablet/mobile cover bounds and updated reflection/brief in browser; screenshot `/tmp/simlife-cost-check/directory-fixed.png`. All 128 tests, typecheck and build passed. User requested push.
+
+## 2026-10-19 — Automatic drafts across all student modules
+- Added shared account autosave: changes save after a short typing pause; blur, module exit, tab hiding/closing and reconnect flush pending work. Per-student/per-module device backups restore unsynced work. Requests are ordered across close/reopen, and account IDs guard against saves crossing a sign-in change.
+- Applied to sector sorting, portfolio write-ups, ETF goals, college research and school costs. Partial/incomplete answers save without holdings/completion validation; explicit Submit still controls assignment completion. Newer drafts restore over earlier submissions, including sorting revisions and clearing all placements.
+- Added mission draft endpoint support using existing draft table and access checks. Teacher progress recognizes saved mission write-ups as in progress. Successful mission submission clears its draft after pending client saves settle.
+- Verification: typecheck, 129/129 tests, build. Isolated browser confirmed all five module types; blur/back/close-tab restore; clean-device account drafts; partial drafts not submitted; newer sorting revisions/empty placements; interrupted network recovery; account isolation. Scripts in `/tmp/simlife-autosave-check/`.
+- Pushing this update; Render deployment completion not yet verified.

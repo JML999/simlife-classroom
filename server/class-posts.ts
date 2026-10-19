@@ -185,6 +185,7 @@ export async function submitEtfMission(opts: {
   await run(`INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`, [newId("csub"), opts.post.id, opts.userId,
     JSON.stringify({ gapTicker, convictionTicker, gapExplanation, convictionExplanation }), JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt]);
+  await run(`DELETE FROM class_post_drafts WHERE post_id = ? AND user_id = ?`, [opts.post.id, opts.userId]);
   return { submittedAt, deduped: false };
 }
 
@@ -225,5 +226,6 @@ export async function submitPortfolioMission(opts: {
     [newId("csub"), opts.post.id, opts.userId, JSON.stringify({ picks: cleanPicks, reflection }),
      JSON.stringify(state), opts.idempotencyKey ?? null, submittedAt],
   );
+  await run(`DELETE FROM class_post_drafts WHERE post_id = ? AND user_id = ?`, [opts.post.id, opts.userId]);
   return { submittedAt, deduped: false };
 }

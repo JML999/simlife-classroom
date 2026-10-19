@@ -61,7 +61,9 @@ test("portfolio mission uses only current stock and sector totals", async () => 
     ],
     reflection: "My original basket depended heavily on consumer spending, technology demand, and familiar brands. The new health care, financial, and utility holdings respond to different needs and economic conditions. That does not remove risk, but one weak shopping season is less likely to hurt every company at the same time.",
   };
+  await (await import("./module-drafts.js")).saveModuleDraft(mission, STUDENT, response);
   const submitted = await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response, idempotencyKey: "mission-submit-one" });
+  assert.equal(await (await import("./college.js")).collegeDraftFor(mission.id, STUDENT), null);
   assert.equal(submitted.deduped, false);
   assert.ok((await posts.latestClassPostSubmission(mission.id, STUDENT))?.evidence.met);
   assert.equal((await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response, idempotencyKey: "mission-submit-one" })).deduped, true);
@@ -250,4 +252,33 @@ test("ETF mission counts Bitcoin and Ethereum funds and accepts them in submissi
   const cryptoTickers = ["ARKB", "BITB", "FBTC", "GBTC", "HODL", "IBIT", "ETHA", "ETHE", "ETHW", "FETH"];
   for (const ticker of cryptoTickers.filter((ticker) => !["IBIT", "ETHA"].includes(ticker))) await add(ticker);
   assert.deepEqual((await posts.etfMissionState(post, student)).qualifyingEtfs.map((fund: any) => fund.ticker).sort(), cryptoTickers.sort());
+});
+
+test("mission drafts preserve partial write-ups privately without submitting or meeting holdings targets", async () => {
+  const { saveModuleDraft } = await import("./module-drafts.js");
+  const { collegeDraftFor } = await import("./college.js");
+  const { replaceHiddenClassModules } = await import("./class-modules.js");
+  const { studentModuleDetail } = await import("./module-progress.js");
+  await db.run(`INSERT INTO users (id,name,role,class_id,created_at) VALUES ('draft-student','Draft Student','student','post-class',?)`, [db.nowIso()]);
+  const post = await posts.createClassPost({ kind: "portfolio_mission", title: "Draft test", body: "Keep your work", classId: "post-class" });
+  await posts.setClassPostStatus(post.id, "published"); post.status = "published";
+  const input = { picks: [{ ticker: "AAPL", thesis: "Unfinished answer" }], reflection: "Still thinking" };
+  await saveModuleDraft(post, "draft-student", input);
+  assert.equal((await collegeDraftFor(post.id, "draft-student"))?.response.picks[0].thesis, "Unfinished answer");
+  assert.equal(await collegeDraftFor(post.id, STUDENT), null);
+  assert.equal(await posts.latestClassPostSubmission(post.id, "draft-student"), null);
+  assert.equal((await studentModuleDetail("draft-student")).find(m => m.id === post.id)?.status, "in_progress");
+  await saveModuleDraft(post, "draft-student", { picks: [], reflection: "" });
+  assert.equal((await collegeDraftFor(post.id, "draft-student"))?.response.reflection, "");
+  await assert.rejects(saveModuleDraft({...post,classId:"other-post-class"}, "draft-student", input), /not found/);
+  await assert.rejects(saveModuleDraft({...post,status:"archived"}, "draft-student", input), /not found/);
+  await replaceHiddenClassModules("post-class", [`post:${post.id}`]);
+  await assert.rejects(saveModuleDraft(post, "draft-student", input), /not found/);
+  await replaceHiddenClassModules("post-class", []);
+  const etf = await posts.createClassPost({ kind: "etf_mission", title: "ETF draft", body: "Two goals" });
+  await posts.setClassPostStatus(etf.id, "published"); etf.status = "published";
+  await saveModuleDraft(etf, "draft-student", { gapExplanation: "Research before buying" });
+  assert.equal((await collegeDraftFor(etf.id, "draft-student"))?.response.gapExplanation, "Research before buying");
+  await assert.rejects(posts.submitEtfMission({ post: etf, userId: "draft-student", response: {} }), /Hold two different/);
+  assert.equal(await posts.latestClassPostSubmission(etf.id, "draft-student"), null);
 });

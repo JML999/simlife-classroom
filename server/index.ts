@@ -1,3 +1,4 @@
+import { saveModuleDraft } from "./module-drafts.js";
 /**
  * SimLife Investing API. One Express process serves /api and (in production)
  * the built Vite app. Ports, cookie, database, and env vars are all
@@ -852,7 +853,7 @@ app.get("/api/class/activities/:id", requireAuth, async (req, res) => {
       attemptNo: a.attempt_no,
       placements: JSON.parse(a.placements), createdAt: a.created_at,
     })),
-    draft: draft ?? null,
+    draft: draft ?? null, studentId: user.id,
   });
 });
 
@@ -860,6 +861,7 @@ app.post("/api/class/activities/:id/draft", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
   if (user.role !== "student") { res.status(403).json({ error: "Teachers do not save drafts." }); return; }
+  if (req.body?.studentId && req.body.studentId !== user.id) { res.status(409).json({ error: "The signed-in account changed. Reopen this module to continue." }); return; }
   const act = await getActivity(String(req.params["id"]));
   if (!act || (act.classId && act.classId !== user.class_id)) { res.status(404).json({ error: "Activity not found." }); return; }
   try {
@@ -991,7 +993,7 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
     if (key && hidden.has(key)) continue;
     const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
     const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
-    const draft = post.kind === "college_pathways" ? await collegeDraftFor(post.id, user.id) : null;
+    const draft = post.kind !== "announcement" ? await collegeDraftFor(post.id, user.id) : null;
     out.push({ ...post, hasDraft: !!draft, body: post.kind === "announcement" ? post.body : undefined, hasEarlierSubmission: post.kind === "college_pathways" && !!submission && submission.response?.version !== collegeResponseVersion(post), submittedAt: post.kind === "college_pathways" && submission?.response?.version !== collegeResponseVersion(post) ? null : submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
   }
   res.json({ posts: out });
@@ -1010,16 +1012,17 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
   }
   const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
   const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
-  const draft = post.kind === "college_pathways" ? await collegeDraftFor(post.id, user.id) : null;
+  const draft = post.kind !== "announcement" ? await collegeDraftFor(post.id, user.id) : null;
   res.json({ ...post, submission, mission, draft, studentId: user.id, ...(post.kind === "college_pathways" && collegeResponseVersion(post) === 3 ? { initialResponse: await collegeCostsInitialResponse(user.id) } : {}) });
 });
 
 app.put("/api/class/posts/:id/draft", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user || user.role !== "student") { res.status(403).json({ error: "Student access only." }); return; }
+  if (req.body?.studentId && req.body.studentId !== user.id) { res.status(409).json({ error: "The signed-in account changed. Reopen this module to continue." }); return; }
   const post = await getClassPost(String(req.params.id));
   if (!post) { res.status(404).json({ error: "Assignment not found." }); return; }
-  try { res.json(await saveCollegeDraft(post, user.id, req.body?.response)); }
+  try { res.json(await saveModuleDraft(post, user.id, req.body?.response)); }
   catch (err) {
     if (err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message }); return; }
     throw err;

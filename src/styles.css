@@ -906,3 +906,5 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
   .college-cost-heading { flex-wrap: wrap; gap: 12px; }
   .college-cost-heading h3 { font-size: 23px; }
 }
+
+.module-autosave { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 12px 0 18px; }

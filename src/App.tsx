@@ -1,3 +1,4 @@
+import { useModuleDraft } from "./use-module-draft";
 import { COLLEGE_COST_LINKS, COLLEGE_COST_FIELDS, emptyCollegeCosts, collegeCostRouteDone, collegeCostsDone, type CostRoute, type CollegeCostsResponse } from "../shared/college-costs.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLLEGE_ROUTES, COLLEGE_RESEARCH_TOPICS, COLLEGE_PROGRAM_FIELDS, emptyCollegeResearch, collegeRouteDone, collegeResearchDone, collegeInstitution, type CollegeResearchResponse, type RouteAnswer } from "../shared/college-research.js";
@@ -949,7 +950,7 @@ function TeacherMissionDetail({ mod }: { mod: any }) {
           </div>
         ))}
       </div>
-      {d.submittedAt && (
+      {(d.submittedAt || d.draftAt) && (
         <div className="module-submission">
           {(d.picks || []).map((p: any, i: number) => (
             <div key={p.ticker || i} className="module-pick">
@@ -2397,6 +2398,7 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   const confirmation = useRef(uid());
   const draftKey = useRef("");
+  const autosave = useModuleDraft<any>(`/api/class/posts/${id}/draft`);
   useEffect(() => {
     let alive = true;
     api<any>(`/api/class/posts/${id}`).then(data => {
@@ -2408,30 +2410,31 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
         const local = JSON.parse(localStorage.getItem(draftKey.current) || "null");
         if (local?.response?.version === 3 && local.updatedAt > (latest?.updatedAt || data.submission?.createdAt || "")) saved = local.response;
       } catch { /* The account draft remains available. */ }
-      setResponse(saved); setPost(data); setSubmittedAt(data.submission?.createdAt ?? null);
+      setResponse(autosave.restore(data.studentId, saved, latest?.updatedAt || data.submission?.createdAt || "")); setPost(data); setSubmittedAt(data.submission?.createdAt ?? null);
     }).catch(e => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, [id]);
   const update = (next: CollegeCostsResponse) => {
     setResponse(next); confirmation.current = uid();
-    setNotice("Saved on this device. Use Save draft to save to your account.");
+    setNotice(""); autosave.change(next);
     try { localStorage.setItem(draftKey.current, JSON.stringify({ response: next, updatedAt: new Date().toISOString() })); }
-    catch { setNotice("Use Save draft to save to your account."); }
+    catch { /* Account autosave remains available. */ }
   };
   const changeRoute = (index: number, next: CostRoute) => update({ ...response, routes: response.routes.map((route, i) => i === index ? next : route) });
   const save = async (submit: boolean) => {
     setBusy(true); setError("");
     try {
+      await autosave.beforeSubmit();
       const result = await api<any>(`/api/class/posts/${id}/${submit ? "submit" : "draft"}`, { method: submit ? "POST" : "PUT", body: JSON.stringify({ response, idempotencyKey: confirmation.current }) });
       if (submit) {
-        setSubmittedAt(result.submittedAt); setNotice("Your school-cost research is submitted.");
+        autosave.submitted(); setSubmittedAt(result.submittedAt); setNotice("Your school-cost research is submitted.");
         try { localStorage.removeItem(draftKey.current); } catch { /* Already saved to the account. */ }
       } else setNotice("Draft saved to your account.");
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading school-cost assignment" kind="detail" />}</div>;
   const done = collegeCostsDone(response);
-  return <div className="class-section college-assignment college-costs-assignment">
+  return <div className="class-section college-assignment college-costs-assignment" onBlurCapture={() => void autosave.flush()}>
     <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
     <section className="panel college-brief"><div><span className="eyebrow">Your task</span><h3>Visit the website. Find the yearly cost.</h3>
       <p>Your school choices carry over from the last assignment. You can change them below.</p>
@@ -2451,7 +2454,7 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
     </section>; })}
     <section className="panel college-next-step"><span className="eyebrow">One last question</span><h3>What did you learn?</h3><div className="field"><label htmlFor="cost-reflection">What did you learn about the cost of education after high school?</label><textarea id="cost-reflection" rows={3} maxLength={6000} value={response.reflection} disabled={busy} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
     {error && <div className="error" role="alert">{error}</div>}
-    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeCostRouteDone).length}/4 schools completed · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{notice || "Save your draft as you go. Submit when you’re finished."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated answers" : "Submit research"}</button></div></div>
+    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeCostRouteDone).length}/4 schools completed · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{autosave.status || notice || "Your work saves automatically. Submit when you’re finished."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated answers" : "Submit research"}</button></div></div>
   </div>;
 }
 
@@ -2466,6 +2469,7 @@ function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNum
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   const confirmation = useRef(uid());
   const draftKey = useRef("");
+  const autosave = useModuleDraft<any>(`/api/class/posts/${id}/draft`);
   useEffect(() => {
     let alive = true;
     api<any>(`/api/class/posts/${id}`).then(data => {
@@ -2479,29 +2483,30 @@ function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNum
         if (!previous) { const old = JSON.parse(localStorage.getItem(`simlife-college:${data.studentId}:${id}`) || "null"); if (old?.response?.paths) { saved = { ...saved, previousWork: old.response }; setEarlierWork(old.response); } }
       } catch { /* Account drafts remain available without device storage. */ }
       setEarlierWork(previous || saved.previousWork || null);
-      setPost(data); setResponse(saved);
+      setPost(data); setResponse(autosave.restore(data.studentId, saved, data.draft?.updatedAt || data.submission?.createdAt || ""));
       if (data.submission?.response?.version === 2) { setSubmittedAt(data.submission.createdAt); setSubmittedWork(data.submission.response); }
       if (data.draft?.response?.version === 2) setNotice("Your saved research draft is ready to continue.");
     }).catch(e => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, [id]);
   const update = (next: CollegeResearchResponse) => {
-    setResponse(next); setNotice("Changes saved on this device. Save draft to keep them on your account."); confirmation.current = uid();
+    setResponse(next); setNotice(""); autosave.change(next); confirmation.current = uid();
     try { localStorage.setItem(draftKey.current, JSON.stringify({ response: next, updatedAt: new Date().toISOString() })); }
-    catch { setNotice("Use Save draft to keep your work on your account."); }
+    catch { /* Account autosave remains available. */ }
   };
   const changeRoute = (index: number, next: RouteAnswer) => update({ ...response, routes: response.routes.map((route, i) => i === index ? next : route) });
   const save = async (submit: boolean) => {
     setBusy(true); setError("");
     try {
+      await autosave.beforeSubmit();
       const result = await api<any>(`/api/class/posts/${id}/${submit ? "submit" : "draft"}`, { method: submit ? "POST" : "PUT", body: JSON.stringify({ response, idempotencyKey: confirmation.current }) });
-      if (submit) { setSubmittedAt(result.submittedAt); setSubmittedWork(response); try { localStorage.removeItem(draftKey.current); } catch { /* Already saved on server. */ } setNotice("Research submitted. Your comparison explorer is now unlocked below."); }
+      if (submit) { autosave.submitted(); setSubmittedAt(result.submittedAt); setSubmittedWork(response); try { localStorage.removeItem(draftKey.current); } catch { /* Already saved on server. */ } setNotice("Research submitted. Your comparison explorer is now unlocked below."); }
       else setNotice("Draft saved to your account. Continue on another device whenever you need.");
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const done = collegeResearchDone(response);
   if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading college assignment" kind="detail" />}</div>;
-  return <div className="class-section college-assignment">
+  return <div className="class-section college-assignment" onBlurCapture={() => void autosave.flush()}>
     <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
     <section className="panel college-brief"><div><span className="eyebrow">Research first</span><h3>Four routes. One research task.</h3><ol><li>Use independent sources to research higher and lower pay and stronger and weaker employment prospects within each route.</li><li>Record the major, program, or career, a published figure, what it measures, and the source.</li><li>Explain two paths that make financial and academic sense for you.</li></ol><p className="small">A lower-paying career can still make sense for you. Consider earning potential, employment prospects, and personal fit together.</p></div><img src="/module-art/college-paths.svg" alt="" /></section>
     <section className="panel college-research-guide"><h3>Where to research</h3><p><a href="https://www.newyorkfed.org/research/college-labor-market" target="_blank" rel="noreferrer">New York Fed: bachelor’s majors</a> · <a href="https://www.bls.gov/ooh/" target="_blank" rel="noreferrer">BLS: occupations, pay, training & job outlook</a> · <a href="https://collegescorecard.ed.gov/" target="_blank" rel="noreferrer">College Scorecard: schools & program outcomes</a></p><p className="small">Starting pay, early-career pay, and overall median pay describe different workers. Job growth, unemployment, and placement are different measures; identify which you use. If a figure is unavailable, document what you checked and use the closest relevant career evidence.</p></section>
@@ -2516,7 +2521,7 @@ function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNum
       </div></details>; })}
     <section className="panel college-next-step"><span className="eyebrow">Final reflection</span><h3>Two paths that fit you</h3><div className="field"><label htmlFor="college-reflection">Describe two specific paths that make financial and academic sense for you.</label><p className="college-field-hint">Use your research to compare earning potential, employment prospects, and fit with your interests and strengths. Explain why you would consider each.</p><textarea id="college-reflection" rows={6} maxLength={6000} disabled={busy} value={response.reflection} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
     {error && <div className="error" role="alert">{error}</div>}
-    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeRouteDone).length}/4 routes researched · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{notice || "Save your research as you go. Submit to unlock the comparison explorer."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated research" : "Submit research"}</button></div></div>
+    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeRouteDone).length}/4 routes researched · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{autosave.status || notice || "Your work saves automatically. Submit to unlock the comparison explorer."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated research" : "Submit research"}</button></div></div>
     {submittedWork ? <CollegeExplorer response={submittedWork} /> : <section className="panel college-explorer-lock"><span className="eyebrow">Your next step</span><h3>Comparison explorer</h3><p>Complete and submit your research to unlock a tool for comparing the programs you found.</p></section>}
   </div>;
 }
@@ -2715,6 +2720,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   const [err, setErr] = useState("");
   const key = useRef(uid());
   const hydrated = useRef(false);
+  const autosave = useModuleDraft<any>(`/api/class/posts/${id}/draft`);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (opts?.silent) setRefreshing(true);
@@ -2723,9 +2729,10 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
       setPost(result);
       // Hydrate the form from the stored write-up once. A silent refresh while
       // the student is typing must never overwrite what they are working on.
-      if (result.submission?.response && !hydrated.current) {
-        setPicks(result.submission.response.picks);
-        setReflection(result.submission.response.reflection);
+      if (!hydrated.current) {
+        const latest = result.draft && (!result.submission || result.draft.updatedAt > result.submission.createdAt) ? result.draft : null;
+        const saved = autosave.restore(result.studentId, latest?.response ?? result.submission?.response ?? { picks: [{ ticker: "", thesis: "" }, { ticker: "", thesis: "" }, { ticker: "", thesis: "" }], reflection: "" }, latest?.updatedAt || result.submission?.createdAt || "");
+        setPicks(saved.picks); setReflection(saved.reflection);
       }
       hydrated.current = true;
     } catch (e: any) { if (!opts?.silent) setErr(e.message); }
@@ -2746,7 +2753,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   const mission = post.mission;
   const t = mission.targets;
   const options = mission.companies.map((holding: any) => holding.ticker) as string[];
-  const updatePick = (index: number, changes: any) => setPicks(picks.map((pick, i) => i === index ? { ...pick, ...changes } : pick));
+  const updatePick = (index: number, changes: any) => { const next = picks.map((pick, i) => i === index ? { ...pick, ...changes } : pick); setPicks(next); autosave.change({ picks: next, reflection }); };
 
   // Both goals use the live portfolio, regardless of earlier trades.
   const goals = [
@@ -2787,7 +2794,9 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
     if (busy || !ready) return;
     setBusy(true); setErr("");
     try {
+      await autosave.beforeSubmit();
       await api(`/api/class/posts/${id}/submit`, { method: "POST", body: JSON.stringify({ response: { picks, reflection }, idempotencyKey: key.current }) });
+      autosave.submitted();
       key.current = uid();   // a fresh key so a resubmit is its own submission
       hydrated.current = false;
       await load();
@@ -2796,8 +2805,9 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   };
 
   return (
-    <div className="class-section module-page">
+    <div className="class-section module-page" onBlurCapture={() => void autosave.flush()}>
       <ModuleHead moduleNumber={moduleNumber} kind="Portfolio mission" title={post.title} detail={post.summary} onBack={onBack} />
+      <p className="module-autosave" role="status">{autosave.status || "Your work saves automatically."}</p>
       {err && <div className="error" role="alert">{err}</div>}
       {submitted && (
         <div className="notice" role="status" aria-live="polite">
@@ -2914,7 +2924,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
             ))}
             <div className="field reflect-field">
               <label>How does your current mix of sectors affect your risk?</label>
-              <textarea rows={5} value={reflection} onChange={(e) => setReflection(e.target.value)}
+              <textarea rows={5} value={reflection} onChange={(e) => { setReflection(e.target.value); autosave.change({ picks, reflection: e.target.value }); }}
                 placeholder="Explain how your current stocks spread risk across sectors…" />
             </div>
           </>
@@ -2947,13 +2957,21 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   const [err, setErr] = useState("");
   const key = useRef(uid());
   const hydrated = useRef(false);
+  const autosave = useModuleDraft<any>(`/api/class/posts/${id}/draft`);
+  const updateAnswer = (changes: Record<string, string>) => {
+    const next = { gapTicker, convictionTicker, gapExplanation, convictionExplanation, ...changes };
+    setGapTicker(next.gapTicker); setConvictionTicker(next.convictionTicker);
+    setGapExplanation(next.gapExplanation); setConvictionExplanation(next.convictionExplanation);
+    autosave.change(next);
+  };
   const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
     try {
       const result = await api<any>(`/api/class/posts/${id}`, { cache: "no-store" });
       setPost(result);
-      if (!hydrated.current && result.submission?.response) {
-        const r = result.submission.response;
+      if (!hydrated.current) {
+        const latest = result.draft && (!result.submission || result.draft.updatedAt > result.submission.createdAt) ? result.draft : null;
+        const r = autosave.restore(result.studentId, latest?.response ?? result.submission?.response ?? {}, latest?.updatedAt || result.submission?.createdAt || "");
         setGapTicker(r.gapTicker || ""); setConvictionTicker(r.convictionTicker || "");
         setGapExplanation(r.gapExplanation || [r.gapArea, r.gapFit].filter(Boolean).join("\n\n"));
         setConvictionExplanation(r.convictionExplanation || [r.convictionArea, r.convictionFit, r.convictionChallenge].filter(Boolean).join("\n\n"));
@@ -2978,15 +2996,17 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
     if (!ready || busy) return;
     setBusy(true); setErr("");
     try {
+      await autosave.beforeSubmit();
       await api(`/api/class/posts/${id}/submit`, { method: "POST", body: JSON.stringify({
         response: { gapTicker, convictionTicker, gapExplanation, convictionExplanation }, idempotencyKey: key.current,
       }) });
-      key.current = uid(); hydrated.current = false; await load();
+      autosave.submitted(); key.current = uid(); hydrated.current = false; await load();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
-  return <div className="class-section module-page etf-mission-page">
+  return <div className="class-section module-page etf-mission-page" onBlurCapture={() => void autosave.flush()}>
     <ModuleHead moduleNumber={moduleNumber} kind="ETF mission" title={post.title} detail={post.summary} onBack={onBack} />
+    <p className="module-autosave" role="status">{autosave.status || "Your work saves automatically."}</p>
     {err && <div className="error" role="alert">{err}</div>}
     {post.submission && <div className="notice" role="status"><strong>Submitted ✓ · {new Date(post.submission.createdAt).toLocaleString()}</strong> Your teacher can review both ETF choices and your explanations.</div>}
     <section className="panel"><div className="section-kicker">The assignment</div><p className="mission-brief-body">{post.body}</p>
@@ -2999,12 +3019,12 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
       <div className="row goals-actions"><button onClick={onOpenInvesting}>Open Investing →</button><button className="ghost" disabled={refreshing} onClick={() => void load(true)}>{refreshing ? "Refreshing…" : "Refresh"}</button></div>
     </section>
     <section className="panel etf-goal-card" aria-labelledby="etf-gap-title"><div className="etf-goal-head"><span className="etf-goal-number">01</span><div><h3 id="etf-gap-title">Fill a gap</h3><p>Choose an area your portfolio barely covers, then find an ETF that adds it.</p></div></div>
-      <div className="etf-goal-fields"><div className="field"><label htmlFor="etf-gap-pick">Pick your ETF</label><select id="etf-gap-pick" value={gapTicker} onChange={(e) => setGapTicker(e.target.value)}><option value="">Choose an ETF you hold…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker} disabled={fund.ticker === convictionTicker}>{fund.ticker} · {fund.what}</option>)}</select></div>
-      <div className="field"><label htmlFor="etf-gap-explain">Explain your choice</label><p className="etf-field-help">What do you hold little or none of? Explain what this fund owns, how it fills that gap, and what risk remains.</p><textarea id="etf-gap-explain" rows={5} value={gapExplanation} onChange={(e) => setGapExplanation(e.target.value)} placeholder="My portfolio has little exposure to… I chose this ETF because…" /></div></div>
+      <div className="etf-goal-fields"><div className="field"><label htmlFor="etf-gap-pick">Pick your ETF</label><select id="etf-gap-pick" value={gapTicker} onChange={(e) => updateAnswer({ gapTicker: e.target.value })}><option value="">Choose an ETF you hold…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker} disabled={fund.ticker === convictionTicker}>{fund.ticker} · {fund.what}</option>)}</select></div>
+      <div className="field"><label htmlFor="etf-gap-explain">Explain your choice</label><p className="etf-field-help">What do you hold little or none of? Explain what this fund owns, how it fills that gap, and what risk remains.</p><textarea id="etf-gap-explain" rows={5} value={gapExplanation} onChange={(e) => updateAnswer({ gapExplanation: e.target.value })} placeholder="My portfolio has little exposure to… I chose this ETF because…" /></div></div>
     </section>
     <section className="panel etf-goal-card etf-goal-conviction" aria-labelledby="etf-conviction-title"><div className="etf-goal-head"><span className="etf-goal-number">02</span><div><h3 id="etf-conviction-title">Back an idea</h3><p>Choose a different area where you have a reasoned investment idea.</p></div></div>
-      <div className="etf-goal-fields"><div className="field"><label htmlFor="etf-conviction-pick">Pick your second ETF</label><select id="etf-conviction-pick" value={convictionTicker} onChange={(e) => setConvictionTicker(e.target.value)}><option value="">Choose a different ETF you hold…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker} disabled={fund.ticker === gapTicker}>{fund.ticker} · {fund.what}</option>)}</select></div>
-      <div className="field"><label htmlFor="etf-conviction-explain">Explain your choice</label><p className="etf-field-help">Why do you want more exposure? Describe what this fund owns, its overlap and risks, and evidence that would make you reconsider.</p><textarea id="etf-conviction-explain" rows={5} value={convictionExplanation} onChange={(e) => setConvictionExplanation(e.target.value)} placeholder="I want more exposure to… This ETF fits because… I would reconsider if…" /></div></div>
+      <div className="etf-goal-fields"><div className="field"><label htmlFor="etf-conviction-pick">Pick your second ETF</label><select id="etf-conviction-pick" value={convictionTicker} onChange={(e) => updateAnswer({ convictionTicker: e.target.value })}><option value="">Choose a different ETF you hold…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker} disabled={fund.ticker === gapTicker}>{fund.ticker} · {fund.what}</option>)}</select></div>
+      <div className="field"><label htmlFor="etf-conviction-explain">Explain your choice</label><p className="etf-field-help">Why do you want more exposure? Describe what this fund owns, its overlap and risks, and evidence that would make you reconsider.</p><textarea id="etf-conviction-explain" rows={5} value={convictionExplanation} onChange={(e) => updateAnswer({ convictionExplanation: e.target.value })} placeholder="I want more exposure to… This ETF fits because… I would reconsider if…" /></div></div>
     </section>
     <div className="module-action-bar"><div><strong>{mission.met ? "Two ETFs verified" : `${mission.qualifyingEtfs.length}/2 ETFs held`}</strong><span>{ready ? "Your teacher receives your current ETF holdings and both explanations." : "Hold two different ETFs and explain how each serves its goal."}</span></div><button disabled={!ready || busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
   </div>;
@@ -3020,6 +3040,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const key = useRef(uid());
+  const autosave = useModuleDraft<Record<string, string>>(`/api/class/activities/${id}/draft`, "POST", "placements");
 
   // Drag state. POINTER EVENTS, not HTML5 drag-and-drop: pointer events fire
   // for mouse, touch and pen alike, so the same code works on a Chromebook
@@ -3035,14 +3056,11 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
       try {
         const a = await api<any>(`/api/class/activities/${id}`);
         setAct(a);
-        // Resume from the most recent submission so a reload never loses work.
-        if (a.attempts?.length) {
-          setPlacements(a.attempts[0].placements || {});
-          setSubmitted({ attemptNo: a.attempts[0].attemptNo, submittedAt: a.attempts[0].createdAt });
-        } else if (a.draft) {
-          setPlacements(a.draft.placements || {});
-          setSaved({ savedAt: a.draft.updatedAt });
-        }
+        const last = a.attempts?.[0];
+        const draft = a.draft && (!last || a.draft.updatedAt > last.createdAt) ? a.draft : null;
+        setPlacements(autosave.restore(a.studentId, draft?.placements ?? last?.placements ?? {}, draft?.updatedAt || last?.createdAt || ""));
+        if (last) setSubmitted({ attemptNo: last.attemptNo, submittedAt: last.createdAt });
+        if (draft) setSaved({ savedAt: draft.updatedAt });
       } catch (e: any) { setErr(e.message); }
     })();
   }, [id]);
@@ -3087,11 +3105,11 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
   };
 
   const assign = (ticker: string, bucket: string) => {
-    setPlacements((p) => ({ ...p, [ticker]: bucket }));
+    const next = { ...placements, [ticker]: bucket }; setPlacements(next); autosave.change(next);
     setPicked(null);
   };
   const unplace = (ticker: string) => {
-    setPlacements((p) => { const n = { ...p }; delete n[ticker]; return n; });
+    const next = { ...placements }; delete next[ticker]; setPlacements(next); autosave.change(next);
     setPicked(null);
   };
 
@@ -3106,10 +3124,11 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
     if (busy) return;
     setBusy(true); setErr("");
     try {
+      await autosave.beforeSubmit();
       const r = await api<any>(`/api/class/activities/${id}/submit`, {
         method: "POST", body: JSON.stringify({ placements, idempotencyKey: key.current }),
       });
-      setSubmitted(r);
+      autosave.submitted(); setSubmitted(r);
       setSaved(null);
       key.current = uid();   // a fresh key so a resubmit is its own submission
     } catch (e: any) { setErr(e.message); }
@@ -3120,6 +3139,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
     if (saving || busy) return;
     setSaving(true); setErr("");
     try {
+      await autosave.beforeSubmit();
       const r = await api<any>(`/api/class/activities/${id}/draft`, {
         method: "POST", body: JSON.stringify({ placements }),
       });
@@ -3192,6 +3212,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
         <div className="drag-ghost" style={{ left: drag.x, top: drag.y }}>{drag.ticker}</div>
       )}
 
+      <p className="module-autosave" role="status">{autosave.status || "Your placements save automatically."}</p>
       <div className="module-action-bar">
         <div>
           <strong>
@@ -3206,7 +3227,7 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
               ? `Submission ${submitted.attemptNo} — your teacher will check it. Move companies and submit again if you change your mind.`
               : allPlaced
                 ? "Every company is in a category — submit when you are happy with it."
-                : `Sort all ${act.tokens.length} to submit — or Save to finish later.`}
+                : `Sort all ${act.tokens.length} to submit. Your placements save automatically.`}
           </span>
         </div>
         <div className="row">

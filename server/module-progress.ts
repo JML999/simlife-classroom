@@ -109,8 +109,10 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     if (!post) continue;
     for (const s of students) {
       if (submittedPosts[s.id]?.has(post.id)) continue;
+      const draft = await collegeDraftFor(post.id, s.id);
+      if (draft) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
       if (post.kind === "college_pathways") {
-        if (await collegeDraftFor(post.id, s.id) || await latestClassPostSubmission(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+        if (draft || await latestClassPostSubmission(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
         continue;
       }
       const state = post.kind === "etf_mission" ? await etfMissionState(post, s.id) : await portfolioMissionState(post, s.id);
@@ -209,8 +211,8 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       const post = await getClassPost(mod.id);
       if (!post) continue;
       const submission = await latestClassPostSubmission(post.id, userId);
+      const draft = await collegeDraftFor(post.id, userId);
       if (post.kind === "college_pathways") {
-        const draft = await collegeDraftFor(post.id, userId);
         const currentSubmission = submission?.response?.version === collegeResponseVersion(post) ? submission : null;
         const response = currentSubmission?.response ?? draft?.response ?? submission?.response ?? null;
         out.push({ key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, container: "college", title: mod.title,
@@ -223,16 +225,16 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
         const saved = submission?.evidence ?? state;
         out.push({
           key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, title: mod.title,
-          status: submission ? "submitted" : state.etfs.length ? "in_progress" : "not_started",
+          status: submission ? "submitted" : draft || state.etfs.length ? "in_progress" : "not_started",
           partsDone: Math.min(saved.qualifyingEtfs?.length ?? 0, 2), partsTotal: 2, partsLabel: "goals",
           detail: { missionKind: "etf_mission", submittedAt: submission?.createdAt ?? null,
-            heldEtfs: saved.etfs, qualifyingEtfs: saved.qualifyingEtfs, liveEtfs: state.etfs, response: submission?.response ?? null },
+            heldEtfs: saved.etfs, qualifyingEtfs: saved.qualifyingEtfs, liveEtfs: state.etfs, response: submission?.response ?? draft?.response ?? null, draftAt: draft?.updatedAt ?? null },
         });
         continue;
       }
       const state = await portfolioMissionState(post, userId);
       const evidence = submission?.evidence ?? null;
-      const response = submission?.response ?? null;
+      const response = submission?.response ?? draft?.response ?? null;
       const checks = {
         companies: evidence?.checks?.companies ?? state.checks.companies,
         sectors: evidence?.checks?.sectors ?? state.checks.sectors,
@@ -240,13 +242,13 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       const counts = evidence?.counts ?? state.counts;
       const goalsTotal = Object.keys(state.checks).length;
       const goalsDone = missionGoalsMet(checks);
-      const status: ModuleStatus = submission ? "submitted" : state.counts.companies > 0 ? "in_progress" : "not_started";
+      const status: ModuleStatus = submission ? "submitted" : draft || state.counts.companies > 0 ? "in_progress" : "not_started";
       out.push({
         key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, title: mod.title,
         status,
         partsDone: goalsDone, partsTotal: goalsTotal, partsLabel: "goals",
         detail: {
-          submittedAt: submission?.createdAt ?? null,
+          submittedAt: submission?.createdAt ?? null, draftAt: draft?.updatedAt ?? null,
           checks, counts,
           targets: state.targets,
           liveChecks: state.checks,
