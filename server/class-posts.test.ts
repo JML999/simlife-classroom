@@ -69,9 +69,9 @@ test("portfolio mission uses only current stock and sector totals", async () => 
   assert.equal((await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response, idempotencyKey: "mission-submit-one" })).deduped, true);
 });
 
-test("mission rejects a pick that is not currently held", async () => {
+test("mission accepts student answers while retaining actual holdings evidence", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
-  await assert.rejects(() => posts.submitPortfolioMission({
+  await posts.submitPortfolioMission({
     post: mission, userId: STUDENT, response: {
       picks: [
         { ticker: "TM", thesis: "This is deliberately long enough but is not one of the currently held stocks." },
@@ -80,10 +80,10 @@ test("mission rejects a pick that is not currently held", async () => {
       ],
       reflection: "This reflection has enough words to pass the length rule, but the first claimed company is not currently held. The server should reject the response because live portfolio evidence, not a student's typed claim, decides whether each selected company qualifies for the assignment.",
     },
-  }), /must be a current stock holding/);
+  });
 });
 
-test("module 2 accepts brief answers while still requiring each answer", async () => {
+test("module 2 accepts brief, blank, and partial answers", async () => {
   const mission = (await posts.listClassPosts({})).find((post) => post.kind === "portfolio_mission")!;
   mission.spec = { ...mission.spec, pickThesisMinWords: 12, reflectionMinWords: 40 }; // existing published posts may retain old settings
   assert.deepEqual((await posts.portfolioMissionState(mission, STUDENT)).targets, { minCompanies: 6, minSectors: 5 });
@@ -97,14 +97,8 @@ test("module 2 accepts brief answers while still requiring each answer", async (
   };
   const submitted = await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response });
   assert.equal(submitted.deduped, false, "old word limits do not block short answers");
-  await assert.rejects(
-    () => posts.submitPortfolioMission({ post: mission, userId: STUDENT, response: { ...response, picks: [{ ...response.picks[0], thesis: "  " }, ...response.picks.slice(1)] } }),
-    /Add a short answer/,
-  );
-  await assert.rejects(
-    () => posts.submitPortfolioMission({ post: mission, userId: STUDENT, response: { ...response, reflection: "  " } }),
-    /Add a final reflection/,
-  );
+  await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response: { ...response, picks: [{ ...response.picks[0], thesis: "  " }, ...response.picks.slice(1)] } });
+  await posts.submitPortfolioMission({ post: mission, userId: STUDENT, response: { ...response, reflection: "  " } });
 });
 
 test("selling a stock and buying a replacement can still complete the mission", async () => {
@@ -201,7 +195,7 @@ test("teacher progress ignores the removed historical goal in older submissions"
   assert.deepEqual(detail.detail?.checks, { companies: true, sectors: true });
 });
 
-test("ETF mission requires two different current fund holdings and two explanations", async () => {
+test("ETF mission records actual holdings while accepting incomplete answers", async () => {
   const student = "etf-student";
   const now = new Date().toISOString();
   await db.run(`INSERT INTO users (id, name, role, class_id, created_at) VALUES (?, 'ETF Student', 'student', 'post-class', ?)`, [student, now]);
@@ -214,16 +208,16 @@ test("ETF mission requires two different current fund holdings and two explanati
     VALUES (?, 'etf-account', 'buy', -1000, ?, 1000000, 1000, ?, ?)`, [`etf-buy-${ticker}`, ticker, `etf-key-${ticker}`, now]);
   await add("XLK");
   assert.equal((await posts.etfMissionState(post, student)).met, false);
-  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: {} }), /Hold two different ETFs/);
+  await posts.submitEtfMission({ post, userId: student, response: {} });
   await add("VXUS");
   const state = await posts.etfMissionState(post, student);
   assert.deepEqual(state.qualifyingEtfs.map((f: any) => f.ticker).sort(), ["VXUS", "XLK"]);
   const response = { gapTicker: "VXUS", convictionTicker: "XLK", gapExplanation: "My portfolio has little international exposure. VXUS owns non-U.S. stocks; global markets can still fall.", convictionExplanation: "I think technology will grow. XLK owns technology companies and increases my exposure, but overlaps with my stocks. I would reconsider if earnings stopped growing." };
   await posts.submitEtfMission({ post, userId: student, response });
   assert.equal((await posts.latestClassPostSubmission(post.id, student))?.evidence.met, true);
-  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionExplanation: " " } }), /Explain how each ETF/);
-  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VXUS" } }), /two different ETFs/);
-  await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VTI" } }), /you currently hold/);
+  await posts.submitEtfMission({ post, userId: student, response: { ...response, convictionExplanation: " " } });
+  await posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VXUS" } });
+  await posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: "VTI" } });
 });
 
 test("ETF mission counts Bitcoin and Ethereum funds and accepts them in submissions", async () => {
@@ -247,7 +241,7 @@ test("ETF mission counts Bitcoin and Ethereum funds and accepts them in submissi
   await posts.submitEtfMission({ post, userId: student, response });
   assert.equal((await posts.latestClassPostSubmission(post.id, student))?.evidence.met, true);
   for (const ticker of ["GLD", "HIMZ"]) {
-    await assert.rejects(() => posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: ticker } }), /two different ETFs/);
+    await posts.submitEtfMission({ post, userId: student, response: { ...response, convictionTicker: ticker } });
   }
   const cryptoTickers = ["ARKB", "BITB", "FBTC", "GBTC", "HODL", "IBIT", "ETHA", "ETHE", "ETHW", "FETH"];
   for (const ticker of cryptoTickers.filter((ticker) => !["IBIT", "ETHA"].includes(ticker))) await add(ticker);
@@ -279,6 +273,12 @@ test("mission drafts preserve partial write-ups privately without submitting or 
   await posts.setClassPostStatus(etf.id, "published"); etf.status = "published";
   await saveModuleDraft(etf, "draft-student", { gapExplanation: "Research before buying" });
   assert.equal((await collegeDraftFor(etf.id, "draft-student"))?.response.gapExplanation, "Research before buying");
-  await assert.rejects(posts.submitEtfMission({ post: etf, userId: "draft-student", response: {} }), /Hold two different/);
-  assert.equal(await posts.latestClassPostSubmission(etf.id, "draft-student"), null);
+  await posts.submitEtfMission({ post: etf, userId: "draft-student", response: {} });
+  assert.equal((await posts.latestClassPostSubmission(etf.id, "draft-student"))?.evidence.met, false);
+  await posts.submitPortfolioMission({ post, userId: "draft-student", response: {} });
+  const partial = await posts.latestClassPostSubmission(post.id, "draft-student");
+  assert.equal(partial.response.picks.length, 3);
+  assert.equal(partial.response.picks[0].thesis, "");
+  assert.equal(partial.evidence.met, false);
+  assert.equal((await studentModuleDetail("draft-student")).find(m => m.id === post.id)?.status, "submitted");
 });

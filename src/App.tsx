@@ -1,7 +1,7 @@
 import { useModuleDraft } from "./use-module-draft";
-import { COLLEGE_COST_LINKS, COLLEGE_COST_FIELDS, emptyCollegeCosts, collegeCostRouteDone, collegeCostsDone, type CostRoute, type CollegeCostsResponse } from "../shared/college-costs.js";
+import { COLLEGE_COST_LINKS, COLLEGE_COST_FIELDS, emptyCollegeCosts, collegeCostRouteDone, type CostRoute, type CollegeCostsResponse } from "../shared/college-costs.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { COLLEGE_ROUTES, COLLEGE_RESEARCH_TOPICS, COLLEGE_PROGRAM_FIELDS, emptyCollegeResearch, collegeRouteDone, collegeResearchDone, collegeInstitution, type CollegeResearchResponse, type RouteAnswer } from "../shared/college-research.js";
+import { COLLEGE_ROUTES, COLLEGE_RESEARCH_TOPICS, COLLEGE_PROGRAM_FIELDS, emptyCollegeResearch, collegeRouteDone, collegeInstitution, type CollegeResearchResponse, type RouteAnswer } from "../shared/college-research.js";
 import { createPortal } from "react-dom";
 import { api, money, uid, fmtWhen, ApiError } from "./api.js";
 
@@ -2433,7 +2433,6 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading school-cost assignment" kind="detail" />}</div>;
-  const done = collegeCostsDone(response);
   return <div className="class-section college-assignment college-costs-assignment" onBlurCapture={() => void autosave.flush()}>
     <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
     <section className="panel college-brief"><div><span className="eyebrow">Your task</span><h3>Visit the website. Find the yearly cost.</h3>
@@ -2454,7 +2453,7 @@ function CollegeCostsAssignment({ id, moduleNumber, onBack }: { id: string; modu
     </section>; })}
     <section className="panel college-next-step"><span className="eyebrow">One last question</span><h3>What did you learn?</h3><div className="field"><label htmlFor="cost-reflection">What did you learn about the cost of education after high school?</label><textarea id="cost-reflection" rows={3} maxLength={6000} value={response.reflection} disabled={busy} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
     {error && <div className="error" role="alert">{error}</div>}
-    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeCostRouteDone).length}/4 schools completed · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{autosave.status || notice || "Your work saves automatically. Submit when you’re finished."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated answers" : "Submit research"}</button></div></div>
+    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeCostRouteDone).length}/4 schools completed · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{autosave.status || notice || "Your work saves automatically. Submit when you’re finished."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated answers" : "Submit research"}</button></div></div>
   </div>;
 }
 
@@ -2504,7 +2503,6 @@ function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNum
       else setNotice("Draft saved to your account. Continue on another device whenever you need.");
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
-  const done = collegeResearchDone(response);
   if (!post) return <div className="class-section"><ModuleHead kind="College & career" onBack={onBack} />{error ? <div className="error" role="alert">{error}</div> : <LoadingState label="Loading college assignment" kind="detail" />}</div>;
   return <div className="class-section college-assignment" onBlurCapture={() => void autosave.flush()}>
     <ModuleHead moduleNumber={moduleNumber} kind="Is College Right for Me?" title={post.title} detail={post.summary} onBack={onBack} />
@@ -2521,7 +2519,7 @@ function CollegeAssignment({ id, moduleNumber, onBack }: { id: string; moduleNum
       </div></details>; })}
     <section className="panel college-next-step"><span className="eyebrow">Final reflection</span><h3>Two paths that fit you</h3><div className="field"><label htmlFor="college-reflection">Describe two specific paths that make financial and academic sense for you.</label><p className="college-field-hint">Use your research to compare earning potential, employment prospects, and fit with your interests and strengths. Explain why you would consider each.</p><textarea id="college-reflection" rows={6} maxLength={6000} disabled={busy} value={response.reflection} onChange={e => update({ ...response, reflection: e.target.value })} /></div></section>
     {error && <div className="error" role="alert">{error}</div>}
-    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeRouteDone).length}/4 routes researched · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{autosave.status || notice || "Your work saves automatically. Submit to unlock the comparison explorer."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy || done !== 5} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated research" : "Submit research"}</button></div></div>
+    <div className="module-action-bar college-action-bar"><div><strong>{response.routes.filter(collegeRouteDone).length}/4 routes researched · {response.reflection.trim() ? "Reflection added" : "Reflection to do"}</strong><p role="status">{autosave.status || notice || "Your work saves automatically. Submit to unlock the comparison explorer."}</p></div><div className="row"><button className="ghost" disabled={busy} onClick={() => save(false)}>Save draft</button><button disabled={busy} onClick={() => save(true)}>{busy ? "Saving…" : submittedAt ? "Submit updated research" : "Submit research"}</button></div></div>
     {submittedWork ? <CollegeExplorer response={submittedWork} /> : <section className="panel college-explorer-lock"><span className="eyebrow">Your next step</span><h3>Comparison explorer</h3><p>Complete and submit your research to unlock a tool for comparing the programs you found.</p></section>}
   </div>;
 }
@@ -2778,20 +2776,10 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
   ) / 2;
 
   const submitted = !!post.submission;
-  const problems: string[] = [];
-  if (!mission.met) problems.push("Meet every goal above — the write-up unlocks when your portfolio evidence is complete.");
   const chosen = picks.map((pick) => pick.ticker.trim().toUpperCase()).filter(Boolean);
-  if (new Set(chosen).size !== 3 || chosen.some((ticker) => !options.includes(ticker))) {
-    problems.push("Choose three different stocks you currently hold.");
-  }
-  picks.forEach((pick, index) => {
-    if (!pick.thesis.trim()) problems.push(`Add a short answer for stock ${index + 1}.`);
-  });
-  if (!reflection.trim()) problems.push("Add a final reflection.");
-  const ready = problems.length === 0;
 
   const submit = async () => {
-    if (busy || !ready) return;
+    if (busy) return;
     setBusy(true); setErr("");
     try {
       await autosave.beforeSubmit();
@@ -2880,30 +2868,7 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
 
       <section className="panel">
         <div className="section-kicker">Explain what you built</div>
-        {!mission.met ? (
-          <div className="explain-lock">
-            <p><strong>The write-up opens once every goal above is checked.</strong>{" "}
-              {!mission.checks.companies && `Buy ${t.minCompanies - mission.counts.companies} more ${t.minCompanies - mission.counts.companies === 1 ? "company" : "companies"}${
-                !mission.checks.sectors ? ` and reach ${t.minSectors} sectors (you're at ${mission.counts.sectors})` : ""
-              }.`}
-              {mission.checks.companies && !mission.checks.sectors && `Cover ${t.minSectors - mission.counts.sectors} more sector${t.minSectors - mission.counts.sectors === 1 ? "" : "s"} — you're at ${mission.counts.sectors}.`}
-              {" "}Do the trading first — your teacher checks the holdings snapshot against what you write.</p>
-            {options.length > 0 && (
-              <>
-                <span className="small">Your current stocks — choose three to explain when the goals are met</span>
-                <div className="sector-chip-row">
-                  {options.map((ticker) => (
-                    <span className="sector-chip now" key={ticker}>
-                      <strong>{ticker}</strong> {mission.companies.find((c: any) => c.ticker === ticker)?.sector || "company"}
-                    </span>
-                  ))}
-                </div>
-              </>
-            )}
-            <button onClick={onOpenInvesting}>Open Investing →</button>
-          </div>
-        ) : (
-          <>
+        <>
             <p className="hint">Choose three stocks you currently hold. Explain what each business does and how the mix of sectors affects your risk.</p>
             {picks.map((pick, index) => (
               <div className="explain-pick" key={index}>
@@ -2927,16 +2892,15 @@ function PortfolioMission({ id, moduleNumber, onBack, onOpenInvesting }: {
               <textarea rows={5} value={reflection} onChange={(e) => { setReflection(e.target.value); autosave.change({ picks, reflection: e.target.value }); }}
                 placeholder="Explain how your current stocks spread risk across sectors…" />
             </div>
-          </>
-        )}
+        </>
       </section>
 
       <div className="module-action-bar">
         <div>
           <strong>{mission.met ? (submitted ? "Update your submission" : "Evidence complete") : `${mission.counts.companies}/${t.minCompanies} stocks · ${mission.counts.sectors}/${t.minSectors} sectors`}</strong>
-          <span>{ready ? "Your teacher receives the holdings snapshot plus your write-up." : problems[0]}</span>
+          <span>You can submit your current work at any time. Your teacher can review your answers and portfolio goals.</span>
         </div>
-        <button disabled={busy || !ready} onClick={submit}>
+        <button disabled={busy} onClick={submit}>
           {busy ? "Submitting…" : submitted ? "Update submission" : "Submit mission"}
         </button>
       </div>
@@ -2993,7 +2957,7 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
     && mission.qualifyingEtfs.some((fund: any) => fund.ticker === convictionTicker)
     && gapExplanation.trim() && convictionExplanation.trim();
   const submit = async () => {
-    if (!ready || busy) return;
+    if (busy) return;
     setBusy(true); setErr("");
     try {
       await autosave.beforeSubmit();
@@ -3026,7 +2990,7 @@ function EtfMission({ id, moduleNumber, onBack, onOpenInvesting }: {
       <div className="etf-goal-fields"><div className="field"><label htmlFor="etf-conviction-pick">Pick your second ETF</label><select id="etf-conviction-pick" value={convictionTicker} onChange={(e) => updateAnswer({ convictionTicker: e.target.value })}><option value="">Choose a different ETF you hold…</option>{mission.qualifyingEtfs.map((fund: any) => <option value={fund.ticker} key={fund.ticker} disabled={fund.ticker === gapTicker}>{fund.ticker} · {fund.what}</option>)}</select></div>
       <div className="field"><label htmlFor="etf-conviction-explain">Explain your choice</label><p className="etf-field-help">Why do you want more exposure? Describe what this fund owns, its overlap and risks, and evidence that would make you reconsider.</p><textarea id="etf-conviction-explain" rows={5} value={convictionExplanation} onChange={(e) => updateAnswer({ convictionExplanation: e.target.value })} placeholder="I want more exposure to… This ETF fits because… I would reconsider if…" /></div></div>
     </section>
-    <div className="module-action-bar"><div><strong>{mission.met ? "Two ETFs verified" : `${mission.qualifyingEtfs.length}/2 ETFs held`}</strong><span>{ready ? "Your teacher receives your current ETF holdings and both explanations." : "Hold two different ETFs and explain how each serves its goal."}</span></div><button disabled={!ready || busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
+    <div className="module-action-bar"><div><strong>{mission.met ? "Two ETFs verified" : `${mission.qualifyingEtfs.length}/2 ETFs held`}</strong><span>{ready ? "Your teacher receives your current ETF holdings and both explanations." : "You can submit your current work at any time, even with unanswered questions."}</span></div><button disabled={busy} onClick={submit}>{busy ? "Submitting…" : post.submission ? "Update submission" : "Submit mission"}</button></div>
   </div>;
 }
 
@@ -3227,14 +3191,14 @@ function SortActivity({ id, moduleNumber, onBack }: { id: string; moduleNumber?:
               ? `Submission ${submitted.attemptNo} — your teacher will check it. Move companies and submit again if you change your mind.`
               : allPlaced
                 ? "Every company is in a category — submit when you are happy with it."
-                : `Sort all ${act.tokens.length} to submit. Your placements save automatically.`}
+                : `${placedCount} of ${act.tokens.length} placed. You can submit your current work at any time.`}
           </span>
         </div>
         <div className="row">
           <button className="ghost" disabled={saving || busy || placedCount === 0} onClick={save}>
             {saving ? "Saving…" : "Save draft"}
           </button>
-          <button disabled={busy || !allPlaced} onClick={submit}>
+          <button disabled={busy} onClick={submit}>
             {busy ? "Submitting…" : submitted ? "Submit again" : "Submit"}
           </button>
         </div>

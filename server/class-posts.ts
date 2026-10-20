@@ -170,17 +170,10 @@ export async function submitEtfMission(opts: {
     if (existing) return { submittedAt: existing.created_at, deduped: true };
   }
   const state = await etfMissionState(opts.post, opts.userId);
-  if (!state.met) throw new ClassPostError("NOT_READY", "Hold two different ETFs before submitting.");
   const gapTicker = String(opts.response?.gapTicker || "").trim().toUpperCase();
   const convictionTicker = String(opts.response?.convictionTicker || "").trim().toUpperCase();
-  if (!gapTicker || !convictionTicker || gapTicker === convictionTicker ||
-      !state.qualifyingEtfs.some((fund: any) => fund.ticker === gapTicker) ||
-      !state.qualifyingEtfs.some((fund: any) => fund.ticker === convictionTicker)) {
-    throw new ClassPostError("INVALID_INPUT", "Choose two different ETFs you currently hold.");
-  }
   const gapExplanation = String(opts.response?.gapExplanation || "").trim();
   const convictionExplanation = String(opts.response?.convictionExplanation || "").trim();
-  if (!gapExplanation || !convictionExplanation) throw new ClassPostError("INVALID_INPUT", "Explain how each ETF serves its goal.");
   const submittedAt = nowIso();
   await run(`INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`, [newId("csub"), opts.post.id, opts.userId,
@@ -208,17 +201,10 @@ export async function submitPortfolioMission(opts: {
     if (existing) return { submittedAt: existing.created_at, deduped: true };
   }
   const state = await portfolioMissionState(opts.post, opts.userId);
-  if (!state.met) throw new ClassPostError("NOT_READY", "Your live portfolio has not met every mission target yet.");
   const picks = Array.isArray(opts.response?.picks) ? opts.response.picks : [];
-  if (picks.length !== 3) throw new ClassPostError("INVALID_INPUT", "Explain exactly three current stock holdings.");
-  const cleanPicks = picks.map((pick: any) => ({ ticker: String(pick?.ticker || "").trim().toUpperCase(), thesis: String(pick?.thesis || "").trim() }));
-  if (new Set(cleanPicks.map((pick: any) => pick.ticker)).size !== 3) throw new ClassPostError("INVALID_INPUT", "Choose three different tickers.");
-  for (const pick of cleanPicks) {
-    if (!state.companies.some((holding: any) => holding.ticker === pick.ticker)) throw new ClassPostError("INVALID_INPUT", `${pick.ticker || "Each pick"} must be a current stock holding.`);
-    if (!pick.thesis) throw new ClassPostError("INVALID_INPUT", `Add a short answer for ${pick.ticker}.`);
-  }
+  // Missing answers and unmet holdings goals are recorded for teacher review.
+  const cleanPicks = [0, 1, 2].map(i => ({ ticker: String(picks[i]?.ticker || "").trim().toUpperCase(), thesis: String(picks[i]?.thesis || "").trim() }));
   const reflection = String(opts.response?.reflection || "").trim();
-  if (!reflection) throw new ClassPostError("INVALID_INPUT", "Add a final reflection.");
   const submittedAt = nowIso();
   await run(
     `INSERT INTO class_post_submissions (id, post_id, user_id, response, evidence, idempotency_key, created_at)

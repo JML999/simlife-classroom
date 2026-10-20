@@ -253,8 +253,8 @@ export async function attemptsFor(activityId: string, userId: string): Promise<a
 // --- drafts -----------------------------------------------------------------
 //
 // One row per student per activity, upserted on every Save. Partial progress
-// is fine here — unlike Submit, a draft needs no completeness check and is
-// never graded.
+// is fine here. Drafts are never graded; an explicit submission may also
+// be partial, and records which tickers were left unplaced.
 
 export interface SortDraft {
   placements: Record<string, string>;

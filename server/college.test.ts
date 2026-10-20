@@ -49,7 +49,9 @@ test("incomplete drafts are private, trimmed and appear in teacher progress", as
   const detail = (await progress.studentModuleDetail("student-a"))[0];
   assert.equal(detail.status,"in_progress"); assert.equal(detail.partsDone,0); assert.equal(detail.partsTotal,5);
   assert.equal((await progress.moduleProgress("college-class")).students["student-a"].started,1);
-  await assert.rejects(college.submitCollegePaths({post,userId:"student-a",response:shared.emptyCollegeResearch()}),/Finish the independent research/);
+  await college.submitCollegePaths({post,userId:"student-a",response:shared.emptyCollegeResearch()});
+  const submitted = (await progress.studentModuleDetail("student-a"))[0];
+  assert.equal(submitted.status, "submitted"); assert.equal(submitted.partsDone, 0);
 });
 test("four-route submission needs no holdings and retries safely", async () => {
   const post = (await posts.getClassPost(id))!;
@@ -80,13 +82,13 @@ test("visibility, class scope, role and status enforce access without deleting w
   assert.throws(() => college.cleanCollegeResponse({paths:[{name:42}]}),/must be text/);
 });
 
-test("Other requires a name, every route needs evidence, and prior work survives", async () => {
+test("partial school choices and missing evidence submit without losing prior work", async () => {
   const post = (await posts.getClassPost(id))!;
   const other = structuredClone(response); other.routes[0].institution = "other";
-  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response:other}),/Finish the independent research/);
+  await college.submitCollegePaths({post,userId:"student-b",response:other});
   other.routes[0].otherInstitution = "My university";
   other.routes[3].research.weakEmployment.source = "";
-  await assert.rejects(college.submitCollegePaths({post,userId:"student-b",response:other}),/Finish the independent research/);
+  await college.submitCollegePaths({post,userId:"student-b",response:other});
   other.routes[3].research.weakEmployment.source = "https://www.bls.gov/ooh/";
   other.previousWork = {paths:[{name:"Earlier option"}],leaning:"",reason:"",nextStep:""};
   await college.saveCollegeDraft(post,"student-b",other);
@@ -151,7 +153,9 @@ test("school costs is a separate module, carries over only each student's school
   let detail = (await progress.studentModuleDetail("student-a")).find(m => m.id === post.id)!;
   assert.equal(detail.status, "in_progress");
   assert.equal(detail.partsDone, 0);
-  await assert.rejects(college.submitCollegePaths({post, userId:"student-a", response:initial}), /three valid dollar amounts/);
+  await college.submitCollegePaths({post, userId:"student-a", response:initial});
+  const partial = (await progress.studentModuleDetail("student-a")).find(m => m.id === post.id)!;
+  assert.equal(partial.status, "submitted"); assert.equal(partial.partsDone, 0);
   await assert.rejects(college.saveCollegeDraft(post, "student-a", response), /different assignment/);
   await assert.rejects(college.submitCollegePaths({post, userId:"student-a", response}), /revised/);
   const complete = structuredClone(initial);

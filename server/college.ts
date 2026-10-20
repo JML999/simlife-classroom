@@ -89,7 +89,7 @@ export async function saveCollegeDraft(post: ClassPost, userId: string, value: a
 export async function submitCollegePaths(opts: { post: ClassPost; userId: string; response: any; idempotencyKey?: string }) {
   await access(opts.post, opts.userId);
   if (opts.response?.version !== collegeResponseVersion(opts.post)) throw new ClassPostError("INVALID_INPUT", "This assignment has been revised. Complete the four-route research worksheet before submitting.");
-  const response = cleanCollegeResponse(opts.response, true);
+  const response = cleanCollegeResponse(opts.response);
   return withTx(async tx => {
     // Per-student lock also serializes simultaneous submission retries on Postgres.
     await tx.one(`SELECT id FROM users WHERE id = ?${tx.dialect === "pg" ? " FOR UPDATE" : ""}`, [opts.userId]);

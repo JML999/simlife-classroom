@@ -450,3 +450,10 @@ Still open:
 - Added mission draft endpoint support using existing draft table and access checks. Teacher progress recognizes saved mission write-ups as in progress. Successful mission submission clears its draft after pending client saves settle.
 - Verification: typecheck, 129/129 tests, build. Isolated browser confirmed all five module types; blur/back/close-tab restore; clean-device account drafts; partial drafts not submitted; newer sorting revisions/empty placements; interrupted network recovery; account isolation. Scripts in `/tmp/simlife-autosave-check/`.
 - Pushing this update; Render deployment completion not yet verified.
+
+## 2026-10-20 — Always allow student submissions
+- Per teacher request, Submit stays enabled for partial or blank work in all five student modules (disabled only while a request is processing). Portfolio short-answer fields are always accessible instead of locked behind holdings goals.
+- Server accepts unfinished college research/costs and stock/ETF write-ups. Missing explanations, invalid cost formatting, incomplete source links and unmet portfolio goals no longer block submission. Actual holdings/goal evidence and section counts remain truthful for teacher review. Access controls, published/hidden scope, response shape checks and retry protections remain.
+- Updated prior completeness-rejection regressions to acceptance checks, including submitted status with zero complete sections and blank write-ups with unmet goals. Sorting already accepted incomplete placements on the server.
+- Gate passed: typecheck, 129/129 tests, build. Isolated browser submitted partial/blank work in every module, verified raw cost/source text survives, goal evidence stays false with no holdings, drafts clear, and no client errors. Fixture scripts `/tmp/simlife-partial-check/`.
+- Pushing for Render auto-deploy; rollout completion not yet verified.
