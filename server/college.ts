@@ -17,7 +17,7 @@ export function cleanCollegeResponse(value: any, complete = false): CollegeRespo
     return text;
   };
   if (value?.version === 4) {
-    const response = { ...emptyEducationResponse(), routeId: clean(value.routeId), reason: clean(value.reason) };
+    const response = { ...emptyEducationResponse(), routeId: clean(value.routeId), reason: clean(value.reason), signature: clean(value.signature).slice(0, 120) };
     if (response.routeId && !EDUCATION_PATHS.some(p => p.id === response.routeId)) throw new ClassPostError("INVALID_INPUT", "Choose one of the listed paths.");
     return response;
   }

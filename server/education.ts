@@ -55,7 +55,7 @@ export async function ensureEducationBills(userId?: string, now = new Date()) {
 export async function educationState(userId: string, now = new Date()) {
   await ensureEducationBills(userId, now);
   const decision = await one<any>(`SELECT * FROM education_decisions WHERE user_id = ?`, [userId]);
-  const user = await one<any>(`SELECT job_title,job_pay_cents,rent_cents,car_payment_cents,class_id FROM users WHERE id = ?`, [userId]);
+  const user = await one<any>(`SELECT name,job_title,job_pay_cents,rent_cents,car_payment_cents,class_id FROM users WHERE id = ?`, [userId]);
   const paid = decision ? await one<any>(`SELECT COALESCE(SUM(b.paid_cents),0) AS cents FROM education_installments i JOIN bills b ON b.id=i.bill_id WHERE i.decision_id=?`, [decision.id]) : null;
   const other = await q<any>(`SELECT b.title,b.amount_cents,b.paid_cents,b.due_at FROM bills b
     WHERE b.user_id=? AND b.paid_at IS NULL AND NOT EXISTS (SELECT 1 FROM education_installments i WHERE i.bill_id=b.id)`, [userId]);
@@ -65,14 +65,14 @@ export async function educationState(userId: string, now = new Date()) {
   const otherDue = other.filter(b => b.due_at <= cutoff && !(rent && /rent/i.test(b.title)) && !(car && /car payment|auto payment/i.test(b.title)))
     .reduce((sum, b) => sum + Math.max(0, Number(b.amount_cents) - Number(b.paid_cents || 0)), 0);
   const terms = decision ? JSON.parse(decision.terms) : null;
-  return { enabled: await educationEnabled(user?.class_id),
+  return { studentName: user?.name || "", enabled: await educationEnabled(user?.class_id),
     decision: decision ? { id: decision.id, routeId: decision.route_id, reason: decision.reason, terms, outcome: JSON.parse(decision.outcome), createdAt: decision.created_at,
       paidCents: Number(paid?.cents || 0), remainingCents: Math.max(0, terms.totalCents - Number(paid?.cents || 0)) } : null,
     budget: { jobTitle: user?.job_title, weeklyPayCents: Number(user?.job_pay_cents || 0), monthlyPayCents: monthlyFromWeekly(Number(user?.job_pay_cents || 0)),
       rentCents: rent, carCents: car, otherDueCents: otherDue, claimBalanceCents: Number(claims?.cents || 0), existingExpensesCents: rent + car + otherDue } };
 }
 /** A financial decision is one-shot, server-drawn, and atomic with the job and first bill. */
-export async function chooseEducation(opts: { post: ClassPost; userId: string; routeId: string; reason: string; now?: Date; drawIndex?: number }) {
+export async function chooseEducation(opts: { post: ClassPost; userId: string; routeId: string; reason: string; signature?: string; now?: Date; drawIndex?: number }) {
   await educationAccess(opts.post, opts.userId);
   const route = EDUCATION_PATHS.find(p => p.id === opts.routeId);
   if (!route || typeof opts.reason !== "string" || !opts.reason.trim() || opts.reason.length > 6000) throw new ClassPostError("INVALID_INPUT", "Choose a path and explain your choice before making your final decision. You can submit unfinished work separately.");
@@ -84,12 +84,15 @@ export async function chooseEducation(opts: { post: ClassPost; userId: string; r
       if (existing.route_id !== route.id) throw new ClassPostError("INVALID_INPUT", "Your official path is already chosen. You cannot reroll or take another loan.");
       return;
     }
+    const signature = typeof opts.signature === "string" ? opts.signature.trim() : "";
+    const normalize = (name: string) => name.normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase();
+    if (!signature || signature.length > 120 || normalize(signature) !== normalize(user.name)) throw new ClassPostError("INVALID_INPUT", "Sign with your account name to accept this path and its payment terms.");
     if (!await t.one(`SELECT class_id FROM education_class_settings WHERE class_id = ? AND spins_enabled = 1`, [user.class_id])) throw new ClassPostError("NOT_READY", "Your teacher has not opened career decisions for this period yet.");
     if (!user.job_title || !(Number(user.job_pay_cents) > 0)) throw new ClassPostError("NOT_READY", "Ask your teacher to assign your current job first.");
     const index = route.id === "work" ? -1 : opts.drawIndex ?? randomInt(route.jobs.length);
     if (route.id !== "work" && (!Number.isInteger(index) || !route.jobs[index])) throw new ClassPostError("INVALID_INPUT", "Invalid spin result.");
     const outcome = index < 0 ? { index: -1, title: user.job_title, weeklyCents: Number(user.job_pay_cents) } : { ...route.jobs[index], index };
-    const terms = { ...route, ...repaymentSchedule(route.principalCents), aprBps: EDUCATION_APR_BPS, months: EDUCATION_MONTHS };
+    const terms = { ...route, ...repaymentSchedule(route.principalCents), aprBps: EDUCATION_APR_BPS, months: route.principalCents ? EDUCATION_MONTHS : 0, signature, signedAt: now.toISOString(), financingVersion: 2 };
     const id = newId("education"), createdAt = now.toISOString();
     const decision = { id, user_id: user.id, terms: JSON.stringify(terms), created_at: createdAt };
     await t.run(`INSERT INTO education_decisions (id,user_id,post_id,route_id,reason,terms,outcome,created_at) VALUES (?,?,?,?,?,?,?,?)`,
@@ -97,7 +100,7 @@ export async function chooseEducation(opts: { post: ClassPost; userId: string; r
     if (index >= 0) await t.run(`UPDATE users SET job_title=?,job_pay_cents=?,job_updated_at=? WHERE id=?`, [outcome.title,outcome.weeklyCents,createdAt,user.id]);
     await issueInstallments(t, decision, now);
     await t.run(`INSERT INTO class_post_submissions (id,post_id,user_id,response,evidence,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?)`,
-      [newId("csub"),opts.post.id,user.id,JSON.stringify({version:4,routeId:route.id,reason:opts.reason.trim()}),JSON.stringify({kind:"education_decision",outcome,terms}),`education:${id}`,createdAt]);
+      [newId("csub"),opts.post.id,user.id,JSON.stringify({version:4,routeId:route.id,reason:opts.reason.trim(),signature}),JSON.stringify({kind:"education_decision",outcome,terms}),`education:${id}`,createdAt]);
     await t.run(`DELETE FROM class_post_drafts WHERE post_id=? AND user_id=?`, [opts.post.id,user.id]);
   });
   return educationState(opts.userId, now);

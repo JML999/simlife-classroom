@@ -20,10 +20,12 @@ page. Existing period visibility checkboxes can hide this module as usual.
 
 Compare keep-working, four-year/VSU, two-year/GSU Perimeter, art/SCAD, and
 trade/SRTC routes. Each school route has four equal-probability job outcomes.
-Explain the choice in one answer, then make one official decision. No post-spin
+Explore four school tabs (or Keep working), explain the choice in one answer,
+and sign with the account name before making one official decision. No post-spin
 reflection. Drafts autosave; Submit work accepts partial answers without taking
 out a loan or changing a job. Making the official decision is the separate,
-clearly labeled action that requires a chosen route and an explanation.
+clearly labeled action that requires a chosen route, explanation and matching typed signature.
+Changing paths clears the signature; partial submissions still need no signature.
 
 Keep-working preserves the job and adds no debt. A school-route spin assigns a
 job and future weekly pay, captures the explanation and terms, and creates the
@@ -33,25 +35,54 @@ accepted. Later job changes never change the loan's saved monthly payment.
 
 ## Financing assumptions
 
-School budgets and support are **fictional classroom scenarios**, not published
-prices, aid offers, eligibility estimates or claims about these institutions.
-School cost links allow comparison with real prices researched in module 2.
-No borrowed funds are added to checking; the scenario fast-forwards through
-training and licenses. Existing living expenses are reused, not reassigned.
+Costs now use published school-price baselines, checked **October 22, 2026**,
+with **no invented scholarship/support**. Full modeled school cost is borrowed.
+Housing, food and transportation are excluded because existing game bills cover
+those categories. These are estimates before actual financial aid, not an
+individual bill or a promise that the whole amount can be borrowed federally.
+Current rates are held flat across the credential; no tuition inflation,
+in-school interest, origination fees or program-specific extra charges are added.
 
-| Route | Classroom school budget | SimLife scholarship/support | Borrowed | Monthly payment |
-|---|---:|---:|---:|---:|
-| Keep working | $0 | $0 | $0 | $0 |
-| Four-year | $48,000 | $24,000 | $24,000 | $266.45 |
-| Two-year | $24,000 | $12,000 | $12,000 | $133.23 |
-| Art | $180,000 | $144,000 | $36,000 | $399.68 |
-| Trade | $12,000 | $4,000 | $8,000 | $88.82 |
+| Route | Full school cost / borrowed | Monthly payment, 25 years |
+|---|---:|---:|
+| Keep working | $0 | $0 |
+| VSU, four-year | $34,024 | $219.22 |
+| GSU Perimeter, two-year | $12,092 | $77.91 |
+| SCAD, four-year | $180,636 | $1,163.85 |
+| SRTC, trade example | $7,314 | $47.13 |
 
-Loan calculations use 6% APR over 120 monthly installments, amortized with
-monthly interest rounded to cents. The regular payment rounds up to a cent and
-the final installment adjusts to pay off exactly. This classroom rate and term
-are not presented as current federal repayment eligibility or an actual offer.
-Reference: https://studentaid.gov/articles/repayment-calculator/
+Cost calculations and sources:
+- VSU 2026–27 Georgia resident, 15 credits/semester: $3,653 tuition/mandatory
+  fees + $600 estimated books per semester, times eight semesters.
+  https://www.valdosta.edu/administration/finance-admin/financial-services/students/services/fee-schedule-for-undergraduates-effective-fall-2026.pdf
+- GSU Perimeter 2026–27 Georgia resident: $1,650 tuition + $340 fees + $1,033
+  estimated books/supplies per semester, times four semesters (30 credits/year).
+  Longer/selective programs and prerequisites can cost more.
+  https://admissions.gsu.edu/admissions/educators-guide/
+- SCAD 2026–27: $42,975 annual tuition + $2,034 estimated books/supplies, times
+  four years, plus $100 application + $500 enrollment one time.
+  https://www.scad.edu/content/cost-attendance
+  https://www.scad.edu/admission/tuition-and-fees/undergraduate
+- SRTC publishes credential-specific totals: the fixed trade-route baseline is
+  Air Conditioning Technology diploma, 54 credits/4 terms, $5,778 tuition +
+  $1,536 institutional fees = $7,314. The source lists no books/misc. allowance
+  for that diploma; actual supplies can add cost. Other examples are automotive
+  diploma $8,126, welding diploma $8,101 and master cosmetology TCC $6,982.05.
+  Those are disclosed in the tab; they are not claimed to cost exactly $7,314.
+  https://southernregional.edu/program-cost
+
+New loan calculations use **6% fixed classroom APR over 300 monthly installments
+(25 years)**. Each tab also compares a 10-year payoff: smaller monthly payments
+come with greater total interest. The agreement spells out principal, payment,
+number of years/installments, interest and total repayment; payment remains due
+if later employment changes. The recorded signature and timestamp are saved in
+immutable decision terms and the submission. This is a simulated agreement, not
+a real loan contract or a statement of federal repayment eligibility.
+
+Monthly interest rounds to cents. Regular payments round up to a cent and the
+final installment adjusts to pay off exactly. **Existing accepted decisions
+retain their original saved costs, payments, term and statements**; no migration
+rewrites previously accepted debt. Older decisions may have no signature.
 
 The first bill arrives immediately, due one calendar month after the choice.
 Another statement arrives every calendar month; a one-minute server timer,

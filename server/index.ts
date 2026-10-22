@@ -1047,7 +1047,7 @@ app.get("/api/class/posts/:id/education", requireAuth, async (req, res) => {
 app.post("/api/class/posts/:id/education/choose", requireAuth, async (req, res) => {
   const user = await currentUser(req); if (!user || user.role !== "student") { res.status(403).json({error:"Student access only."}); return; }
   const post = await getClassPost(String(req.params.id)); if (!post) { res.status(404).json({error:"Assignment not found."}); return; }
-  try { res.json(await chooseEducation({post,userId:user.id,routeId:String(req.body?.routeId || ""),reason:req.body?.reason})); }
+  try { res.json(await chooseEducation({post,userId:user.id,routeId:String(req.body?.routeId || ""),reason:req.body?.reason,signature:req.body?.signature})); }
   catch(err) { if (err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : err.code === "NOT_READY" ? 422 : 400).json({error:err.message}); return; } throw err; }
 });
 app.get("/api/teacher/classes/:id/education", requireCurrentTeacher, async (req, res) => {
