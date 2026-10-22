@@ -79,3 +79,4 @@ secrets here. Key vars:
 - `DEPLOY_SIMLIFE.md` — isolated Render deployment and classroom pilot checklist
 - `MARKET_DATA.md` — provider recommendation
 - `SESSION_HANDOFF.md` — what works, what's mocked, risks, run commands
+- `EDUCATION_GAME.md` — Black Monday, career choices, loan assumptions and monthly billing

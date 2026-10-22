@@ -908,3 +908,41 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
 }
 
 .module-autosave { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 12px 0 18px; }
+
+/* Final college decision: compare, explain, commit. */
+.education-hero { display: grid; grid-template-columns: minmax(0,1fr) 230px; gap: 28px; align-items: center; background: #edf0e2; }
+.education-hero h3, .education-step h3, .education-commit h3, .education-result h3 { font-family: var(--serif); font-size: 30px; margin: 12px 0 18px; }
+.education-hero img { width: 100%; }
+.education-assignment p { line-height: 1.65; }
+.education-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 22px; margin: 24px 0; }
+.education-stats span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.education-stats strong { font-family: var(--serif); font-size: 24px; overflow-wrap: anywhere; }
+.education-step { margin: 36px 0 24px; }
+.education-path-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.education-path { display: block; border: 2px solid var(--line); padding: 24px; border-radius: 16px; background: var(--panel-strong); min-width: 0; cursor: pointer; }
+.education-path.selected { border-color: var(--olive); background: #edf1e4; box-shadow: 0 0 0 3px #5b623b18; }
+.education-path-top { display: flex; align-items: center; gap: 12px; font-weight: 750; font-size: 17px; }
+.education-path input, .education-sound input { width: 19px; height: 19px; accent-color: var(--olive); flex-shrink: 0; }
+.education-path h4 { font-family: var(--serif); font-size: 25px; line-height: 1.35; margin: 20px 0 12px; }
+.education-path dl div { display: flex; gap: 14px; justify-content: space-between; margin-top: 13px; font-size: 14px; }
+.education-path dd { margin: 0; font-weight: 700; white-space: nowrap; }
+.education-payment { display: flex; align-items: baseline; gap: 9px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.education-payment strong { font-family: var(--serif); font-size: 38px; color: var(--olive); }
+.education-payment span { color: var(--muted); }
+.education-path a, .education-outcomes a { color: var(--olive-dark); text-underline-offset: 3px; font-size: 13px; }
+.education-outcomes td { vertical-align: top; }
+.education-outcomes small { display: block; white-space: normal; max-width: 300px; line-height: 1.5; margin: 8px 0; }
+.education-loan-math { padding: 20px; margin-top: 24px; border-radius: 12px; background: #f5eedc; }
+.education-result { border: 2px solid #879871; background: #f0f4e9; }
+.education-sound { display: flex; align-items: center; gap: 10px; margin: 24px 0; }
+.teacher-education h3 { font-family: var(--serif); font-size: 28px; }
+.wheel-mode { margin: 24px 0; max-width: 560px; }
+.education-spin-stage .life-wheel-stage-content { grid-template-columns: 1fr; justify-items: center; max-width: 760px; margin: auto; text-align: center; }
+.education-spin-stage .life-wheel-wrap { width: min(70vw,450px); --wheel-label-offset: -150px; }
+@media(max-width:760px) {
+ .education-path-grid, .education-stats, .education-hero { grid-template-columns: 1fr; }
+ .education-hero img { max-width: 190px; justify-self: center; }
+ .education-path { padding: 20px; }
+ .education-path dl div { flex-wrap: wrap; }
+ .education-spin-stage .life-wheel-wrap { --wheel-label-offset: calc(min(70vw,450px) * -.33); }
+}

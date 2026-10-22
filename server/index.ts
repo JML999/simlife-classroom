@@ -1,3 +1,6 @@
+import { BLACK_MONDAY_OPTIONS, EDUCATION_PATHS } from "../shared/education-paths.js";
+import { spinBlackMonday, blackMondayEvents } from "./black-monday.js";
+import { ensureEducationAssignment, ensureEducationBills, educationState, educationAccess, chooseEducation, educationEnabled, setEducationEnabled } from "./education.js";
 import { saveModuleDraft } from "./module-drafts.js";
 /**
  * SimLife Investing API. One Express process serves /api and (in production)
@@ -957,20 +960,26 @@ app.get("/api/life-events", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
   res.set("Cache-Control", "private, no-store");
-  res.json({ events: await studentLifeEvents(user.id) });
+  const education = await one<any>(`SELECT route_id,outcome,terms,created_at FROM education_decisions WHERE user_id=?`,[user.id]);
+  const career = education ? [{id:`education:${user.id}`,title:"Education decision",description:`${JSON.parse(education.terms).title}. Fixed monthly education payment: $${(JSON.parse(education.terms).monthlyCents / 100).toFixed(2)}.`,newJobTitle:JSON.parse(education.outcome).title,newPayCents:JSON.parse(education.outcome).weeklyCents,createdAt:education.created_at}] : [];
+  const events = [...await studentLifeEvents(user.id), ...await blackMondayEvents(undefined, user.id), ...career].sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  res.json({ events: events.slice(0,10) });
 });
 
 app.get("/api/teacher/life-events", requireCurrentTeacher, async (req, res) => {
   const classId = String(req.query["classId"] || "");
   if (!classId || !(await one(`SELECT id FROM classes WHERE id = ?`, [classId]))) { res.status(400).json({ error: "Choose a period." }); return; }
   res.set("Cache-Control", "private, no-store");
-  res.json({ options: LIFE_EVENT_OPTIONS, events: await classLifeEvents(classId) });
+  if (req.query.mode && !["life", "black_monday"].includes(String(req.query.mode))) { res.status(400).json({error:"Unknown wheel."}); return; }
+  res.json({ options: req.query.mode === "black_monday" ? BLACK_MONDAY_OPTIONS : LIFE_EVENT_OPTIONS,
+    events: req.query.mode === "black_monday" ? await blackMondayEvents(classId) : await classLifeEvents(classId) });
 });
 
 app.post("/api/teacher/life-events/spin", requireCurrentTeacher, async (req, res) => {
   const actor = (req as any).currentUser;
   try {
-    const event = await spinLifeEvent({ classId: String(req.body?.classId || ""), studentId: String(req.body?.studentId || ""), actorId: actor.id });
+    if (req.body?.mode && !["life", "black_monday"].includes(req.body.mode)) { res.status(400).json({error:"Unknown wheel."}); return; }
+    const event = await (req.body?.mode === "black_monday" ? spinBlackMonday : spinLifeEvent)({ classId: String(req.body?.classId || ""), studentId: String(req.body?.studentId || ""), actorId: actor.id });
     res.json({ event });
   } catch (err) {
     if (err instanceof LifeEventError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message, code: err.code }); return; }
@@ -1027,6 +1036,27 @@ app.put("/api/class/posts/:id/draft", requireAuth, async (req, res) => {
     if (err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ error: err.message }); return; }
     throw err;
   }
+});
+
+app.get("/api/class/posts/:id/education", requireAuth, async (req, res) => {
+  const user = await currentUser(req); if (!user) { res.status(401).json({error:"Sign in required."}); return; }
+  const post = await getClassPost(String(req.params.id)); if (!post) { res.status(404).json({error:"Assignment not found."}); return; }
+  try { await educationAccess(post,user.id); res.json({ ...await educationState(user.id), paths: EDUCATION_PATHS }); }
+  catch(err) { if (err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({error:err.message}); return; } throw err; }
+});
+app.post("/api/class/posts/:id/education/choose", requireAuth, async (req, res) => {
+  const user = await currentUser(req); if (!user || user.role !== "student") { res.status(403).json({error:"Student access only."}); return; }
+  const post = await getClassPost(String(req.params.id)); if (!post) { res.status(404).json({error:"Assignment not found."}); return; }
+  try { res.json(await chooseEducation({post,userId:user.id,routeId:String(req.body?.routeId || ""),reason:req.body?.reason})); }
+  catch(err) { if (err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : err.code === "NOT_READY" ? 422 : 400).json({error:err.message}); return; } throw err; }
+});
+app.get("/api/teacher/classes/:id/education", requireCurrentTeacher, async (req, res) => {
+  res.json({ enabled: await educationEnabled(String(req.params.id)), decisions: await q<any>(`SELECT d.user_id,u.name,d.route_id,d.outcome,d.created_at FROM education_decisions d JOIN users u ON u.id=d.user_id WHERE u.class_id=? ORDER BY d.created_at DESC`,[String(req.params.id)]) });
+});
+app.put("/api/teacher/classes/:id/education", requireCurrentTeacher, async (req, res) => {
+  if (typeof req.body?.enabled !== "boolean") { res.status(400).json({error:"Choose open or closed."}); return; }
+  try { await setEducationEnabled(String(req.params.id),req.body.enabled); res.json({enabled:req.body.enabled}); }
+  catch(err) { if (err instanceof ClassPostError) { res.status(404).json({error:err.message}); return; } throw err; }
 });
 
 // ---- Leaderboard: percent-only, public class periods, never students' dollars --
@@ -1140,6 +1170,7 @@ app.put("/api/teacher/classes/:id/modules", requireCurrentTeacher, async (req, r
 app.get("/api/bank", requireAuth, async (req, res) => {
   const user = await currentUser(req);
   if (!user) { res.status(401).json({ error: "Sign in required." }); return; }
+  await ensureEducationBills(user.id);
   const bank = await bankSummaryFor(user.id);
   const pf = await portfolioFor(user.id);
   res.json({
@@ -1148,6 +1179,7 @@ app.get("/api/bank", requireAuth, async (req, res) => {
     savingsInterest: bank.savingsInterest,
     bills: bank.bills,
     garnishments: bank.garnishments,
+    education: bank.education,
     recent: bank.recent,
     brokerage: { cashCents: pf.cashCents, portfolioCents: pf.portfolioCents },
     job: { title: (user as any).job_title ?? null, payCents: (user as any).job_pay_cents ?? null },
@@ -1172,7 +1204,8 @@ app.post("/api/bank/transfer", requireAuth, async (req, res) => {
       memo: String(req.body?.memo || ""),
       idempotencyKey: String(req.body?.idempotencyKey || ""),
     });
-    const bank = await bankSummaryFor(user.id);
+    await ensureEducationBills(user.id);
+  const bank = await bankSummaryFor(user.id);
     res.json({ ok: true, deduped: r.deduped, entry: r.entry, bank });
   } catch (err) { bankError(res, err); }
 });
@@ -1191,7 +1224,8 @@ app.post("/api/bank/bills/:id/pay", requireAuth, async (req, res) => {
       amountCents: dollars === undefined ? undefined : Math.round(dollars * 100),
       idempotencyKey: String(req.body?.idempotencyKey || ""),
     });
-    const bank = await bankSummaryFor(user.id);
+    await ensureEducationBills(user.id);
+  const bank = await bankSummaryFor(user.id);
     res.json({ ok: true, deduped: r.deduped, paidCents: r.paidCents, remainingCents: r.remainingCents, bank });
   } catch (err) { bankError(res, err); }
 });
@@ -1255,6 +1289,7 @@ async function batchStudents(classId: string, studentIds: unknown): Promise<{ id
 }
 
 app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
+  await ensureEducationBills();
   const classId = String(req.query["classId"] || "");
   const where = classId ? "AND u.class_id = ?" : "";
   const params = classId ? [classId] : [];
@@ -1521,6 +1556,10 @@ async function boot() {  validateProductionEnv();
   await ensureColumn("bill_disputes", "resolve_key", "TEXT");
   await ensureCollegeAssignment();
   await ensureCollegeCostsAssignment();
+  await ensureEducationAssignment();
+  await ensureEducationBills();
+  const educationTimer = setInterval(() => { void ensureEducationBills().catch(err => console.error("[education statements]", err instanceof Error ? err.message : "Statement refresh failed")); }, 60_000);
+  educationTimer.unref();
   if (demoEnabled()) await ensureDemoUsers();
   app.listen(PORT, HOST, () => {
     console.log(`[simlife] api on http://${HOST}:${PORT} (quotes: ${quotes.providerName})`);

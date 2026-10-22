@@ -552,6 +552,24 @@ export async function initSchema(): Promise<void> {
       PRIMARY KEY(post_id, user_id)
     )`,
 
+    `CREATE TABLE IF NOT EXISTS black_monday_events (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), class_id TEXT NOT NULL REFERENCES classes(id),
+      event_date TEXT NOT NULL, payload TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL,
+      UNIQUE(user_id, event_date)
+    )`,
+    `CREATE TABLE IF NOT EXISTS education_class_settings (
+      class_id TEXT PRIMARY KEY REFERENCES classes(id), spins_enabled INTEGER NOT NULL DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS education_decisions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id), post_id TEXT NOT NULL REFERENCES class_posts(id),
+      route_id TEXT NOT NULL, reason TEXT NOT NULL, terms TEXT NOT NULL, outcome TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS education_installments (
+      decision_id TEXT NOT NULL REFERENCES education_decisions(id), installment_no INTEGER NOT NULL,
+      bill_id TEXT NOT NULL UNIQUE REFERENCES bills(id), PRIMARY KEY(decision_id, installment_no)
+    )`,
+
     // Per-class module visibility. Store what is hidden, not what is visible:
     // newly published modules therefore appear by default without a backfill.
     // Hiding is presentation-only and never deletes progress or submissions.

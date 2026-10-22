@@ -1,3 +1,4 @@
+import { educationState } from "./education.js";
 /**
  * Per-student module progress for the teacher dashboard.
  *
@@ -21,7 +22,7 @@
 import { q, one } from "./db.js";
 import { classModuleCatalog, hiddenClassModuleKeys } from "./class-modules.js";
 import { getActivity, attemptsFor, draftFor, answerKeyFor } from "./sorting.js";
-import { collegeDraftFor, collegePartsDone, collegeResponseVersion } from "./college.js";
+import { collegeDraftFor, collegePartsDone, collegePartsTotal, collegeResponseVersion } from "./college.js";
 import { getClassPost, portfolioMissionState, etfMissionState, latestClassPostSubmission } from "./class-posts.js";
 
 export type ModuleStatus = "not_started" | "in_progress" | "submitted";
@@ -216,8 +217,8 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
         const currentSubmission = submission?.response?.version === collegeResponseVersion(post) ? submission : null;
         const response = currentSubmission?.response ?? draft?.response ?? submission?.response ?? null;
         out.push({ key: mod.key, kind: "post", id: mod.id, moduleNumber: mod.moduleNumber, container: "college", title: mod.title,
-          status: currentSubmission ? "submitted" : draft || submission ? "in_progress" : "not_started", partsDone: response?.version === collegeResponseVersion(post) ? collegePartsDone(response) : 0, partsTotal: 5, partsLabel: "sections",
-          detail: { missionKind: "college_pathways", submittedAt: currentSubmission?.createdAt ?? null, earlierSubmittedAt: submission && !currentSubmission ? submission.createdAt : null, draftAt: draft?.updatedAt ?? null, response } });
+          status: currentSubmission ? "submitted" : draft || submission ? "in_progress" : "not_started", partsDone: response?.version === collegeResponseVersion(post) ? collegePartsDone(response) : 0, partsTotal: collegeResponseVersion(post) === 4 ? 2 : 5, partsLabel: "sections",
+          detail: { missionKind: "college_pathways", submittedAt: currentSubmission?.createdAt ?? null, earlierSubmittedAt: submission && !currentSubmission ? submission.createdAt : null, draftAt: draft?.updatedAt ?? null, response, ...(collegeResponseVersion(post) === 4 ? { education: await educationState(userId) } : {}) } });
         continue;
       }
       if (post.kind === "etf_mission") {

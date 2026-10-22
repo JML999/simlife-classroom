@@ -1,3 +1,6 @@
+import { EDUCATION_PATHS } from "../shared/education-paths";
+import { EducationAssignment, TeacherEducationControls, EducationLoanStatus } from "./EducationAssignment";
+import { WheelFace, SPIN_DURATION } from "./SpinWheel";
 import { useModuleDraft } from "./use-module-draft";
 import { COLLEGE_COST_LINKS, COLLEGE_COST_FIELDS, emptyCollegeCosts, collegeCostRouteDone, type CostRoute, type CollegeCostsResponse } from "../shared/college-costs.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -314,7 +317,7 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
       {onboarding && ["match", "matched", "pending", "ambiguous"].includes(onboarding.state) && <OnboardingCard state={onboarding} onDone={async () => { await loadOnboarding(); await refreshSession(); await load(); }} />}
       {section === "dashboard" && <StudentBanking me={me} onChanged={load} onOpenInvesting={() => setSection("investing")} />}
       {section === "banking" && <StudentDashboard me={me} portfolio={pf} onOpen={setSection} onChanged={load} />}
-      {section === "class" && <ClassSection onOpenInvesting={() => setSection("investing")} />}
+      {section === "class" && <ClassSection onOpenInvesting={() => setSection("investing")} onCareerChanged={refreshSession} />}
       {section === "leaderboard" && <LeaderboardSection />}
       {section === "investing" && <div className="investing-section">
       <div className="page-intro">
@@ -524,6 +527,7 @@ function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfo
   return <div className="dashboard-experience">
     <div className="page-intro"><div><div className="eyebrow">{me.class?.name}</div><h2>Your money at a glance</h2><p>See what is available, what is due, and what you can put to work.</p></div><div className="teacher-summary"><strong>{money(total)}</strong><span>total simulated funds</span></div></div>
     {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
+    <EducationLoanStatus decision={bank?.education} />
     <div className="cards dashboard-cards">
       <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">{bank ? `${unpaid.length} unpaid bill${unpaid.length === 1 ? "" : "s"} →` : "Bills and spending"}</div></button>
       <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Move and grow money →</div></button>
@@ -768,6 +772,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
       </div>
       {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
       <WageClaimStatus claims={bank?.garnishments || []} />
+      <EducationLoanStatus decision={bank?.education} />
       {unpaidTotal > 0 && (
         <div className="money-reminder" role="note"><span>🔔</span><div><strong>{money(unpaidTotal)} is still spoken for</strong><p>You have {unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}. Your checking balance is not the same as money available to invest.</p></div></div>
       )}
@@ -927,7 +932,7 @@ function TeacherSortDetail({ mod }: { mod: any }) {
 // then the submitted write-up (picks + reflection) when there is one.
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
-  if (d.missionKind === "college_pathways") return <div className="module-submission"><p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : d.draftAt ? `Draft saved ${new Date(d.draftAt).toLocaleString()}` : d.earlierSubmittedAt ? `Earlier version submitted ${new Date(d.earlierSubmittedAt).toLocaleString()} · revised worksheet not submitted yet` : "Not started"}</p>{d.response && <CollegeResponseReview response={d.response} />}</div>;
+  if (d.missionKind === "college_pathways") return <div className="module-submission"><p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : d.draftAt ? `Draft saved ${new Date(d.draftAt).toLocaleString()}` : d.earlierSubmittedAt ? `Earlier version submitted ${new Date(d.earlierSubmittedAt).toLocaleString()} · revised worksheet not submitted yet` : "Not started"}</p>{d.response && <CollegeResponseReview response={d.response} />}{d.education?.decision && <p><strong>Official outcome:</strong> {d.education.decision.outcome.title} · Loan: {money(d.education.decision.terms.monthlyCents)}/month · Remaining scheduled repayment: {money(d.education.decision.remainingCents)}</p>}</div>;
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
   if (d.missionKind === "etf_mission") return <div className="module-submission">
     <p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : "Research in progress"} · ETFs held: {(d.qualifyingEtfs || []).map((fund: any) => fund.ticker).join(", ") || "none"}</p>
@@ -1553,23 +1558,9 @@ function WageClaimStatus({ claims }: { claims: any[] }) {
   return <section className="panel wage-claim-status"><h3>Wage garnishment</h3><p className="small">Classroom rule: future paychecks repay the debt first. Any remainder reaches checking.</p>{claims.map(c => <p key={c.id}><strong>{c.title}</strong>: {money(c.paidCents)} of {money(c.amountCents)} repaid. <strong>{c.remainingCents ? `${money(c.remainingCents)} remaining` : "Paid off. Regular pay resumes."}</strong></p>)}</section>;
 }
 
-const WHEEL_LABELS = ["Inheritance", "Tax refund", "Side gig", "Rebate", "Flat tire", "Phone repair", "Urgent care", "Parking ticket", "Career twist", "Career twist", "Credit-card debt"];
-const SPIN_DURATION = 6800;
-
-function WheelFace({ angle, options, presenting = false }: { angle: number; options: any[]; presenting?: boolean }) {
-  const step = 360 / Math.max(1, options.length);
-  const colors = ["#dfbd77", "#8d9d77", "#e7d7a5", "#b9c6a2", "#d4a994", "#9fa67d", "#ecc79f", "#a8bca6", "#d9bf89", "#c2ab9a", "#c99185"];
-  const background = `conic-gradient(from ${-step / 2}deg, ${options.flatMap((_, i) => [`${colors[i % colors.length]} ${i * step}deg ${(i + 1) * step - .8}deg`, `#62654c ${(i + 1) * step - .8}deg ${(i + 1) * step}deg`]).join(", ")})`;
-  return <div className={`life-wheel-wrap${presenting ? " is-presenting" : ""}`}>
-    <div className="life-wheel-pointer" aria-hidden="true">▼</div>
-    <div className="life-wheel" style={{ transform: `rotate(${angle}deg)`, background }} aria-hidden="true">
-      {options.map((option, index) => <span className="life-wheel-option" key={option.key} style={{ transform: `translate(-50%, -50%) rotate(${index * step}deg) translateY(var(--wheel-label-offset)) rotate(${-index * step}deg)` }}>{WHEEL_LABELS[index]}</span>)}
-      <span className="life-wheel-hub">SIMLIFE</span>
-    </div>
-  </div>;
-}
-
 function LifeEventWheel({ classId, students, onApplied }: { classId: string; students: any[]; onApplied: () => void }) {
+  const [mode, setMode] = useState("black_monday");
+  const modeRef = useRef(mode); modeRef.current = mode;
   const [options, setOptions] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [studentId, setStudentId] = useState("");
@@ -1585,9 +1576,10 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     if (!classId) return;
-    const r = await api<any>(`/api/teacher/life-events?classId=${encodeURIComponent(classId)}`, { cache: "no-store" });
+    const r = await api<any>(`/api/teacher/life-events?classId=${encodeURIComponent(classId)}&mode=${mode}`, { cache: "no-store" });
+    if (modeRef.current !== mode) return;
     setOptions(r.options); setEvents(r.events);
-  }, [classId]);
+  }, [classId, mode]);
   useEffect(() => { setStudentId(""); setResult(null); setOptions([]); setEvents([]); setError(""); void load().catch((e: any) => setError(e.message)); }, [load]);
   useEffect(() => {
     if (!presenting) return;
@@ -1619,7 +1611,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
       try { audioRef.current ??= new AudioContext(); await audioRef.current.resume(); } catch { /* The visual spin still works when audio is unavailable. */ }
     }
     try {
-      const r = await api<any>("/api/teacher/life-events/spin", { method: "POST", body: JSON.stringify({ classId, studentId }) });
+      const r = await api<any>("/api/teacher/life-events/spin", { method: "POST", body: JSON.stringify({ classId, studentId, mode }) });
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const target = ((-r.event.index * (360 / options.length) - angleRef.current) % 360 + 360) % 360 + (reducedMotion ? 0 : 2160);
       const startAngle = angleRef.current;
@@ -1651,7 +1643,8 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
   const todayEvent = events.find((event) => event.userId === studentId && new Date(event.createdAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) === today);
   const resultCard = <div className={`life-event-result${result ? " is-revealed" : ""}`} aria-live="polite">{result ? <><span className="eyebrow">The wheel landed on</span><strong>{result.title}</strong><p>{result.description}</p>{result.newJobTitle && <p>New job: {result.newJobTitle} · {money(result.newPayCents)} per paycheck</p>}</> : <p>{busy ? "The wheel is spinning…" : "Choose a student and spin to reveal their life event."}</p>}</div>;
   return <section className="panel life-event-section" aria-label="Life event wheel">
-    <div className="panel-heading"><div><div className="eyebrow">SimLife day</div><h2>Life event wheel</h2><p className="hint">Choose one student and spin. The result posts directly to checking, creates a payable bill, or changes future pay. One result per student per day.</p></div></div>
+    <div className="panel-heading"><div><div className="eyebrow">SimLife day</div><h2>{mode === "black_monday" ? "Black Monday" : "Life event wheel"}</h2><p className="hint">{mode === "black_monday" ? "Choose a student for one of five equal-chance outcomes: a replacement job with fixed weekly pay, or keep their current job." : "Choose one student and spin. The result posts directly to checking, creates a payable bill, or changes future pay. One result per student per day."}</p></div></div>
+    <div className="field wheel-mode"><label htmlFor="life-wheel-mode">Choose a wheel</label><select id="life-wheel-mode" value={mode} disabled={busy} onChange={e => { setMode(e.target.value); setAngle(0); angleRef.current = 0; }}><option value="black_monday">Black Monday · jobs only</option><option value="life">Original life events</option></select><p className="small">{mode === "black_monday" ? "Five equally likely outcomes. Four replacement jobs with fixed weekly pay, or keep your job. No pay rankings. One Black Monday result per student per day." : "Cash, bills, promotions, and job changes. Original wheel rules apply."}</p></div>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="life-event-layout">
       <WheelFace angle={angle} options={options} />
@@ -1665,7 +1658,7 @@ function LifeEventWheel({ classId, students, onApplied }: { classId: string; stu
     {presenting && createPortal(<div className="life-wheel-stage" role="dialog" aria-modal="true" aria-label="Life event wheel presentation">
       <div className="life-wheel-stage-top"><span>SIMLIFE · CLASSROOM EVENT</span><button className="ghost" disabled={busy} onClick={() => setPresenting(false)} aria-label="Close presentation">Close ×</button></div>
       <div className="life-wheel-stage-content">
-        <div className="life-wheel-stage-heading"><span className="eyebrow">The wheel of life</span><h2>{studentId ? selectedName : "Who’s up next?"}</h2><p>{busy ? "Round and round…" : result ? "A new chapter begins." : "Choose a student, then give the wheel a spin."}</p></div>
+        <div className="life-wheel-stage-heading"><span className="eyebrow">{mode === "black_monday" ? "Black Monday" : "The wheel of life"}</span><h2>{studentId ? selectedName : "Who’s up next?"}</h2><p>{busy ? "Round and round…" : result ? "A new chapter begins." : "Choose a student, then give the wheel a spin."}</p></div>
         <WheelFace angle={angle} options={options} presenting />
         <div className="life-wheel-stage-bottom">
           {error && <div className="error" role="alert">{error}</div>}
@@ -1988,6 +1981,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 
       {classId && summary.some((s: any) => Number(s.garnishment_cents) > 0) && <div className="panel"><h2>Active wage claims</h2><p className="hint">Simplified classroom rule: paychecks repay these balances before reaching checking. Withholding stops when paid.</p>{summary.filter((s: any) => Number(s.garnishment_cents) > 0).map((s: any) => <p key={s.id}><strong>{s.name}</strong>: {money(s.garnishment_cents)} remaining</p>)}</div>}
       {classId && <LifeEventWheel key={classId} classId={classId} students={summary} onApplied={() => { void load(); onChanged(); }} />}
+      {classId && <TeacherEducationControls key={`education:${classId}`} classId={classId} />}
 
       <div className="panel">
         <h2>Class accounts</h2>
@@ -2185,14 +2179,14 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 
 // Shared frame for module cards; each activity has its own illustration.
 function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
-  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college" | "costs";
+  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college" | "costs" | "education";
 }) {
   return (
     <div className={`module-cover${art === "etf" ? " module-cover-etf" : ""}`}>
       <span className="module-kind">{moduleNumber ? `Module ${moduleNumber} · ${kindLabel}` : kindLabel}</span>
       {submitted && <span className="module-complete">Submitted ✓</span>}
       <div className="module-cover-art" aria-hidden="true">
-        {art === "costs" ? <img src="/module-art/college-costs.svg" alt="" /> : art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
+        {art === "education" ? <img src="/module-art/education-decision.svg" alt="" /> : art === "costs" ? <img src="/module-art/college-costs.svg" alt="" /> : art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
           <svg viewBox="0 0 280 132" fill="none">
             <circle cx="140" cy="32" r="18" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
             <text x="140" y="39" textAnchor="middle" fontSize="20" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
@@ -2239,10 +2233,10 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
   );
 }
 
-function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
+function ClassSection({ onOpenInvesting, onCareerChanged }: { onOpenInvesting: () => void; onCareerChanged: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
   const [posts, setPosts] = useState<any[] | null>(null);
-  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college" | "costs"; id: string; moduleNumber?: number } | null>(null);
+  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college" | "costs" | "education"; id: string; moduleNumber?: number } | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -2261,6 +2255,7 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
   if (open?.kind === "mission") return <PortfolioMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
   if (open?.kind === "etf") return <EtfMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
 
+  if (open?.kind === "education") return <EducationAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} onApplied={onCareerChanged} />;
   if (open?.kind === "costs") return <CollegeCostsAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
   if (open?.kind === "college") return <CollegeAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
 
@@ -2300,8 +2295,8 @@ function ClassSection({ onOpenInvesting }: { onOpenInvesting: () => void }) {
         return <section className="class-module-section" key={route} aria-label={route === "college" ? "Is College Right for Me?" : "Investing"}>
           <div className="class-module-section-heading"><span className="eyebrow">{route === "college" ? "Education & career" : "Portfolio & markets"}</span><h3>{route === "college" ? "Is College Right for Me?" : "Investing"}</h3><p>{route === "college" ? "Research the options. Compare their financial and academic trade-offs." : "Learn about stocks, sectors, and ETFs through your own portfolio."}</p></div>
       <div className="module-grid">
-        {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: post.spec?.responseVersion === 3 ? "costs" : "college", id: post.id, moduleNumber: post.moduleNumber })}>
-          <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art={post.spec?.responseVersion === 3 ? "costs" : "college"} />
+        {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: post.spec?.responseVersion === 4 ? "education" : post.spec?.responseVersion === 3 ? "costs" : "college", id: post.id, moduleNumber: post.moduleNumber })}>
+          <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art={post.spec?.responseVersion === 4 ? "education" : post.spec?.responseVersion === 3 ? "costs" : "college"} />
           <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt ? "badge-paid" : "badge-due"}>{post.submittedAt ? "Submitted" : post.hasDraft ? "Draft saved" : post.hasEarlierSubmission ? "Earlier work saved · revised assignment" : "Not started"}</span></div>
         </button>; })() : module.kind === "etf" ? (() => { const post = module.data; const m = post.mission;
           const status = post.submittedAt ? "Submitted" : m.met ? "Ready to submit" : m.etfs.length ? "In progress" : "Not started";
@@ -2358,6 +2353,7 @@ const COLLEGE_PATH_FIELDS = [
   ["questions", "What you still need to know", "What would you need to find out before choosing this path?"],
 ] as const;
 function CollegeResponseReview({ response }: { response: any }) {
+  if (response.version === 4) return <div className="college-response-review"><p><strong>Chosen path:</strong> {EDUCATION_PATHS.find(p => p.id === response.routeId)?.title || "Not chosen"}</p><p><strong>Reason:</strong> {response.reason || "No answer yet"}</p></div>;
   if (response.version === 3) return <CollegeCostsReview response={response} />;
   if (response.version === 2) return <CollegeResearchReview response={response} />;
   return <div className="college-response-review"><div className="college-review-paths">{(response.paths || []).map((path: any, index: number) => <div key={index}><h4>Path {index === 0 ? "A" : "B"}: {path.name}</h4>{COLLEGE_PATH_FIELDS.slice(1).map(([key, label]) => <p key={key}><strong>{label}:</strong> {path[key]}</p>)}</div>)}</div><p><strong>Leaning:</strong> {response.leaning === "undecided" ? "Still exploring" : `Path ${response.leaning}`}. {response.reason}</p><p><strong>This week’s next step:</strong> {response.nextStep}</p></div>;

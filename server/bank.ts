@@ -705,11 +705,12 @@ export async function accrueSavingsForUser(userId: string, now = new Date()): Pr
 }
 
 export async function bankSummaryFor(userId: string): Promise<{
-  checkingCents: number; savingsCents: number; bills: Bill[]; recent: JournalEntry[];
+  checkingCents: number; savingsCents: number; bills: Bill[]; recent: JournalEntry[]; education: any;
   garnishments: { id: string; title: string; amountCents: number; paidCents: number; remainingCents: number }[];
   savingsInterest: { apyBps: number; apy: number; label: string; asOf: string; earnedCents: number; projection: { years: number; balanceCents: number; interestCents: number }[] };
 }> {
   const { one, q } = await import("./db.js");
+  const education = await (await import("./education.js")).educationState(userId);
   await accrueSavingsForUser(userId);
   const rate = savingsRate();
   const emptyInterest = { ...rate, earnedCents: 0, projection: [1, 5, 10].map((years) => ({ years, balanceCents: 0, interestCents: 0 })) };
@@ -743,7 +744,7 @@ export async function bankSummaryFor(userId: string): Promise<{
     return { years, balanceCents, interestCents: balanceCents - savings };
   });
   return {
-    checkingCents: Number(acct?.checking_cents || 0), savingsCents: savings, bills: withStatus, recent, garnishments,
+    checkingCents: Number(acct?.checking_cents || 0), savingsCents: savings, bills: withStatus, recent, garnishments, education: education.decision,
     savingsInterest: acct ? { ...rate, earnedCents: Number(earned?.cents || 0), projection } : emptyInterest,
   };
 }

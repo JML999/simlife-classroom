@@ -23,8 +23,10 @@ async function activityCount(t: Tx, userId: string): Promise<number> {
       (SELECT COUNT(*) FROM bill_disputes WHERE user_id = ?) +
       (SELECT COUNT(*) FROM income_postings WHERE user_id = ?) +
       (SELECT COUNT(*) FROM wage_claims WHERE user_id = ?) +
-      (SELECT COUNT(*) FROM student_account_merges WHERE target_user_id = ?) AS n`,
-    [userId, userId, userId, userId, userId, userId, userId, userId],
+      (SELECT COUNT(*) FROM student_account_merges WHERE target_user_id = ?) +
+      (SELECT COUNT(*) FROM education_decisions WHERE user_id = ?) +
+      (SELECT COUNT(*) FROM black_monday_events WHERE user_id = ?) AS n`,
+    [userId, userId, userId, userId, userId, userId, userId, userId, userId, userId],
   );
   return Number(row?.n || 0);
 }
