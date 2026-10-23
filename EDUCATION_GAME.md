@@ -107,7 +107,8 @@ representative outcomes for a route, not school-specific placement statistics
 or claims that every program is offered at every named campus. National medians
 are not starting-salary guarantees. Photography and cosmetology annualize the
 published hourly median at 2,080 hours. The game takes 80% of annual benchmark
-pay, divides by 52 and rounds to whole dollars to assign weekly game pay. This
+pay, divides by 52 and rounds to whole dollars to assign weekly game pay. The social-worker outcome is explicitly overridden to $600/week by the teacher
+(as of October 23, 2026), while its actual national wage benchmark stays visible. This
 is a take-home approximation, not individualized tax advice or a tax engine.
 Monthly views use weekly pay × 52 ÷ 12. Budget estimates reuse monthly rent/car
 and other unpaid non-loan bills due within 30 days; the latter are not falsely
