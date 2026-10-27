@@ -408,3 +408,18 @@ test("class transfers immediately move rankings and retain return history", asyn
   await run(`UPDATE users SET class_id = NULL WHERE id = ?`, [id]);
   assert.equal((await lb.leaderboardFor(destination)).entries.length, 0);
 });
+
+
+test("green current holdings do not erase realized losses or let new funding reset performance",async()=>{
+ const {sell,holdingsFor}=await import('./ledger.js');
+ const s=await student('lbclass',100000,'Prior loss then green holdings');
+ setPrice('HIST',10000);await buy({userId:s,ticker:'HIST',dollarsCents:100000,idempotencyKey:uid(),tradingFrozen:false,...await quoteFor('HIST')});
+ await lb.writeSnapshot(await lb.buildSnapshot(s,'2026-09-21',priceOf));
+ setPrice('HIST',9000);await sell({userId:s,ticker:'HIST',sellAll:true,idempotencyKey:uid(),tradingFrozen:false,...await quoteFor('HIST')});
+ const sold=await lb.buildSnapshot(s,'2026-09-22',priceOf);assert.equal(sold.twrBp,-1000);await lb.writeSnapshot(sold);
+ await adjustCash({userId:s,actorId:'lbteacher',amountCents:100000,reason:'Additional funds',idempotencyKey:uid()});
+ const funded=await lb.buildSnapshot(s,'2026-09-23',priceOf);assert.equal(funded.twrBp,-1000);await lb.writeSnapshot(funded);
+ setPrice('HIST',10000);await buy({userId:s,ticker:'HIST',dollarsCents:190000,idempotencyKey:uid(),tradingFrozen:false,...await quoteFor('HIST')});
+ setPrice('HIST',10100);const holding=(await holdingsFor(s,priceOf)).holdings[0];assert.equal(holding.avgCostCents,10000);assert.equal(holding.gainLossCents,1900);
+ const latest=await lb.buildSnapshot(s,'2026-09-24',priceOf);assert.equal(latest.twrBp,-910);assert.equal(latest.valueCents-latest.netContributedCents,-8100);
+});

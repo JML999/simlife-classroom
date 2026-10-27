@@ -4,7 +4,7 @@
  *
  * Invariant: accounts.cash_cents == SUM(ledger.amount_cents) per account.
  */
-import { one, q, withTx, newId, nowIso, type Tx } from "./db.js";
+import { one, q, withTx, newId, nowIso, dialect, type Tx } from "./db.js";
 
 export const MICRO = 1_000_000; // micro-shares per whole share
 
@@ -316,30 +316,38 @@ export async function holdingsFor(
     `SELECT id, cash_cents FROM accounts WHERE user_id = ?`, [userId],
   );
   if (!acct) return { cashCents: 0, holdings: [] };
-  const rows = await q<{
-    ticker: string; buy_qty: number; buy_cost: number; sell_qty: number; sell_proceeds: number;
-  }>(
-    `SELECT ticker,
-       COALESCE(SUM(CASE WHEN kind = 'buy' THEN qty_micro ELSE 0 END), 0) AS buy_qty,
-       COALESCE(SUM(CASE WHEN kind = 'buy' THEN -amount_cents ELSE 0 END), 0) AS buy_cost,
-       COALESCE(SUM(CASE WHEN kind = 'sell' THEN -qty_micro ELSE 0 END), 0) AS sell_qty,
-       COALESCE(SUM(CASE WHEN kind = 'sell' THEN amount_cents ELSE 0 END), 0) AS sell_proceeds
-     FROM ledger WHERE account_id = ? AND ticker IS NOT NULL GROUP BY ticker`,
-    [acct.id],
+  // Replay the append-only trade history: sold shares release their basis,
+  // and a fully closed position resets before a later purchase of that ticker.
+  // Physical insertion order breaks equal-millisecond timestamp ties; random IDs
+  // are not execution order. Ledger rows are never updated or deleted.
+  const insertionOrder = await dialect() === "pg" ? "ctid" : "rowid";
+  const rows = await q<{ ticker: string; kind: string; qty_micro: number; amount_cents: number }>(
+    `SELECT ticker,kind,qty_micro,amount_cents FROM ledger
+     WHERE account_id=? AND ticker IS NOT NULL AND kind IN ('buy','sell')
+     ORDER BY created_at,${insertionOrder}`, [acct.id],
   );
+  const positions = new Map<string, { qty: number; basis: number }>();
+  for (const row of rows) {
+    const position=positions.get(row.ticker) ?? {qty:0,basis:0};
+    if(row.kind === "buy") {
+      position.qty+=Number(row.qty_micro);
+      position.basis-=Number(row.amount_cents);
+    } else {
+      const sold=-Number(row.qty_micro);
+      const released=sold>=position.qty ? position.basis : Math.round(position.basis*sold/position.qty);
+      position.qty-=sold;
+      position.basis-=released;
+      if(position.qty===0)position.basis=0;
+    }
+    positions.set(row.ticker,position);
+  }
   const holdings: Holding[] = [];
-  for (const r of rows) {
-    const remaining = r.buy_qty - r.sell_qty;
-    if (remaining <= 0) continue;
-    const avgPerMicro = r.buy_qty > 0 ? r.buy_cost / r.buy_qty : 0;
-    const costBasis = Math.round(avgPerMicro * remaining);
-    const price = priceOf(r.ticker);
-    const market = price == null ? costBasis : costFor(remaining, price);
-    holdings.push({
-      ticker: r.ticker, qtyMicro: remaining, shares: remaining / MICRO,
-      avgCostCents: avgPerMicro * MICRO, costBasisCents: costBasis,
-      marketCents: market, gainLossCents: market - costBasis,
-    });
+  for (const [ticker,position] of positions) {
+    if(position.qty<=0)continue;
+    const price=priceOf(ticker), market=price==null?position.basis:costFor(position.qty,price);
+    holdings.push({ticker,qtyMicro:position.qty,shares:position.qty/MICRO,
+      avgCostCents:position.basis/position.qty*MICRO,costBasisCents:position.basis,
+      marketCents:market,gainLossCents:market-position.basis});
   }
   holdings.sort((a, b) => b.marketCents - a.marketCents);
   return { cashCents: acct.cash_cents, holdings };

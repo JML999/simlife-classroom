@@ -157,3 +157,27 @@ test("teacher Student view stays signed and cannot pass teacher middleware", () 
   requireTeacher({ cookies: { sl_session: cookie } } as any, res, () => { status = 200; });
   assert.equal(status, 403);
 });
+
+test("closing and rebuying a ticker resets cost basis instead of blending sold purchases", async () => {
+  const s=await fundedStudent(100000);
+  const trade={quoteTs:new Date().toISOString(),quoteSource:'mock',tradingFrozen:false};
+  await buy({userId:s,ticker:'RESET',qtyMicro:10*MICRO,priceCents:1000,...trade,idempotencyKey:uid()});
+  await sell({userId:s,ticker:'RESET',sellAll:true,priceCents:800,...trade,idempotencyKey:uid()});
+  await buy({userId:s,ticker:'RESET',qtyMicro:5*MICRO,priceCents:2000,...trade,idempotencyKey:uid()});
+  const {holdings,cashCents}=await holdingsFor(s,()=>1800);const h=holdings[0];
+  assert.equal(h.shares,5);assert.equal(h.avgCostCents,2000);assert.equal(h.costBasisCents,10000);assert.equal(h.gainLossCents,-1000);
+  assert.equal(cashCents+h.marketCents-100000,-3000,'earlier $20 realized loss plus $10 unrealized loss');
+  assert.equal((await checkInvariant(s)).ok,true);
+});
+
+test("partial sales remove the sold basis before new buys, including equal-timestamp trades",async()=>{
+  const s=await fundedStudent(100000),trade={quoteTs:new Date().toISOString(),quoteSource:'mock',tradingFrozen:false};
+  await buy({userId:s,ticker:'PART',qtyMicro:10*MICRO,priceCents:1000,...trade,idempotencyKey:uid()});
+  await sell({userId:s,ticker:'PART',qtyMicro:8*MICRO,priceCents:1500,...trade,idempotencyKey:uid()});
+  await buy({userId:s,ticker:'PART',qtyMicro:2*MICRO,priceCents:2000,...trade,idempotencyKey:uid()});
+  const {one}=await import('./db.js');const acct=await one<any>('SELECT id FROM accounts WHERE user_id=?',[s]);
+  // IDs are random, so make timestamp ties deliberate and preserve execution insertion order.
+  await run(`UPDATE ledger SET created_at='2026-10-27T14:00:00.000Z' WHERE account_id=? AND ticker='PART'`,[acct!.id]);
+  const h=(await holdingsFor(s,()=>1400)).holdings[0];assert.equal(h.shares,4);assert.equal(h.costBasisCents,6000);assert.equal(h.avgCostCents,1500);assert.equal(h.gainLossCents,-400);
+  const fallback=(await holdingsFor(s,()=>null)).holdings[0];assert.equal(fallback.marketCents,6000);assert.equal(fallback.gainLossCents,0);
+});

@@ -2602,6 +2602,7 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
         </div>)}
         {!board && !err && <div className="leaderboard-podium-card loading-podium"><Skeleton className="skeleton-label" /><Skeleton className="skeleton-title" /><Skeleton className="skeleton-value" /><Skeleton className="skeleton-line short" /></div>}
       </div>}
+      <p className="hint">Returns include gains and losses from investments you have sold, plus changes in current holdings and brokerage cash. Green current holdings do not erase earlier losses. The percentage adjusts for deposits and withdrawals, so it can differ from your dollar gain divided by total deposits.</p>
       <div className="leaderboard-status">
         {(board?.refreshing || refreshing) && <p className="leaderboard-updating" role="status"><span className="status-dot" /> Updating with current portfolio prices…</p>}
         {board?.refreshError && <p className="hint">{board.refreshError}</p>}
