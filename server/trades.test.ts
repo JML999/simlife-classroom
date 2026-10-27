@@ -164,7 +164,8 @@ test("closing and rebuying a ticker resets cost basis instead of blending sold p
   await buy({userId:s,ticker:'RESET',qtyMicro:10*MICRO,priceCents:1000,...trade,idempotencyKey:uid()});
   await sell({userId:s,ticker:'RESET',sellAll:true,priceCents:800,...trade,idempotencyKey:uid()});
   await buy({userId:s,ticker:'RESET',qtyMicro:5*MICRO,priceCents:2000,...trade,idempotencyKey:uid()});
-  const {holdings,cashCents}=await holdingsFor(s,()=>1800);const h=holdings[0];
+  const {holdings,cashCents,closedTrades,realizedGainLossCents}=await holdingsFor(s,()=>1800);const h=holdings[0];
+  assert.equal(realizedGainLossCents,-2000);assert.equal(closedTrades.length,1);assert.equal(closedTrades[0].shares,10);assert.equal(closedTrades[0].costBasisCents,10000);assert.equal(closedTrades[0].proceedsCents,8000);assert.equal(closedTrades[0].returnPct,-20);assert.equal(closedTrades[0].positionClosed,true);
   assert.equal(h.shares,5);assert.equal(h.avgCostCents,2000);assert.equal(h.costBasisCents,10000);assert.equal(h.gainLossCents,-1000);
   assert.equal(cashCents+h.marketCents-100000,-3000,'earlier $20 realized loss plus $10 unrealized loss');
   assert.equal((await checkInvariant(s)).ok,true);
@@ -178,6 +179,17 @@ test("partial sales remove the sold basis before new buys, including equal-times
   const {one}=await import('./db.js');const acct=await one<any>('SELECT id FROM accounts WHERE user_id=?',[s]);
   // IDs are random, so make timestamp ties deliberate and preserve execution insertion order.
   await run(`UPDATE ledger SET created_at='2026-10-27T14:00:00.000Z' WHERE account_id=? AND ticker='PART'`,[acct!.id]);
-  const h=(await holdingsFor(s,()=>1400)).holdings[0];assert.equal(h.shares,4);assert.equal(h.costBasisCents,6000);assert.equal(h.avgCostCents,1500);assert.equal(h.gainLossCents,-400);
+  const result=await holdingsFor(s,()=>1400);assert.equal(result.realizedGainLossCents,4000);assert.equal(result.closedTrades[0].positionClosed,false);assert.equal(result.closedTrades[0].costBasisCents,8000);
+  const h=result.holdings[0];assert.equal(h.shares,4);assert.equal(h.costBasisCents,6000);assert.equal(h.avgCostCents,1500);assert.equal(h.gainLossCents,-400);
   const fallback=(await holdingsFor(s,()=>null)).holdings[0];assert.equal(fallback.marketCents,6000);assert.equal(fallback.gainLossCents,0);
+});
+
+
+test("sold-share cost allocations conserve fractional cents and all sales remain after full exit",async()=>{
+ const {projectTradeHistory}=await import('./ledger.js');
+ const row=(id:string,kind:string,qty_micro:number,amount_cents:number)=>({id,kind,qty_micro,amount_cents,ticker:'ROUND',created_at:'2026-10-27T14:00:00Z'});
+ const result=projectTradeHistory([row('buy','buy',3,-100),row('one','sell',-1,40),row('two','sell',-1,40),row('three','sell',-1,40)]);
+ assert.equal(result.positions.get('ROUND')?.basis,0);assert.equal(result.positions.get('ROUND')?.qty,0);assert.equal(result.realizedGainLossCents,20);
+ assert.deepEqual(result.closedTrades.map(s=>s.id),['three','two','one']);assert.equal(result.closedTrades.reduce((sum,s)=>sum+s.costBasisCents,0),100);assert.equal(result.closedTrades.reduce((sum,s)=>sum+s.gainLossCents,0),20);
+ const empty=await holdingsFor('no-such-student',()=>100);assert.equal(empty.closedTrades.length,0);assert.equal(empty.realizedGainLossCents,0);
 });

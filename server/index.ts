@@ -22,7 +22,7 @@ import {
   demoEnabled, normalizeJoinCode, validateJoinCode, generateJoinCode,
 } from "./auth.js";
 import {
-  adjustCash, reverseCash, buy, sell, holdingsFor, historyFor, checkInvariant,
+  adjustCash, reverseCash, buy, sell, holdingsFor, projectTradeHistory, historyFor, checkInvariant,
   LedgerError, MICRO,
 } from "./ledger.js";
 import {
@@ -330,7 +330,7 @@ app.get("/api/quotes", requireAuth, async (req, res) => {
 
 async function portfolioFor(userId: string) {
   // Batch current prices (mock is sync-fast; live path is cached server-side).
-  const { holdings, cashCents } = await holdingsFor(userId, () => null);
+  const { holdings, cashCents, closedTrades, realizedGainLossCents } = await holdingsFor(userId, () => null);
   let invested = 0;
   let value = cashCents;
   const enriched = [];
@@ -342,20 +342,16 @@ async function portfolioFor(userId: string) {
     value += market;
     enriched.push({ ...h, priceCents: price, marketCents: market, gainLossCents: market - h.costBasisCents });
   }
-  const funding = await one<{ net_funding: number }>(
-    `SELECT COALESCE(SUM(CASE WHEN l.kind IN ('cash_adjust','cash_reversal') THEN l.amount_cents ELSE 0 END), 0) AS net_funding
-     FROM ledger l JOIN accounts ac ON ac.id = l.account_id WHERE ac.user_id = ?`,
-    [userId],
-  );
   const unrealizedGainLoss = value - cashCents - invested;
-  const gainLoss = value - Number(funding?.net_funding ?? 0);
+  const gainLoss = realizedGainLossCents + unrealizedGainLoss;
   return {
     cashCents,
     investedCents: invested,
     portfolioCents: value,
     gainLossCents: gainLoss,
     unrealizedGainLossCents: unrealizedGainLoss,
-    realizedGainLossCents: gainLoss - unrealizedGainLoss,
+    realizedGainLossCents,
+    closedTrades,
     holdings: enriched,
     quotesDelayed: true,
     quoteSource: quotes.providerName,
@@ -445,41 +441,29 @@ app.get("/api/teacher/roster", requireCurrentTeacher, async (req, res) => {
     const d = await dialect();
     const where = d === "pg" ? `WHERE account_id = ANY(?)` : `WHERE account_id IN (${acctIds.map(() => "?").join(",")})`;
     legs = await q(
-      `SELECT account_id, ticker,
-         COALESCE(SUM(CASE WHEN kind = 'buy' THEN qty_micro ELSE 0 END), 0) AS buy_qty,
-         COALESCE(SUM(CASE WHEN kind = 'buy' THEN -amount_cents ELSE 0 END), 0) AS buy_cost,
-         COALESCE(SUM(CASE WHEN kind = 'sell' THEN -qty_micro ELSE 0 END), 0) AS sell_qty,
-         COALESCE(SUM(CASE WHEN kind IN ('buy','sell') THEN 1 ELSE 0 END), 0) AS trades
-       FROM ledger ${where} AND ticker IS NOT NULL GROUP BY account_id, ticker`,
+      `SELECT account_id,id,ticker,kind,qty_micro,amount_cents,created_at
+       FROM ledger ${where} AND ticker IS NOT NULL AND kind IN ('buy','sell') ORDER BY created_at,${d==='pg'?'ctid':'rowid'}`,
       d === "pg" ? [acctIds] : acctIds,
     );
     fundingRows = await q(
-      `SELECT account_id, COALESCE(SUM(CASE WHEN kind IN ('cash_adjust','cash_reversal') THEN amount_cents ELSE 0 END), 0) AS net_funding
+      `SELECT account_id, COALESCE(SUM(CASE WHEN kind IN ('cash_adjust','cash_reversal','transfer_in','transfer_out') THEN amount_cents ELSE 0 END), 0) AS net_funding
        FROM ledger ${where} GROUP BY account_id`,
       d === "pg" ? [acctIds] : acctIds,
     );
   }
-  const tickers = [...new Set(legs.map((l) => l.ticker))];
-  const prices = new Map<string, number>();
-  await Promise.all(tickers.map(async (t) => {
-    try { prices.set(t, (await quotes.getQuote(t)).quote.priceCents); } catch { /* unknown → basis */ }
-  }));
-  const byAccount = new Map<string, { invested: number; market: number }>();
-  const tradeCounts = new Map<string, number>();
-  for (const l of legs) {
-    tradeCounts.set(l.account_id, (tradeCounts.get(l.account_id) ?? 0) + Number(l.trades));
-  }
-  const fundingByAccount = new Map(fundingRows.map((r) => [r.account_id, Number(r.net_funding)]));
-  for (const l of legs) {
-    const remaining = Number(l.buy_qty) - Number(l.sell_qty);
-    if (remaining <= 0) continue;
-    const avgPerMicro = Number(l.buy_qty) > 0 ? Number(l.buy_cost) / Number(l.buy_qty) : 0;
-    const basis = Math.round(avgPerMicro * remaining);
-    const price = prices.get(l.ticker);
-    const market = price == null ? basis : Math.round((remaining * price) / MICRO);
-    const cur = byAccount.get(l.account_id) ?? { invested: 0, market: 0 };
-    cur.invested += basis; cur.market += market;
-    byAccount.set(l.account_id, cur);
+  const histories=new Map<string,any[]>();
+  for(const row of legs)histories.set(row.account_id,[...(histories.get(row.account_id)??[]),row]);
+  const projected=new Map([...histories].map(([id,rows])=>[id,projectTradeHistory(rows)]));
+  const tickers=[...new Set([...projected.values()].flatMap(p=>[...p.positions].filter(([,h])=>h.qty>0).map(([ticker])=>ticker)))];
+  const prices=new Map<string,number>();
+  await Promise.all(tickers.map(async ticker=>{try{prices.set(ticker,(await quotes.getQuote(ticker)).quote.priceCents);}catch{/* unknown -> basis */}}));
+  const byAccount=new Map<string,{invested:number;market:number}>();
+  const tradeCounts=new Map([...histories].map(([id,rows])=>[id,rows.length]));
+  const fundingByAccount=new Map(fundingRows.map(r=>[r.account_id,Number(r.net_funding)]));
+  for(const [id,p]of projected) {
+    const agg={invested:0,market:0};
+    for(const [ticker,h]of p.positions){if(h.qty<=0)continue;agg.invested+=h.basis;const price=prices.get(ticker);agg.market+=price==null?h.basis:Math.round(h.qty*price/MICRO);}
+    byAccount.set(id,agg);
   }
   const out = (students as any[]).map((s) => {
     const agg = byAccount.get(s.account_id) ?? { invested: 0, market: 0 };

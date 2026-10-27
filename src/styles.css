@@ -994,3 +994,16 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
 .education-loan-progress { width:100%; height:10px; accent-color:var(--olive); margin:16px 0; }
 .monthly-bill-schedule .education-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
 @media(max-width:600px) { .monthly-bill-schedule .education-stats {grid-template-columns:1fr;} }
+
+/* Realized sale results sit beside open-position performance. */
+.closed-trades h2 { margin:10px 0 14px; }
+.closed-trade-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; background:#f0f2e9; border-radius:14px; padding:24px; margin:24px 0; }
+.closed-trade-totals span, .closed-trade-totals small { display:block; font-size:13px; color:var(--muted); line-height:1.5; }
+.closed-trade-totals strong { display:block; font:30px/1.3 var(--serif); margin:12px 0 9px; overflow-wrap:anywhere; }
+.closed-trade-explanation { max-width:950px; line-height:1.7; margin-bottom:26px; }
+.closed-trade-search { max-width:350px; margin-bottom:22px; }
+.closed-trades-table td { white-space:nowrap; padding-block:18px; }
+.closed-trades-table td small { display:block; margin-top:7px; font-size:12px; }
+.closed-trades-table th { white-space:normal; line-height:1.5; }
+.closed-trades-empty { padding:22px 0 8px; }
+@media(max-width:720px){ .closed-trade-totals{grid-template-columns:1fr;gap:24px;padding:20px;} .closed-trades .panel-heading{flex-wrap:wrap;gap:14px;} }

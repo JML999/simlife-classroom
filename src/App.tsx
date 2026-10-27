@@ -1,3 +1,4 @@
+import { ClosedTrades } from "./ClosedTrades";
 import { EDUCATION_PATHS } from "../shared/education-paths";
 import { EducationAssignment, TeacherEducationControls, EducationLoanStatus, MonthlyBillingControls, MonthlyBillSchedule } from "./EducationAssignment";
 import { WheelFace, SPIN_DURATION } from "./SpinWheel";
@@ -14,7 +15,7 @@ interface Me { user: { id: string; email: string | null; name: string; role: str
 interface Portfolio {
   cashCents: number; investedCents: number; portfolioCents: number; gainLossCents: number;
   unrealizedGainLossCents: number; realizedGainLossCents: number;
-  holdings: any[]; quotesDelayed: boolean; quoteSource: string;
+  closedTrades: any[]; holdings: any[]; quotesDelayed: boolean; quoteSource: string;
 }
 
 function Skeleton({ className = "" }: { className?: string }) {
@@ -441,6 +442,8 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
             </>
           )}
       </div>
+
+      <ClosedTrades portfolio={pf} />
 
       <div className="panel">
         <h2>Transaction history (simulated)</h2>

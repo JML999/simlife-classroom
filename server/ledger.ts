@@ -308,49 +308,48 @@ export async function sell(opts: {
   });
 }
 
-/** Holdings with average-cost basis. priceOf returns current price cents or null. */
-export async function holdingsFor(
-  userId: string, priceOf: (ticker: string) => number | null,
-): Promise<{ cashCents: number; holdings: Holding[] }> {
-  const acct = await one<{ id: string; cash_cents: number }>(
-    `SELECT id, cash_cents FROM accounts WHERE user_id = ?`, [userId],
-  );
-  if (!acct) return { cashCents: 0, holdings: [] };
-  // Replay the append-only trade history: sold shares release their basis,
-  // and a fully closed position resets before a later purchase of that ticker.
-  // Physical insertion order breaks equal-millisecond timestamp ties; random IDs
-  // are not execution order. Ledger rows are never updated or deleted.
-  const insertionOrder = await dialect() === "pg" ? "ctid" : "rowid";
-  const rows = await q<{ ticker: string; kind: string; qty_micro: number; amount_cents: number }>(
-    `SELECT ticker,kind,qty_micro,amount_cents FROM ledger
-     WHERE account_id=? AND ticker IS NOT NULL AND kind IN ('buy','sell')
-     ORDER BY created_at,${insertionOrder}`, [acct.id],
-  );
-  const positions = new Map<string, { qty: number; basis: number }>();
-  for (const row of rows) {
-    const position=positions.get(row.ticker) ?? {qty:0,basis:0};
-    if(row.kind === "buy") {
-      position.qty+=Number(row.qty_micro);
-      position.basis-=Number(row.amount_cents);
-    } else {
-      const sold=-Number(row.qty_micro);
-      const released=sold>=position.qty ? position.basis : Math.round(position.basis*sold/position.qty);
-      position.qty-=sold;
-      position.basis-=released;
-      if(position.qty===0)position.basis=0;
+export interface ClosedTrade {
+  id: string; ticker: string; soldAt: string; shares: number; salePriceCents: number;
+  costBasisCents: number; proceedsCents: number; gainLossCents: number;
+  returnPct: number | null; positionClosed: boolean;
+}
+type TradeRow = { id: string; ticker: string; kind: string; qty_micro: number; amount_cents: number; created_at: string };
+/** Rows must be in execution order. Pure projection; never changes balances or history. */
+export function projectTradeHistory(rows: TradeRow[]) {
+  const positions=new Map<string,{qty:number;basis:number}>(),closedTrades:ClosedTrade[]=[];
+  let realizedGainLossCents=0;
+  for(const row of rows) {
+    const position=positions.get(row.ticker)??{qty:0,basis:0};
+    if(row.kind==='buy') {position.qty+=Number(row.qty_micro);position.basis-=Number(row.amount_cents);}
+    else if(row.kind==='sell') {
+      const sold=-Number(row.qty_micro),released=sold>=position.qty?position.basis:Math.round(position.basis*sold/position.qty);
+      position.qty-=sold;position.basis-=released;if(position.qty===0)position.basis=0;
+      const proceeds=Number(row.amount_cents),gain=proceeds-released;
+      realizedGainLossCents+=gain;
+      closedTrades.push({id:row.id,ticker:row.ticker,soldAt:row.created_at,shares:sold/MICRO,
+        salePriceCents:proceeds/sold*MICRO,costBasisCents:released,proceedsCents:proceeds,
+        gainLossCents:gain,returnPct:released>0?gain/released*100:null,positionClosed:position.qty===0});
     }
     positions.set(row.ticker,position);
   }
-  const holdings: Holding[] = [];
-  for (const [ticker,position] of positions) {
+  return {positions,closedTrades:closedTrades.reverse(),realizedGainLossCents};
+}
+
+/** Current holdings and realized sales share the same average-cost accounting. */
+export async function holdingsFor(userId:string,priceOf:(ticker:string)=>number|null):Promise<{cashCents:number;holdings:Holding[];closedTrades:ClosedTrade[];realizedGainLossCents:number}> {
+  const acct=await one<{id:string;cash_cents:number}>(`SELECT id,cash_cents FROM accounts WHERE user_id=?`,[userId]);
+  if(!acct)return {cashCents:0,holdings:[],closedTrades:[],realizedGainLossCents:0};
+  // Physical insertion order breaks equal-millisecond ties; random IDs are not execution order.
+  const insertionOrder=await dialect()==='pg'?'ctid':'rowid';
+  const rows=await q<TradeRow>(`SELECT id,ticker,kind,qty_micro,amount_cents,created_at FROM ledger WHERE account_id=? AND ticker IS NOT NULL AND kind IN ('buy','sell') ORDER BY created_at,${insertionOrder}`,[acct.id]);
+  const {positions,closedTrades,realizedGainLossCents}=projectTradeHistory(rows),holdings:Holding[]=[];
+  for(const [ticker,position]of positions) {
     if(position.qty<=0)continue;
-    const price=priceOf(ticker), market=price==null?position.basis:costFor(position.qty,price);
-    holdings.push({ticker,qtyMicro:position.qty,shares:position.qty/MICRO,
-      avgCostCents:position.basis/position.qty*MICRO,costBasisCents:position.basis,
-      marketCents:market,gainLossCents:market-position.basis});
+    const price=priceOf(ticker),market=price==null?position.basis:costFor(position.qty,price);
+    holdings.push({ticker,qtyMicro:position.qty,shares:position.qty/MICRO,avgCostCents:position.basis/position.qty*MICRO,costBasisCents:position.basis,marketCents:market,gainLossCents:market-position.basis});
   }
-  holdings.sort((a, b) => b.marketCents - a.marketCents);
-  return { cashCents: acct.cash_cents, holdings };
+  holdings.sort((a,b)=>b.marketCents-a.marketCents);
+  return {cashCents:acct.cash_cents,holdings,closedTrades,realizedGainLossCents};
 }
 
 export async function historyFor(userId: string, limit = 200): Promise<LedgerEntry[]> {
