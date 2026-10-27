@@ -84,12 +84,46 @@ final installment adjusts to pay off exactly. **Existing accepted decisions
 retain their original saved costs, payments, term and statements**; no migration
 rewrites previously accepted debt. Older decisions may have no signature.
 
-The first bill arrives immediately, due one calendar month after the choice.
-Another statement arrives every calendar month; a one-minute server timer,
-startup catch-up, and Banking reads make issuance resilient to downtime. The
-original date anchors month-end arithmetic. Each installment has a unique key.
-The final payment ends issuance; existing unpaid bills remain payable. No extra
-late fees or late interest in this simplified model.
+## Monthly statement schedule
+
+Student loans are now due on the **27th of each month**, at the end of the New
+York calendar day. The first statement appears as soon as a signed school
+choice creates the loan, due on the next 27th (including today). Later statements
+appear seven calendar days before their due date. Startup, the one-minute server
+timer, Banking reads and the teacher Refresh student statements button catch up
+safely after downtime. One bill per loan installment, with stable IDs and keys.
+
+Existing loan contracts keep their principal, rate, term, payment and career.
+Open loan bills align to the 27th, including partially paid statements, without
+resetting payments. Fully paid bills retain their original historical dates and
+count as completed installments. The schedule records its first due date in
+`education_billing_schedules`, independently of immutable signed financial terms.
+No blanket flat amount: each actual loan uses its own saved installment amount.
+Unfinished assignments/drafts/ordinary partial submissions create no debt. The
+Keep working decision creates no loan. Later signed choices enroll automatically.
+
+Teacher Banking has **Monthly statements** controls per period. Housing/car
+billing is opt-in and uses `rent_cents` and `car_payment_cents` respectively.
+Housing is due on the **1st**, cars on the **10th**. The first eligible cycle is
+the next due date at activation or when a student first has a positive assigned
+amount. No charges for earlier months without a schedule. Missing/$0 amounts
+are skipped. A nearby existing housing/car bill (within seven days of the target
+due date) counts for that cycle, even if already paid, to avoid double billing.
+Its original amount, due date and payment history remain intact. Newly issued
+cycles use the student's current assigned amount and have no added late fee.
+
+Housing/car bills appear seven days ahead, with unique student/kind/month keys.
+Pausing stops new housing/car statements; resuming catches up missed scheduled
+cycles. This does not pause student loan contracts. The loan panel shows remaining
+principal separately from remaining scheduled repayment including planned
+interest, the next unpaid payment/date, amount due/overdue, repaid amount and
+completed-installment count. Housing/car dates also appear in the student view.
+Statements do not withdraw money automatically.
+
+Teacher payroll also offers **assigned monthly pay**, computed as weekly pay ×
+52 ÷ 12, through the existing preview/issue flow and wage-claim handling. This
+adds no automatic payroll and does not modify assigned weekly wages. Avoid issuing
+weekly and monthly pay for the same intended pay period.
 
 Students pay through existing checking/bill-payment tools, including partial
 payments. Remaining scheduled repayment = all contracted principal and interest
@@ -117,7 +151,8 @@ labeled as permanent recurring costs. Lower and higher outcomes share one loan.
 ## Data and rollout
 
 Additive tables: `black_monday_events`, `education_class_settings`,
-`education_decisions`, `education_installments`. Existing journals/bills remain
+`education_decisions`, `education_installments`, `education_billing_schedules`,
+`monthly_billing_classes`, `monthly_bill_schedules`, `monthly_bill_cycles`. Existing journals/bills remain
 the payment source of truth. Job decisions and loans are explicit student
 choices after teacher release; nobody is fired or charged on deployment. New
 history is counted by empty-account deletion protections.

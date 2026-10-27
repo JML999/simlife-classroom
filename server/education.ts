@@ -1,3 +1,4 @@
+import { schoolDate, nextMonthlyDate, monthlyDate, billDueAt, statementReady } from "./billing-dates.js";
 import { randomInt } from "node:crypto";
 import { one, q, run, withTx, newId, nowIso, type Tx } from "./db.js";
 import { type ClassPost, ClassPostError } from "./class-posts.js";
@@ -33,14 +34,22 @@ export function educationMonth(start: string, months: number) {
 }
 async function issueInstallments(t: Tx, decision: any, now: Date) {
   const terms = JSON.parse(decision.terms);
-  // Bill one is available immediately, due in one month; following bills arrive monthly.
+  if (!terms.installments.length) return;
+  await t.run(`INSERT INTO education_billing_schedules (decision_id,first_due_date) VALUES (?,?) ON CONFLICT(decision_id) DO NOTHING`,[decision.id,nextMonthlyDate(new Date(decision.created_at),27)]);
+  const schedule=(await t.one<any>(`SELECT first_due_date FROM education_billing_schedules WHERE decision_id=?`,[decision.id]))!;
   for (let i = 0; i < terms.installments.length; i++) {
-    if (educationMonth(decision.created_at, i).getTime() > now.getTime()) break;
-    if (await t.one(`SELECT bill_id FROM education_installments WHERE decision_id = ? AND installment_no = ?`, [decision.id, i + 1])) continue;
+    const dueDate=monthlyDate(schedule.first_due_date,i,27), dueAt=billDueAt(dueDate);
+    const existing=await t.one<any>(`SELECT b.* FROM education_installments ei JOIN bills b ON b.id=ei.bill_id WHERE ei.decision_id=? AND ei.installment_no=?`,[decision.id,i+1]);
+    if (existing) {
+      // Keep every payment, bill ID and installment. Only align open statements to the requested due day.
+      if (!existing.paid_at && existing.due_at!==dueAt) await t.run(`UPDATE bills SET due_at=? WHERE id=?`,[dueAt,existing.id]);
+      continue;
+    }
+    if (i>0&&!statementReady(dueDate,now)) break;
     const bill = await issueBillInTx(t, { userId: decision.user_id, title: `Student loan · payment ${i + 1} of ${terms.installments.length}`,
-      amountCents: terms.installments[i], lateFeeCents: 0, dueAt: educationMonth(decision.created_at, i + 1).toISOString(),
+      amountCents: terms.installments[i], lateFeeCents: 0, dueAt,
       issuedBy: "SimLife Education", idempotencyKey: `education:${decision.id}:${i + 1}`, sender: "SimLife Student Loans",
-      documentTitle: "Student loan monthly statement", documentBody: `${terms.school}. Fixed classroom loan: ${terms.aprBps / 100}% APR over ${terms.months} months. Your payment stays the same when your job changes. Final payment may be slightly smaller. This payment includes scheduled principal and interest. Pay from checking. No extra late interest or fees in this classroom scenario.` });
+      documentTitle: "Student loan monthly statement", documentBody: `${terms.school}. Fixed classroom loan: ${terms.aprBps / 100}% APR over ${terms.months} months. Due on the 27th each month. Your payment stays the same when your job changes. Final payment may be slightly smaller. This payment includes scheduled principal and interest. Pay from checking. No extra late interest or fees in this classroom scenario.` });
     await t.run(`INSERT INTO education_installments (decision_id,installment_no,bill_id) VALUES (?,?,?)`, [decision.id, i + 1, bill.id]);
   }
 }
@@ -65,9 +74,29 @@ export async function educationState(userId: string, now = new Date()) {
   const otherDue = other.filter(b => b.due_at <= cutoff && !(rent && /rent/i.test(b.title)) && !(car && /car payment|auto payment/i.test(b.title)))
     .reduce((sum, b) => sum + Math.max(0, Number(b.amount_cents) - Number(b.paid_cents || 0)), 0);
   const terms = decision ? JSON.parse(decision.terms) : null;
+  let billing: any = null;
+  if (decision && terms.principalCents>0) {
+    const schedule=(await one<any>(`SELECT first_due_date FROM education_billing_schedules WHERE decision_id=?`,[decision.id]))!;
+    const statements=await q<any>(`SELECT i.installment_no,b.* FROM education_installments i JOIN bills b ON b.id=i.bill_id WHERE i.decision_id=? ORDER BY i.installment_no`,[decision.id]);
+    const byNumber=new Map(statements.map(b=>[Number(b.installment_no),b]));
+    let principal=terms.principalCents, principalPaid=0, interestPaid=0, actualPaid=0, dueNow=0, overdue=0, complete=0, next: any=null;
+    for(let i=0;i<terms.installments.length;i++) {
+      const interest=Math.round(principal*terms.aprBps/10000/12), installment=terms.installments[i];
+      const bill=byNumber.get(i+1), payment=bill?Math.min(installment,bill.paid_at&&!Number(bill.paid_cents)?Number(bill.amount_cents):Number(bill.paid_cents||0)):0;
+      interestPaid+=Math.min(payment,interest);principalPaid+=Math.max(0,payment-interest);actualPaid+=payment;
+      principal=principal+interest-installment;
+      const remaining=installment-payment, dueDate=monthlyDate(schedule.first_due_date,i,27), dueAt=bill?.due_at??billDueAt(dueDate);
+      if(remaining===0){complete++;continue;}
+      if(!next)next={amountCents:remaining,dueAt,billId:bill?.id??null,installment:i+1};
+      if(new Date(dueAt).getTime()<now.getTime())overdue+=remaining;
+      // Due today or earlier, using the school calendar date rather than UTC midnight.
+      if(dueDate<=schoolDate(now))dueNow+=remaining;
+    }
+    billing={dueDay:27,nextPayment:next,amountDueCents:dueNow,overdueCents:overdue,remainingPrincipalCents:Math.max(0,terms.principalCents-principalPaid),interestRemainingCents:Math.max(0,terms.interestCents-interestPaid),paidInstallments:complete,installmentsRemaining:terms.installments.length-complete,actualPaidCents:actualPaid};
+  }
   return { studentName: user?.name || "", enabled: await educationEnabled(user?.class_id),
     decision: decision ? { id: decision.id, routeId: decision.route_id, reason: decision.reason, terms, outcome: JSON.parse(decision.outcome), createdAt: decision.created_at,
-      paidCents: Number(paid?.cents || 0), remainingCents: Math.max(0, terms.totalCents - Number(paid?.cents || 0)) } : null,
+      billing, paidCents: billing?.actualPaidCents ?? Number(paid?.cents || 0), remainingCents: Math.max(0, terms.totalCents - (billing?.actualPaidCents ?? Number(paid?.cents || 0))) } : null,
     budget: { jobTitle: user?.job_title, weeklyPayCents: Number(user?.job_pay_cents || 0), monthlyPayCents: monthlyFromWeekly(Number(user?.job_pay_cents || 0)),
       rentCents: rent, carCents: car, otherDueCents: otherDue, claimBalanceCents: Number(claims?.cents || 0), existingExpensesCents: rent + car + otherDue } };
 }

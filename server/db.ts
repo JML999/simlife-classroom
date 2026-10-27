@@ -570,6 +570,21 @@ export async function initSchema(): Promise<void> {
       bill_id TEXT NOT NULL UNIQUE REFERENCES bills(id), PRIMARY KEY(decision_id, installment_no)
     )`,
 
+    `CREATE TABLE IF NOT EXISTS education_billing_schedules (
+      decision_id TEXT PRIMARY KEY REFERENCES education_decisions(id), first_due_date TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS monthly_billing_classes (
+      class_id TEXT PRIMARY KEY REFERENCES classes(id), enabled INTEGER NOT NULL DEFAULT 1, started_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS monthly_bill_schedules (
+      user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, first_due_date TEXT NOT NULL,
+      PRIMARY KEY(user_id,kind)
+    )`,
+    `CREATE TABLE IF NOT EXISTS monthly_bill_cycles (
+      user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, due_date TEXT NOT NULL,
+      bill_id TEXT NOT NULL UNIQUE REFERENCES bills(id), PRIMARY KEY(user_id,kind,due_date)
+    )`,
+
     // Per-class module visibility. Store what is hidden, not what is visible:
     // newly published modules therefore appear by default without a backfill.
     // Hiding is presentation-only and never deletes progress or submissions.

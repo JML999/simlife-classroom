@@ -1,3 +1,5 @@
+import { ensureMonthlyBills, setMonthlyBilling } from "./monthly-bills.js";
+import { monthlyFromWeekly } from "../shared/education-paths.js";
 import { BLACK_MONDAY_OPTIONS, EDUCATION_PATHS } from "../shared/education-paths.js";
 import { spinBlackMonday, blackMondayEvents } from "./black-monday.js";
 import { ensureEducationAssignment, ensureEducationBills, educationState, educationAccess, chooseEducation, educationEnabled, setEducationEnabled } from "./education.js";
@@ -1180,6 +1182,7 @@ app.get("/api/bank", requireAuth, async (req, res) => {
     bills: bank.bills,
     garnishments: bank.garnishments,
     education: bank.education,
+    monthlyBilling: bank.monthlyBilling,
     recent: bank.recent,
     brokerage: { cashCents: pf.cashCents, portfolioCents: pf.portfolioCents },
     job: { title: (user as any).job_title ?? null, payCents: (user as any).job_pay_cents ?? null },
@@ -1290,6 +1293,7 @@ async function batchStudents(classId: string, studentIds: unknown): Promise<{ id
 
 app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
   await ensureEducationBills();
+  await ensureMonthlyBills();
   const classId = String(req.query["classId"] || "");
   const where = classId ? "AND u.class_id = ?" : "";
   const params = classId ? [classId] : [];
@@ -1313,7 +1317,8 @@ app.get("/api/teacher/bank", requireCurrentTeacher, async (req, res) => {
 
 app.post("/api/teacher/income/preview", requireCurrentTeacher, async (req, res) => {
   try {
-    const assigned = req.body?.mode === "assigned";
+    const monthly = req.body?.mode === "assigned_monthly";
+    const assigned = monthly || req.body?.mode === "assigned";
     const dollars = Number(req.body?.dollars);
     if (!assigned && (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000)) {
       res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
@@ -1327,19 +1332,20 @@ app.post("/api/teacher/income/preview", requireCurrentTeacher, async (req, res) 
     if (missing.length) { res.status(400).json({ error: `Assigned pay is missing for: ${missing.map((s) => s.name).join(", ")}.` }); return; }
     const isPaycheck = req.body?.isPaycheck !== false;
     const items = await Promise.all(students.map(async s => {
-      const amountCents = assigned ? Number(s.job_pay_cents) : cents!;
+      const amountCents = assigned ? monthly ? monthlyFromWeekly(Number(s.job_pay_cents)) : Number(s.job_pay_cents) : cents!;
       const debt = await one<{ cents: number }>(`SELECT COALESCE(SUM(amount_cents - paid_cents), 0) AS cents FROM wage_claims WHERE user_id = ?`, [s.id]);
       const withheldCents = isPaycheck ? Math.min(amountCents, Number(debt?.cents || 0)) : 0;
       return { ...s, amountCents, withheldCents, depositedCents: amountCents - withheldCents };
     }));
-    res.json({ withheldCents: items.reduce((sum, s) => sum + s.withheldCents, 0), depositedCents: items.reduce((sum, s) => sum + s.depositedCents, 0), students: items, mode: assigned ? "assigned" : "flat", perStudentCents: cents, totalCents: items.reduce((sum, s) => sum + s.amountCents, 0), count: students.length });
+    res.json({ withheldCents: items.reduce((sum, s) => sum + s.withheldCents, 0), depositedCents: items.reduce((sum, s) => sum + s.depositedCents, 0), students: items, mode: monthly ? "assigned_monthly" : assigned ? "assigned" : "flat", perStudentCents: cents, totalCents: items.reduce((sum, s) => sum + s.amountCents, 0), count: students.length });
   } catch (err) { bankError(res, err); }
 });
 
 app.post("/api/teacher/income/issue", requireCurrentTeacher, async (req, res) => {
   const teacher = readSession(req)!;
   try {
-    const assigned = req.body?.mode === "assigned";
+    const monthly = req.body?.mode === "assigned_monthly";
+    const assigned = monthly || req.body?.mode === "assigned";
     const dollars = Number(req.body?.dollars);
     if (!assigned && (!Number.isFinite(dollars) || dollars <= 0 || dollars > 100000)) {
       res.status(400).json({ error: "Enter a positive dollar amount (max $100,000)." });
@@ -1353,13 +1359,28 @@ app.post("/api/teacher/income/issue", requireCurrentTeacher, async (req, res) =>
     const batchId = String(req.body?.batchId || "");
     if (!batchId) { res.status(400).json({ error: "Batch id is required (prevents double-posting)." }); return; }
     const cents = assigned ? 0 : Math.round(dollars * 100);
-    const items = students.map((s) => ({ userId: s.id, label, amountCents: assigned ? Number(s.job_pay_cents) : cents }));
+    const items = students.map((s) => ({ userId: s.id, label, amountCents: assigned ? monthly ? monthlyFromWeekly(Number(s.job_pay_cents)) : Number(s.job_pay_cents) : cents }));
     const r = await issueIncomeBatch({
       actorId: teacher.userId, batchId, isPaycheck: req.body?.isPaycheck !== false,
       items,
     });
     res.json({ ok: true, posted: r.posted, batchId: r.batchId, count: students.length, withheldCents: r.withheldCents, depositedCents: r.depositedCents, totalCents: items.reduce((sum, item) => sum + item.amountCents, 0) });
   } catch (err) { bankError(res, err); }
+});
+
+app.get("/api/teacher/classes/:id/monthly-billing", requireCurrentTeacher, async (req,res) => {
+  const row=await one<any>(`SELECT * FROM monthly_billing_classes WHERE class_id=?`,[String(req.params.id)]);
+  res.json({enabled:!!row?.enabled});
+});
+app.put("/api/teacher/classes/:id/monthly-billing", requireCurrentTeacher, async (req,res) => {
+  if(typeof req.body?.enabled!=="boolean"){res.status(400).json({error:"Choose whether monthly bills are enabled."});return;}
+  await setMonthlyBilling(String(req.params.id),req.body.enabled);
+  res.json({enabled:req.body.enabled});
+});
+app.post("/api/teacher/classes/:id/refresh-monthly-bills", requireCurrentTeacher, async(req,res)=>{
+  const students=await batchStudents(String(req.params.id),undefined);
+  for(const student of students){await ensureEducationBills(student.id);await ensureMonthlyBills(student.id);}
+  res.json({ok:true,count:students.length});
 });
 
 app.get("/api/teacher/bills/templates", requireCurrentTeacher, async (_req, res) => {
@@ -1558,7 +1579,8 @@ async function boot() {  validateProductionEnv();
   await ensureCollegeCostsAssignment();
   await ensureEducationAssignment();
   await ensureEducationBills();
-  const educationTimer = setInterval(() => { void ensureEducationBills().catch(err => console.error("[education statements]", err instanceof Error ? err.message : "Statement refresh failed")); }, 60_000);
+  await ensureMonthlyBills();
+  const educationTimer = setInterval(() => { void (async()=>{await ensureEducationBills();await ensureMonthlyBills();})().catch(err => console.error("[monthly statements]", err instanceof Error ? err.message : "Statement refresh failed")); }, 60_000);
   educationTimer.unref();
   if (demoEnabled()) await ensureDemoUsers();
   app.listen(PORT, HOST, () => {

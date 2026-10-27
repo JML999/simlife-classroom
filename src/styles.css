@@ -984,3 +984,13 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
  .education-signature input { font-size: 24px; }
  .education-spin-stage .life-wheel-wrap { --wheel-label-offset: calc(min(70vw,450px) * -.33); }
 }
+
+/* Student statements: principal, payment date and repayment progress. */
+.education-loan-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+.education-bank-status h3, .monthly-bill-schedule h3 { font: 28px/1.25 var(--serif); margin:12px 0 18px; }
+.education-due-pill { padding:10px 16px; background:#e6ebd8; border-radius:999px; font-size:13px; color:#424c2b; }
+.education-bank-status small, .monthly-bill-schedule small { display:block; color:var(--muted); margin-top:10px; line-height:1.5; }
+.education-bank-pending { background:#f5f2e9; }
+.education-loan-progress { width:100%; height:10px; accent-color:var(--olive); margin:16px 0; }
+.monthly-bill-schedule .education-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media(max-width:600px) { .monthly-bill-schedule .education-stats {grid-template-columns:1fr;} }

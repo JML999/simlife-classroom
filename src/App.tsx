@@ -1,5 +1,5 @@
 import { EDUCATION_PATHS } from "../shared/education-paths";
-import { EducationAssignment, TeacherEducationControls, EducationLoanStatus } from "./EducationAssignment";
+import { EducationAssignment, TeacherEducationControls, EducationLoanStatus, MonthlyBillingControls, MonthlyBillSchedule } from "./EducationAssignment";
 import { WheelFace, SPIN_DURATION } from "./SpinWheel";
 import { useModuleDraft } from "./use-module-draft";
 import { COLLEGE_COST_LINKS, COLLEGE_COST_FIELDS, emptyCollegeCosts, collegeCostRouteDone, type CostRoute, type CollegeCostsResponse } from "../shared/college-costs.js";
@@ -527,7 +527,7 @@ function StudentDashboard({ me, portfolio, onOpen, onChanged }: { me: Me; portfo
   return <div className="dashboard-experience">
     <div className="page-intro"><div><div className="eyebrow">{me.class?.name}</div><h2>Your money at a glance</h2><p>See what is available, what is due, and what you can put to work.</p></div><div className="teacher-summary"><strong>{money(total)}</strong><span>total simulated funds</span></div></div>
     {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
-    <EducationLoanStatus decision={bank?.education} />
+    {bank && <><EducationLoanStatus decision={bank.education} /><MonthlyBillSchedule schedule={bank.monthlyBilling} /></>}
     <div className="cards dashboard-cards">
       <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Checking</div><div className="value">{bank ? money(bank.checkingCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">{bank ? `${unpaid.length} unpaid bill${unpaid.length === 1 ? "" : "s"} →` : "Bills and spending"}</div></button>
       <button className="card dashboard-card" onClick={() => onOpen("dashboard")}><div className="label">Savings</div><div className="value">{bank ? money(bank.savingsCents) : bankError ? "—" : <Skeleton className="skeleton-value" />}</div><div className="sub">Move and grow money →</div></button>
@@ -772,7 +772,7 @@ function StudentBanking({ me, onChanged, onOpenInvesting }: { me: Me; onChanged:
       </div>
       {lifeEvents[0] && <div className="notice life-event-student-note"><strong>Life event: {lifeEvents[0].title}</strong><span>{lifeEvents[0].description}{lifeEvents[0].newJobTitle ? ` New job: ${lifeEvents[0].newJobTitle} at ${money(lifeEvents[0].newPayCents)} per paycheck.` : ""}</span></div>}
       <WageClaimStatus claims={bank?.garnishments || []} />
-      <EducationLoanStatus decision={bank?.education} />
+      {bank && <><EducationLoanStatus decision={bank.education} /><MonthlyBillSchedule schedule={bank.monthlyBilling} /></>}
       {unpaidTotal > 0 && (
         <div className="money-reminder" role="note"><span>🔔</span><div><strong>{money(unpaidTotal)} is still spoken for</strong><p>You have {unpaid.length} unpaid bill{unpaid.length === 1 ? "" : "s"}. Your checking balance is not the same as money available to invest.</p></div></div>
       )}
@@ -1398,7 +1398,7 @@ function Teacher({ me, refresh }: { me: Me; refresh: () => void }) {
                 <div className="panel">
                   <h2>Recurring expenses</h2>
                   <p className="hint">
-                    Current: {(profile.student as any).rent_cents != null ? <><strong>{money((profile.student as any).rent_cents)}</strong> rent</> : "rent not set"}{" · "}{profile.student.car_payment_cents != null ? <><strong>{money(profile.student.car_payment_cents)}</strong> car</> : "car not set"}. Bill these from Banking → Send bills → assigned amounts.
+                    Current: {(profile.student as any).rent_cents != null ? <><strong>{money((profile.student as any).rent_cents)}</strong> rent</> : "rent not set"}{" · "}{profile.student.car_payment_cents != null ? <><strong>{money(profile.student.car_payment_cents)}</strong> car</> : "car not set"}. Monthly bills use these saved amounts when recurring billing is enabled for the period.
                   </p>
                   <div className="row">
                     <div className="field"><label>Monthly rent ($)</label><input value={rent} onChange={(e) => setRent(e.target.value)} placeholder="e.g. 800.00" inputMode="decimal" /></div>
@@ -1688,7 +1688,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
   // Paycheck form
   const [payLabel, setPayLabel] = useState("Weekly paycheck");
   const [payDollars, setPayDollars] = useState("");
-  const [payMode, setPayMode] = useState<"assigned" | "flat">("assigned");
+  const [payMode, setPayMode] = useState<"assigned" | "assigned_monthly" | "flat">("assigned");
   const [isPaycheck, setIsPaycheck] = useState(true);
   const [payPreview, setPayPreview] = useState<any>(null);
   const payBatch = useRef("");
@@ -1981,6 +1981,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 
       {classId && summary.some((s: any) => Number(s.garnishment_cents) > 0) && <div className="panel"><h2>Active wage claims</h2><p className="hint">Simplified classroom rule: paychecks repay these balances before reaching checking. Withholding stops when paid.</p>{summary.filter((s: any) => Number(s.garnishment_cents) > 0).map((s: any) => <p key={s.id}><strong>{s.name}</strong>: {money(s.garnishment_cents)} remaining</p>)}</div>}
       {classId && <LifeEventWheel key={classId} classId={classId} students={summary} onApplied={() => { void load(); onChanged(); }} />}
+      {classId && <MonthlyBillingControls key={`monthly-billing:${classId}`} classId={classId} onChanged={load} />}
       {classId && <TeacherEducationControls key={`education:${classId}`} classId={classId} />}
 
       <div className="panel">
@@ -2087,7 +2088,7 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
             <p className="hint">Paychecks repay active wage claims first. Any remainder goes to checking.</p>
             <label className="small"><input type="checkbox" checked={isPaycheck} onChange={e => { setIsPaycheck(e.target.checked); setPayPreview(null); }} /> Apply wage garnishment (uncheck for a bonus or other deposit)</label>
             <div className="field"><label>Label</label><input value={payLabel} onChange={(e) => { setPayLabel(e.target.value); setPayPreview(null); }} placeholder="Weekly paycheck" /></div>
-            <div className="field" style={{ marginTop: 8 }}><label>Pay source</label><select value={payMode} onChange={(e) => { setPayMode(e.target.value as any); setPayPreview(null); }}><option value="assigned">Each student's assigned paycheck</option><option value="flat">One amount for everyone</option></select></div>
+            <div className="field" style={{ marginTop: 8 }}><label>Pay source</label><select value={payMode} onChange={(e) => { setPayMode(e.target.value as any); setPayLabel(e.target.value === "assigned_monthly" ? "Monthly paycheck" : "Weekly paycheck"); setPayPreview(null); }}><option value="assigned">Each student's assigned weekly paycheck</option><option value="assigned_monthly">Each student's monthly pay (weekly × 52 ÷ 12)</option><option value="flat">One amount for everyone</option></select></div>
             {payMode === "flat" && <div className="field" style={{ marginTop: 8 }}><label>Dollars per student</label><input value={payDollars} onChange={(e) => { setPayDollars(e.target.value); setPayPreview(null); }} placeholder="1500.00" inputMode="decimal" /></div>}
             <div className="row" style={{ marginTop: 8 }}>
               <button disabled={(payMode === "flat" && !(Number(payDollars) > 0)) || checked.size === 0 || busy} onClick={previewPay}>Preview ({checked.size})</button>

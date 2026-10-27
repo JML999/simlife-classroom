@@ -124,3 +124,20 @@ test('previously accepted 10-year loans retain their original terms and monthly 
  assert.equal(statements.length,2);assert.ok(statements.every(b=>b.amount_cents===terms.monthlyCents));
  const retry=await education.chooseEducation({post:await post(),userId:'legacy',routeId:'fourYear',reason:'Retry original decision',now});assert.deepEqual(retry.decision?.terms,terms);
 });
+
+
+test('loan summary separates principal and interest; partial payments and paid installments survive due-date alignment',async()=>{
+ const state=await education.educationState('incomplete',new Date('2026-10-27T14:00:00Z'));
+ const decision=state.decision!;assert.equal(decision.billing.dueDay,27);assert.ok(decision.billing.nextPayment.dueAt.startsWith('2026-10-28T03:59'));
+ const first=await db.one<any>(`SELECT b.* FROM bills b JOIN education_installments i ON i.bill_id=b.id WHERE i.decision_id=? AND installment_no=1`,[decision.id]);
+ await bank.postIncome({userId:'incomplete',actorId:'edu-teacher',label:'Test loan funds',amountCents:100000,idempotencyKey:'loan-summary-funds'});
+ await bank.payBill({userId:'incomplete',billId:first.id,amountCents:1000,idempotencyKey:'loan-summary-partial'});
+ const partial=await education.educationState('incomplete',new Date('2026-10-27T14:00:00Z'));assert.equal(partial.decision!.billing.nextPayment.amountCents,first.amount_cents-1000);assert.equal(partial.decision!.billing.amountDueCents,first.amount_cents-1000);
+ // Partial payment below the scheduled first interest amount has not yet reduced principal.
+ assert.equal(partial.decision!.billing.remainingPrincipalCents,decision.terms.principalCents);
+ await bank.payBill({userId:'incomplete',billId:first.id,idempotencyKey:'loan-summary-rest'});
+ const paid=await education.educationState('incomplete',new Date('2026-10-27T14:00:00Z'));assert.equal(paid.decision!.billing.paidInstallments,1);assert.equal(paid.decision!.billing.amountDueCents,0);assert.ok(paid.decision!.billing.nextPayment.dueAt.startsWith('2026-11-28T04:59'));assert.equal(paid.decision!.billing.nextPayment.billId,null);
+ assert.ok(paid.decision!.billing.remainingPrincipalCents<decision.terms.principalCents);
+ await education.ensureEducationBills('incomplete',new Date('2026-11-20T15:00:00Z'));assert.equal((await db.q(`SELECT * FROM education_installments WHERE decision_id=?`,[decision.id])).length,2);
+ assert.equal((await bank.checkBankInvariant('incomplete')).ok,true);
+});
