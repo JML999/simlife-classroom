@@ -1,4 +1,5 @@
 /** Refresh classroom standings from held shares and current market quotes. */
+import { recordGrossGainSnapshot } from "./gross-gains.js";
 import { q } from "./db.js";
 import { repairOpeningReturns, snapshotAll } from "./leaderboard.js";
 import type { CachedQuotes } from "./quotes.js";
@@ -45,6 +46,7 @@ export async function refreshClassSnapshot(classId: string, quotes: CachedQuotes
   }, {
     classId, quoteSource: quoteSource || quotes.providerName,
   });
+  await recordGrossGainSnapshot(classId,asOfDate);
 }
 
 /** Start a bounded background refresh; callers can keep serving saved rows. */

@@ -47,6 +47,7 @@ export async function deleteEmptyStudent(opts: { userId: string; confirmation: s
     if (opts.confirmation.trim() !== u.name) throw new StudentAdminError("INVALID_INPUT", `Type ${u.name} exactly to confirm deletion.`);
     const count = await activityCount(t, u.id);
     if (count) throw new StudentAdminError("HAS_ACTIVITY", "This account has financial history and cannot be deleted.");
+    await t.run(`DELETE FROM gross_gain_entries WHERE user_id = ?`, [u.id]);
     await t.run(`DELETE FROM monthly_bill_schedules WHERE user_id = ?`, [u.id]);
     await t.run(`DELETE FROM users WHERE id = ?`, [u.id]);
     return { deleted: true, name: u.name };

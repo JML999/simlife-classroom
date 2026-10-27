@@ -1,3 +1,4 @@
+import { ensureGrossGainRound, grossGainsFor } from "./gross-gains.js";
 import { ensureMonthlyBills, setMonthlyBilling } from "./monthly-bills.js";
 import { monthlyFromWeekly } from "../shared/education-paths.js";
 import { BLACK_MONDAY_OPTIONS, EDUCATION_PATHS } from "../shared/education-paths.js";
@@ -1045,7 +1046,7 @@ app.put("/api/teacher/classes/:id/education", requireCurrentTeacher, async (req,
   catch(err) { if (err instanceof ClassPostError) { res.status(404).json({error:err.message}); return; } throw err; }
 });
 
-// ---- Leaderboard: percent-only, public class periods, never students' dollars --
+// ---- Leaderboards: historical percentage returns and fresh dollar profit --
 
 app.get("/api/class/leaderboard", requireAuth, async (req, res) => {
   const user = await currentUser(req);
@@ -1064,6 +1065,11 @@ app.get("/api/class/leaderboard", requireAuth, async (req, res) => {
   }
   const sort = req.query.sort === "stable" ? "stable" as const : "percent" as const;
   const refresh = ensureLeaderboardFresh(classId, quotes);
+  if(req.query.sort==='gross') {
+    const gross=await grossGainsFor(classId);
+    res.json({...gross,stableMinReturnBp:STABLE_MIN_RETURN_BP,...refresh,entries:gross.entries.map(e=>({name:e.name,gainCents:e.gainCents,baselineAt:e.baselineAt,sectorsHeld:e.sectorsHeld,topPositionBp:e.topPositionBp,holdingsCount:e.holdingsCount,self:e.userId===user.id}))});
+    return;
+  }
   const board = await leaderboardFor(classId, { sort });
   // Map explicitly: valueCents and userIds of other students never leave here.
   res.json({
@@ -1562,11 +1568,15 @@ async function boot() {  validateProductionEnv();
   await ensureCollegeAssignment();
   await ensureCollegeCostsAssignment();
   await ensureEducationAssignment();
+  await ensureGrossGainRound();
   await ensureEducationBills();
   await ensureMonthlyBills();
   const educationTimer = setInterval(() => { void (async()=>{await ensureEducationBills();await ensureMonthlyBills();})().catch(err => console.error("[monthly statements]", err instanceof Error ? err.message : "Statement refresh failed")); }, 60_000);
   educationTimer.unref();
   if (demoEnabled()) await ensureDemoUsers();
+  // Capture fresh starting valuations for both teaching periods after deployment.
+  // Existing round baselines survive restarts. The quote queue keeps this off the boot path.
+  for(const cls of await q<{id:string}>(`SELECT id FROM classes WHERE id IN ('class-p3-2026','class-p4-2026')`))ensureLeaderboardFresh(cls.id,quotes);
   app.listen(PORT, HOST, () => {
     console.log(`[simlife] api on http://${HOST}:${PORT} (quotes: ${quotes.providerName})`);
   });

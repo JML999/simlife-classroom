@@ -1007,3 +1007,7 @@ table.sort-grid td.cell-none { background: repeating-linear-gradient(45deg, #f4f
 .closed-trades-table th { white-space:normal; line-height:1.5; }
 .closed-trades-empty { padding:22px 0 8px; }
 @media(max-width:720px){ .closed-trade-totals{grid-template-columns:1fr;gap:24px;padding:20px;} .closed-trades .panel-heading{flex-wrap:wrap;gap:14px;} }
+
+.gross-gain-note { background:#edf1e5; border:1px solid #c8d1b7; border-radius:14px; padding:20px 24px; margin:24px 0; }
+.gross-gain-note strong { color:var(--olive-dark); }
+.gross-gain-note p { line-height:1.65; margin:12px 0 0; }

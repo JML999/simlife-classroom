@@ -283,3 +283,31 @@ contention without ever banning it. Leave it off and the board still works.
 
 Step 1 before anything else, and ideally soon: a board can only show a
 trend once snapshots exist, and no snapshot can be backfilled from the past.
+
+## Implemented addition: Gross Gain round (2026-10-27)
+
+A third view ranks **dollar investment profit**, not account balances or sale
+proceeds. It uses a fresh deployment round, independent of existing percent and
+Stable gains history:
+
+`gain = current account value - baseline account value - (current net external funding - baseline net external funding)`
+
+Account value includes brokerage cash and marked holdings. All external cash
+flows (cash_adjust, cash_reversal, transfer_in, transfer_out) are excluded from
+profit. Sales remain inside the account and retain their gains/losses. Earlier
+unrealized profits are part of baseline market value, so closing an appreciated
+old position does not count old gains again. Negative results remain negative.
+
+`gross_gain_rounds` records a stable opening timestamp on the first deployment.
+`gross_gain_entries` freezes each student's first fully priced valuation after
+that opening. Following successful class refreshes update only current figures.
+Both teaching periods refresh in the background at startup; quote failures leave
+the board waiting rather than creating estimated baselines. The round survives
+restarts. New students join at $0 on their first priced refresh; class transfers
+keep the same student's baseline. Empty-account deletion removes derived entries.
+
+The UI calls this Gross Gain, labels the opening date and explains that dollars
+reflect investment capacity as well as performance. Explicit teacher request
+allows classmates to see **profit dollars only** in this new view. Account
+balances, baseline balances, contributions and other students' IDs remain private.
+Historical percentage and Stable gains views retain their previous calculations.

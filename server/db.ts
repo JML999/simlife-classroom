@@ -585,6 +585,17 @@ export async function initSchema(): Promise<void> {
       bill_id TEXT NOT NULL UNIQUE REFERENCES bills(id), PRIMARY KEY(user_id,kind,due_date)
     )`,
 
+    `CREATE TABLE IF NOT EXISTS gross_gain_rounds (
+      id TEXT PRIMARY KEY, starts_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS gross_gain_entries (
+      round_id TEXT NOT NULL REFERENCES gross_gain_rounds(id), user_id TEXT NOT NULL REFERENCES users(id),
+      baseline_value_cents INTEGER NOT NULL, baseline_net_contributed_cents INTEGER NOT NULL, baseline_at TEXT NOT NULL,
+      value_cents INTEGER NOT NULL, net_contributed_cents INTEGER NOT NULL, as_of_date TEXT NOT NULL, updated_at TEXT NOT NULL,
+      holdings_count INTEGER NOT NULL, sectors_held INTEGER, top_position_bp INTEGER,
+      PRIMARY KEY(round_id,user_id)
+    )`,
+
     // Per-class module visibility. Store what is hidden, not what is visible:
     // newly published modules therefore appear by default without a backfill.
     // Hiding is presentation-only and never deletes progress or submissions.

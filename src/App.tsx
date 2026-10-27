@@ -2529,7 +2529,7 @@ function LeaderboardSection() {
   const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const boardCache = useRef(new Map<string, any>());
-  const [sort, setSort] = useState<"percent" | "stable">("percent");
+  const [sort, setSort] = useState<"percent" | "stable" | "gross">("percent");
   const [period, setPeriod] = useState<"3" | "4">("3");
   const key = `${period}:${sort}`;
   const board = boardState?.key === key ? boardState.data : boardCache.current.get(key) ?? null;
@@ -2580,18 +2580,21 @@ function LeaderboardSection() {
 // an empty answer is fine and says so without drama.
 function Leaderboard({ board, err, sort, onSort, refreshing }: {
   board: any | null; err: string;
-  sort: "percent" | "stable"; onSort: (s: "percent" | "stable") => void; refreshing: boolean;
+  sort: "percent" | "stable" | "gross"; onSort: (s: "percent" | "stable" | "gross") => void; refreshing: boolean;
 }) {
   const fmtBp = (bp: number) => `${bp >= 0 ? "+" : "-"}${(Math.abs(bp) / 100).toFixed(2)}%`;
   const barPct = board ? (board.stableMinReturnBp / 100).toFixed(2) : "1.50";
   const leaders = (board?.entries ?? []).slice(0, 3);
+  const gross=sort==='gross';
+  const resultValue=(entry:any)=>gross?Number(entry.gainCents||0):entry.returnBp;
+  const resultText=(entry:any)=>gross?`${entry.gainCents>0?'+':''}${money(entry.gainCents)}`:fmtBp(entry.returnBp);
   return (
     <section className="class-leaderboard" aria-label="Leaderboard">
       <div className="leaderboard-hero">
         <div className="leaderboard-hero-copy">
           <span className="eyebrow">The market board</span>
-          <h3>{sort === "stable" ? "Steady hands." : "Who’s climbing?"}</h3>
-          <p>{sort === "stable" ? "Students with consistent gains rise here." : "Ranked by portfolio return, with sectors and concentration in view."}</p>
+          <h3>{gross ? "Most money made" : sort === "stable" ? "Steady hands." : "Who’s climbing?"}</h3>
+          <p>{gross ? "Dollars earned since a fresh starting point, including gains and losses on sold investments." : sort === "stable" ? "Students with consistent gains rise here." : "Ranked by portfolio return, with sectors and concentration in view."}</p>
         </div>
         <div className="leaderboard-hero-stat"><strong>{board?.entries.length ?? "—"}</strong><span>{sort === "stable" ? "qualifying investors" : "investors ranked"}</span></div>
         <div className="leaderboard-hero-stat"><strong>{board?.asOfDate ? board.asOfDate.slice(5) : "—"}</strong><span>latest snapshot</span></div>
@@ -2600,12 +2603,12 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
         {leaders.map((entry: any, index: number) => <div className={`leaderboard-podium-card place-${index + 1}`} key={`${entry.name}:${index}`}>
           <span className="leaderboard-place">{["①", "②", "③"][index]} · {index === 0 ? "Top investor" : `Place ${index + 1}`}</span>
           <strong>{entry.name}{entry.self ? " (you)" : ""}</strong>
-          <span className={`leaderboard-podium-return ${entry.returnBp >= 0 ? "up" : "down"}`}>{fmtBp(entry.returnBp)}</span>
+          <span className={`leaderboard-podium-return ${resultValue(entry) >= 0 ? "up" : "down"}`}>{resultText(entry)}</span>
           <small>{entry.sectorsHeld ?? "—"} sectors · {entry.holdingsCount} holdings</small>
         </div>)}
         {!board && !err && <div className="leaderboard-podium-card loading-podium"><Skeleton className="skeleton-label" /><Skeleton className="skeleton-title" /><Skeleton className="skeleton-value" /><Skeleton className="skeleton-line short" /></div>}
       </div>}
-      <p className="hint">Returns include gains and losses from investments you have sold, plus changes in current holdings and brokerage cash. Green current holdings do not erase earlier losses. The percentage adjusts for deposits and withdrawals, so it can differ from your dollar gain divided by total deposits.</p>
+      {gross?<div className="gross-gain-note"><strong>{board?.startsAt?`Fresh round opened ${new Date(board.startsAt).toLocaleDateString('en-US',{timeZone:'America/New_York',month:'long',day:'numeric',year:'numeric'})}`:'Preparing a fresh starting point'}</strong><p>Each student starts at $0 from their first refreshed portfolio valuation in this round. Deposits, paycheck transfers and withdrawals do not count as profit. Selling keeps any gain or loss in your score. Earlier investment results stay on the percentage boards.</p><p className="small">Dollar gains reward money earned; students investing different amounts can have different opportunities to earn. Your account balance and starting balance are not shown.</p></div>:<p className="hint">Returns include gains and losses from investments you have sold, plus changes in current holdings and brokerage cash. Green current holdings do not erase earlier losses. The percentage adjusts for deposits and withdrawals, so it can differ from your dollar gain divided by total deposits.</p>}
       <div className="leaderboard-status">
         {(board?.refreshing || refreshing) && <p className="leaderboard-updating" role="status"><span className="status-dot" /> Updating with current portfolio prices…</p>}
         {board?.refreshError && <p className="hint">{board.refreshError}</p>}
@@ -2614,13 +2617,14 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
         <div className="pills" role="group" aria-label="Sort the leaderboard">
           <button className={`pill${sort === "percent" ? " active" : ""}`} aria-pressed={sort === "percent"} onClick={() => onSort("percent")}>Percent gain</button>
           <button className={`pill${sort === "stable" ? " active" : ""}`} aria-pressed={sort === "stable"} onClick={() => onSort("stable")}>Stable gains</button>
+          <button className={`pill${gross ? " active" : ""}`} aria-pressed={gross} onClick={() => onSort("gross")}>Gross Gain</button>
         </div>
         {board?.asOfDate && <span className="small">As of {board.asOfDate}</span>}
       </div>
       {err && <div className="error" role="alert">{err}</div>}
       {!board && !err && <LoadingState label="Loading period standings" kind="table" />}
       {board && !board.asOfDate && !board.refreshing && (
-        <div className="panel"><p className="hint" style={{ margin: 0 }}>No standings yet. Check back when current prices are available.</p></div>
+        <div className="panel"><p className="hint" style={{ margin: 0 }}>{gross?"The fresh round is waiting for a fully priced portfolio refresh. Everyone begins at $0 when their starting valuation is captured.":"No standings yet. Check back when current prices are available."}</p></div>
       )}
       {board?.asOfDate && sort === "stable" && (
         <p className="hint">At least +{barPct}% across 5 snapshot days, 3 sectors, and no stock above 40% of invested holdings. Steadiest daily path first.</p>
@@ -2633,7 +2637,7 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
           <table className="leaderboard-table">
             <thead>
               <tr>
-                <th>#</th><th>Student</th><th>Return</th>
+                <th>#</th><th>Student</th><th>{gross?"Gross Gain ($)":"Return"}</th>
                 {sort === "stable" && <th>Volatility</th>}
                 <th>Sectors</th><th title="Share of invested holdings in the largest stock">Largest position</th><th>Holdings</th>
               </tr>
@@ -2643,7 +2647,7 @@ function Leaderboard({ board, err, sort, onSort, refreshing }: {
                 <tr key={`${e.name}:${i}`} className={e.self ? "is-self" : undefined}>
                   <td><span className={`leaderboard-rank rank-${Math.min(i + 1, 3)}`}>{i + 1}</span></td>
                   <td>{e.name}{e.self ? " (you)" : ""}</td>
-                  <td className={`lb-return ${e.returnBp >= 0 ? "up" : "down"}`}>{fmtBp(e.returnBp)}</td>
+                  <td className={`lb-return ${resultValue(e) >= 0 ? "up" : "down"}`}>{resultText(e)}</td>
                   {sort === "stable" && <td>{e.volBp == null ? "—" : `±${(e.volBp / 100).toFixed(2)}%/day`}</td>}
                   <td>{e.sectorsHeld ?? "—"}</td>
                   <td>{e.topPositionBp == null ? "—" : `${Math.round(e.topPositionBp / 100)}%`}</td>
