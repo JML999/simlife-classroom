@@ -51,6 +51,7 @@ import {
 } from "./class-modules.js";
 import { collegeDraftFor, saveCollegeDraft, submitCollegePaths, ensureCollegeAssignment, ensureCollegeCostsAssignment, collegeCostsInitialResponse, collegeResponseVersion } from "./college.js";
 import { moduleProgress, studentModuleDetail } from "./module-progress.js";
+import { ensureBondAssignment, bondMissionState, submitBondMission } from "./bonds.js";
 import { leaderboardFor, STABLE_MIN_RETURN_BP } from "./leaderboard.js";
 import { ensureLeaderboardFresh } from "./leaderboard-refresh.js";
 import { LIFE_EVENT_OPTIONS, spinLifeEvent, classLifeEvents, studentLifeEvents, LifeEventError } from "./life-events.js";
@@ -988,7 +989,7 @@ app.get("/api/class/posts", requireAuth, async (req, res) => {
     const key = post.kind !== "announcement" ? classModuleKey("post", post.id) : null;
     if (key && hidden.has(key)) continue;
     const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
-    const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
+    const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : post.kind === "bond_mission" ? await bondMissionState(post, user.id) : null;
     const draft = post.kind !== "announcement" ? await collegeDraftFor(post.id, user.id) : null;
     out.push({ ...post, hasDraft: !!draft, body: post.kind === "announcement" ? post.body : undefined, hasEarlierSubmission: post.kind === "college_pathways" && !!submission && submission.response?.version !== collegeResponseVersion(post), submittedAt: post.kind === "college_pathways" && submission?.response?.version !== collegeResponseVersion(post) ? null : submission?.createdAt ?? null, mission, moduleNumber: key ? moduleNumbers.get(key) : undefined });
   }
@@ -1007,7 +1008,7 @@ app.get("/api/class/posts/:id", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Class post not found." }); return;
   }
   const submission = post.kind !== "announcement" ? await latestClassPostSubmission(post.id, user.id) : null;
-  const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : null;
+  const mission = post.kind === "portfolio_mission" ? await portfolioMissionState(post, user.id) : post.kind === "etf_mission" ? await etfMissionState(post, user.id) : post.kind === "bond_mission" ? await bondMissionState(post, user.id) : null;
   const draft = post.kind !== "announcement" ? await collegeDraftFor(post.id, user.id) : null;
   res.json({ ...post, submission, mission, draft, studentId: user.id, ...(post.kind === "college_pathways" && collegeResponseVersion(post) === 3 ? { initialResponse: await collegeCostsInitialResponse(user.id) } : {}) });
 });
@@ -1099,7 +1100,7 @@ app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Mission not found." }); return;
   }
   try {
-    res.json(await (post.kind === "college_pathways" ? submitCollegePaths : post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
+    res.json(await (post.kind === "bond_mission" ? submitBondMission : post.kind === "college_pathways" ? submitCollegePaths : post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
       post, userId: user.id, response: req.body?.response,
       idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
     }));
@@ -1568,6 +1569,7 @@ async function boot() {  validateProductionEnv();
   await ensureCollegeAssignment();
   await ensureCollegeCostsAssignment();
   await ensureEducationAssignment();
+  await ensureBondAssignment();
   await ensureGrossGainRound();
   await ensureEducationBills();
   await ensureMonthlyBills();

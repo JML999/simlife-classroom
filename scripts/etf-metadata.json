@@ -1,6 +1,8 @@
 {
   "note": "Hand-curated classification for the funds in the SimLife ticker directory. Wikipedia's S&P 500 table supplies sectors for individual stocks; ETFs are not on that list, so they are classified here. breadth is the field the Class-tab checks read: BROAD = spread across sectors; TILTED = diversified but deliberately leaning one way; SECTOR = one sector only; SINGLE_ASSET = one thing. Review breadth before relying on it for an assignment - it is a judgment call, not a fact.",
   "funds": {
+    "SGOV": { "name": "iShares 0-3 Month Treasury Bond ETF", "assetClass": "BOND", "region": "US", "breadth": "TILTED", "capTier": "", "what": "U.S. Treasury bills with 0-3 months remaining. Small interest-rate price swings, but income changes with short-term rates." },
+    "LQD": { "name": "iShares iBoxx $ Investment Grade Corporate Bond ETF", "assetClass": "BOND", "region": "US", "breadth": "TILTED", "capTier": "", "what": "Investment-grade company bonds. Both company repayment risk and changing interest rates can affect the price." },
     "SPY": { "name": "SPDR S&P 500 ETF", "assetClass": "EQUITY", "region": "US", "breadth": "BROAD", "capTier": "LARGE", "what": "The 500 largest U.S. companies." },
     "VOO": { "name": "Vanguard S&P 500 ETF", "assetClass": "EQUITY", "region": "US", "breadth": "BROAD", "capTier": "LARGE", "what": "The 500 largest U.S. companies." },
     "VTI": { "name": "Vanguard Total Stock Market ETF", "assetClass": "EQUITY", "region": "US", "breadth": "BROAD", "capTier": "ALL", "what": "Essentially the whole U.S. stock market, large and small." },

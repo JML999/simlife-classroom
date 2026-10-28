@@ -3,8 +3,10 @@ import { type ClassPost, ClassPostError } from "./class-posts.js";
 import { one, run, nowIso } from "./db.js";
 import { classModuleKey, hiddenClassModuleKeys } from "./class-modules.js";
 import { saveCollegeDraft } from "./college.js";
+import { saveBondDraft } from "./bonds.js";
 export async function saveModuleDraft(post: ClassPost, userId: string, value: any) {
   if (post.kind === "college_pathways") return saveCollegeDraft(post, userId, value);
+  if (post.kind === "bond_mission") return saveBondDraft(post, userId, value);
   const user = await one<{ role: string; class_id: string | null }>(`SELECT role, class_id FROM users WHERE id = ?`, [userId]);
   if (!user || user.role !== "student" || !["portfolio_mission", "etf_mission"].includes(post.kind) || post.status !== "published"
     || (post.classId && post.classId !== user.class_id) || (await hiddenClassModuleKeys(user.class_id)).has(classModuleKey("post", post.id))) {

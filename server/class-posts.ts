@@ -12,7 +12,7 @@ import { ROOT } from "./env.js";
 import { holdingsFor } from "./ledger.js";
 import { newId, nowIso, one, q, run } from "./db.js";
 
-export type ClassPostKind = "announcement" | "portfolio_mission" | "etf_mission" | "college_pathways";
+export type ClassPostKind = "announcement" | "portfolio_mission" | "etf_mission" | "college_pathways" | "bond_mission";
 
 export class ClassPostError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "NOT_READY";
@@ -76,7 +76,7 @@ export async function createClassPost(opts: {
   kind: string; classId?: string | null; title: string; summary?: string; body?: string;
   spec?: unknown; heroUrl?: string | null; createdBy?: string | null;
 }): Promise<ClassPost> {
-  if (opts.kind !== "announcement" && opts.kind !== "portfolio_mission" && opts.kind !== "etf_mission" && opts.kind !== "college_pathways") {
+  if (opts.kind !== "announcement" && opts.kind !== "portfolio_mission" && opts.kind !== "etf_mission" && opts.kind !== "college_pathways" && opts.kind !== "bond_mission") {
     throw new ClassPostError("INVALID_INPUT", "Choose an announcement, investing assignment, or college assignment.");
   }
   const title = String(opts.title || "").trim();

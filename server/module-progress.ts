@@ -1,4 +1,5 @@
 import { educationState } from "./education.js";
+import { bondMissionState, bondAnswerEvidence, cleanBondResponse } from "./bonds.js";
 /**
  * Per-student module progress for the teacher dashboard.
  *
@@ -116,6 +117,10 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
         if (draft || await latestClassPostSubmission(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
         continue;
       }
+      if (post.kind === "bond_mission") {
+        if ((await bondMissionState(post,s.id)).met) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+        continue;
+      }
       const state = post.kind === "etf_mission" ? await etfMissionState(post, s.id) : await portfolioMissionState(post, s.id);
       if (post.kind === "etf_mission" ? state.etfs.length > 0 : state.counts.companies > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
     }
@@ -213,6 +218,15 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       if (!post) continue;
       const submission = await latestClassPostSubmission(post.id, userId);
       const draft = await collegeDraftFor(post.id, userId);
+      if (post.kind === "bond_mission") {
+        const live = await bondMissionState(post,userId);
+        const response = submission?.response ?? draft?.response ?? null;
+        const evidence = submission?.evidence ?? bondAnswerEvidence(cleanBondResponse(response),live);
+        out.push({ key:mod.key,kind:"post",id:mod.id,moduleNumber:mod.moduleNumber,container:"investing",title:mod.title,
+          status:submission?"submitted":draft||live.met?"in_progress":"not_started",partsDone:evidence.answered+Number(evidence.selectedHeld)+Number(evidence.explained),partsTotal:7,partsLabel:"answers",
+          detail:{missionKind:"bond_mission",submittedAt:submission?.createdAt??null,draftAt:draft?.updatedAt??null,response,evidence,liveBonds:live.bonds} });
+        continue;
+      }
       if (post.kind === "college_pathways") {
         const currentSubmission = submission?.response?.version === collegeResponseVersion(post) ? submission : null;
         const response = currentSubmission?.response ?? draft?.response ?? submission?.response ?? null;
