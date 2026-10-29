@@ -527,3 +527,7 @@ Still open:
 ### 2026-10-28 — Long-term Treasury comparison
 - Added existing, already-qualifying TLT to the module's visible examples and lecture table: now five funds. Issuer page verified TLT targets Treasury bonds with more than twenty years remaining. Module explicitly compares SGOV/IEF/TLT and explains that longer fixed-rate maturities generally bring larger rate-driven price swings; government backing does not guarantee a stable ETF share price. Recognition logic and assignment requirements unchanged.
 - Updated nine-slide deck: `../outputs/simlife-bonds-2026-10-28/deliverables/Interest-Rates-and-Bonds-With-Long-Term-Treasuries.pptx`. Expanded editable comparison table fits and was visually reviewed; source added to speaker notes. Typecheck, 160 tests and production build passed. Prepared locally; not pushed/live.
+
+### 2026-10-29 — Pending classroom updates pushed
+- User authorized pushing all pending updates. Gate rerun passed: typecheck, 160/160 tests and build. Successfully pushed origin/main from a7f41c4 through f6f0f25, including 21345e6 (cost basis), 2992e4c (closed trades/returns), 102f12f (Gross Gain), c01cff0 (bond module/catalog) and f6f0f25 (TLT guide).
+- First post-push production HTML check still served older assets index-BRPBoiSc.js/index-CLDmPcLC.css. Expected new build assets: index-CmKvyZRj.js/index-CLd0Jecg.css. Push is confirmed; Render rollout completion was not yet verified. Fresh Gross Gain baselines initialize when the new server starts. No manual production database changes in this push turn.
