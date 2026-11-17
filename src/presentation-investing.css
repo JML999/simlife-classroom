@@ -1,0 +1,27 @@
+.pitch-budget { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:24px; background:linear-gradient(120deg,#eeefe5,#fffefb); }
+.pitch-module .pitch-budget h3 { font-size:clamp(28px,4vw,44px); margin:12px 0; }
+.pitch-module .pitch-budget h3 small { font-family:var(--sans);font-size:16px;font-weight:400; }
+.pitch-budget p { margin:0;max-width:650px; }
+.pitch-budget progress { width:100%;height:12px;accent-color:#585a3a; }
+.pitch-remaining { display:grid;text-align:right;gap:4px;color:#585a3a; }
+.pitch-remaining strong { font-size:32px; }
+.pitch-remaining.over { color:#a04435; }
+.pitch-save-status { display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;margin:0 0 24px;font-size:14px; }
+.pitch-company { display:grid;grid-template-columns:80px 1fr 170px;gap:24px;align-items:center;padding:24px 0;border-bottom:1px solid #d8d7cc; }
+.pitch-company:first-child { padding-top:0; }.pitch-company:last-child{border:0;padding-bottom:0;}
+.pitch-symbol { border-radius:14px;background:#eeefe5;color:#484b32;font-weight:700;text-align:center;padding:20px 6px; }
+.pitch-company h3 { margin:0 0 6px;font-size:21px; }.pitch-company p { margin:0;font-size:14px; }
+.pitch-company.own { opacity:.65; }.pitch-company label { display:grid;gap:8px;font-size:13px; }
+.pitch-dollar-input { display:flex;align-items:center;border:1px solid #cfcebf;border-radius:10px;background:#faf9f5;overflow:hidden; }
+.pitch-dollar-input>span { padding-left:14px;font-size:20px; }.pitch-dollar-input input { min-width:0;width:100%;border:0;background:transparent;font-size:21px;box-shadow:none; }
+.pitch-confirm { border:2px solid #585a3a; }.pitch-confirm li,.pitch-results li { display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #dddcd1; }
+.pitch-confirm ul,.pitch-results ol { padding:0;list-style:none; }.pitch-receipt th,.pitch-receipt td { padding:14px;text-align:left; }
+.pitch-teacher fieldset { min-width:0;border:0;padding:0; }.pitch-teacher legend { font-weight:700;margin:12px 0; }
+.pitch-teacher .field { display:grid;gap:10px;max-width:440px;margin:16px 0 28px; }.pitch-editor-list { display:grid;gap:16px;margin:20px 0; }
+.pitch-editor-row { display:grid;grid-template-columns:minmax(160px,1fr) 120px auto;gap:14px;align-items:end; }.pitch-editor-row label { display:grid;gap:8px; }.pitch-editor-row input,.pitch-editor-row select { width:100%;min-width:0; }
+.pitch-reveal { display:flex;align-items:center;gap:12px;margin:28px 0; }.pitch-reveal input{width:auto;}
+.pitch-loading { min-height:350px; }.pitch-loading>div { height:52px;background:#eeede6;border-radius:10px;margin-top:20px; }
+@media(max-width:600px){.pitch-company{grid-template-columns:64px 1fr;gap:14px;}.pitch-company>label{grid-column:2;}.pitch-editor-row{grid-template-columns:1fr 90px;}.pitch-editor-row>button{grid-column:1/-1;}.pitch-remaining{text-align:left;}.pitch-save-status{display:grid;}}
+
+.pitch-module .module-head .eyebrow { display:block;margin-top:20px; }
+.pitch-module .pitch-budget small { line-height:1.5; }

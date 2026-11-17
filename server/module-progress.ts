@@ -113,6 +113,7 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
       if (submittedPosts[s.id]?.has(post.id)) continue;
       const draft = await collegeDraftFor(post.id, s.id);
       if (draft) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+      if (post.kind === "presentation_investing") continue;
       if (post.kind === "college_pathways") {
         if (draft || await latestClassPostSubmission(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
         continue;
@@ -218,6 +219,12 @@ export async function studentModuleDetail(userId: string): Promise<ModuleSummary
       if (!post) continue;
       const submission = await latestClassPostSubmission(post.id, userId);
       const draft = await collegeDraftFor(post.id, userId);
+      if (post.kind === "presentation_investing") {
+        const draft=await collegeDraftFor(post.id,userId),response=submission?.response??draft?.response??{allocations:[]};
+        const allocated=(response.allocations||[]).reduce((sum:number,p:any)=>sum+p.cents,0);
+        out.push({...mod,status:submission?"submitted":draft?"in_progress":"not_started",partsDone:Math.min(500,allocated/100),partsTotal:500,partsLabel:"answers",detail:{missionKind:"presentation_investing",submittedAt:submission?.createdAt??null,draftAt:draft?.updatedAt??null,response,evidence:submission?.evidence}});
+        continue;
+      }
       if (post.kind === "bond_mission") {
         const live = await bondMissionState(post,userId);
         const response = submission?.response ?? draft?.response ?? null;

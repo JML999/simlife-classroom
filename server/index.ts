@@ -1,3 +1,5 @@
+import { ensurePresentationAssignment, presentationState, configurePresentation, teacherPresentationState, investPresentation } from "./presentation-investing.js";
+import { PRESENTATION_POST_ID } from "../shared/presentation-investing.js";
 import { ensureGrossGainRound, grossGainsFor } from "./gross-gains.js";
 import { ensureMonthlyBills, setMonthlyBilling } from "./monthly-bills.js";
 import { monthlyFromWeekly } from "../shared/education-paths.js";
@@ -1026,6 +1028,23 @@ app.put("/api/class/posts/:id/draft", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/class/presentation-investing", requireAuth, async (req, res) => {
+  const user = await currentUser(req);
+  if (!user || user.role !== "student") { res.status(403).json({error:"Student access only."}); return; }
+  res.set("Cache-Control", "private, no-store");
+  try { res.json(await presentationState(user.id)); }
+  catch(err) { if(err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({error:err.message}); return; } throw err; }
+});
+app.get("/api/teacher/classes/:id/presentation-investing", requireCurrentTeacher, async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+  try { res.json(await teacherPresentationState(String(req.params.id))); }
+  catch(err) { if(err instanceof ClassPostError) { res.status(404).json({error:err.message}); return; } throw err; }
+});
+app.put("/api/teacher/classes/:id/presentation-investing", requireCurrentTeacher, async (req, res) => {
+  try { res.json(await configurePresentation(String(req.params.id), (req as any).currentUser.id, req.body)); }
+  catch(err) { if(err instanceof ClassPostError) { res.status(err.code === "NOT_FOUND" ? 404 : 400).json({error:err.message}); return; } throw err; }
+});
+
 app.get("/api/class/posts/:id/education", requireAuth, async (req, res) => {
   const user = await currentUser(req); if (!user) { res.status(401).json({error:"Sign in required."}); return; }
   const post = await getClassPost(String(req.params.id)); if (!post) { res.status(404).json({error:"Assignment not found."}); return; }
@@ -1100,6 +1119,11 @@ app.post("/api/class/posts/:id/submit", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Mission not found." }); return;
   }
   try {
+    if (post.kind === "presentation_investing") {
+      if (post.id !== PRESENTATION_POST_ID) { res.status(404).json({error:"Assignment not found."}); return; }
+      if (req.body?.studentId !== user.id) { res.status(409).json({error:"Your signed-in account changed. Reopen this assignment."}); return; }
+      res.json(await investPresentation(user.id, req.body?.response, quotes)); return;
+    }
     res.json(await (post.kind === "bond_mission" ? submitBondMission : post.kind === "college_pathways" ? submitCollegePaths : post.kind === "etf_mission" ? submitEtfMission : submitPortfolioMission)({
       post, userId: user.id, response: req.body?.response,
       idempotencyKey: typeof req.body?.idempotencyKey === "string" ? req.body.idempotencyKey : undefined,
@@ -1570,6 +1594,7 @@ async function boot() {  validateProductionEnv();
   await ensureCollegeCostsAssignment();
   await ensureEducationAssignment();
   await ensureBondAssignment();
+  await ensurePresentationAssignment();
   await ensureGrossGainRound();
   await ensureEducationBills();
   await ensureMonthlyBills();

@@ -49,6 +49,8 @@ const GICS_SECTORS = new Set([
 //
 // [ticker, name, GICS sector, sub-industry, capTier]
 const EXTRA_STOCKS = [
+  ["SNAP", "Snap Inc.", "Communication Services", "Interactive Media & Services", "MID"],
+  ["YETI", "YETI Holdings, Inc.", "Consumer Discretionary", "Leisure Products", "MID"],
   ["GME", "GameStop", "Consumer Discretionary", "Specialty Retail", "SMALL"],
   ["BBW", "Build-A-Bear Workshop", "Consumer Discretionary", "Specialty Retail", "SMALL"],
   ["CROX", "Crocs, Inc.", "Consumer Discretionary", "Footwear", "MID"],

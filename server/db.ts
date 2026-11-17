@@ -585,6 +585,15 @@ export async function initSchema(): Promise<void> {
       bill_id TEXT NOT NULL UNIQUE REFERENCES bills(id), PRIMARY KEY(user_id,kind,due_date)
     )`,
 
+    `CREATE TABLE IF NOT EXISTS presentation_investing_settings (
+      class_id TEXT PRIMARY KEY REFERENCES classes(id), opens_at TEXT, reveal INTEGER NOT NULL DEFAULT 0,
+      companies TEXT NOT NULL DEFAULT '[]', actor_id TEXT NOT NULL REFERENCES users(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS presentation_investing_receipts (
+      user_id TEXT PRIMARY KEY REFERENCES users(id), class_id TEXT NOT NULL REFERENCES classes(id),
+      response TEXT NOT NULL, receipt TEXT NOT NULL
+    )`,
+
     `CREATE TABLE IF NOT EXISTS gross_gain_rounds (
       id TEXT PRIMARY KEY, starts_at TEXT NOT NULL
     )`,

@@ -1,3 +1,5 @@
+import { PRESENTATION_POST_ID } from "../shared/presentation-investing.js";
+import { savePresentationDraft } from "./presentation-investing.js";
 /** Partial mission write-ups are drafts, never proof of completion or submissions. */
 import { type ClassPost, ClassPostError } from "./class-posts.js";
 import { one, run, nowIso } from "./db.js";
@@ -5,6 +7,7 @@ import { classModuleKey, hiddenClassModuleKeys } from "./class-modules.js";
 import { saveCollegeDraft } from "./college.js";
 import { saveBondDraft } from "./bonds.js";
 export async function saveModuleDraft(post: ClassPost, userId: string, value: any) {
+  if (post.kind === "presentation_investing" && post.id === PRESENTATION_POST_ID) return savePresentationDraft(userId, value);
   if (post.kind === "college_pathways") return saveCollegeDraft(post, userId, value);
   if (post.kind === "bond_mission") return saveBondDraft(post, userId, value);
   const user = await one<{ role: string; class_id: string | null }>(`SELECT role, class_id FROM users WHERE id = ?`, [userId]);

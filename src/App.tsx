@@ -1,3 +1,4 @@
+import { PresentationInvesting, TeacherPresentationInvesting } from "./PresentationInvesting";
 import { ClosedTrades } from "./ClosedTrades";
 import { BondAssignment, BondReview } from "./BondAssignment";
 import { EDUCATION_PATHS } from "../shared/education-paths";
@@ -936,6 +937,7 @@ function TeacherSortDetail({ mod }: { mod: any }) {
 // then the submitted write-up (picks + reflection) when there is one.
 function TeacherMissionDetail({ mod }: { mod: any }) {
   const d = mod.detail || {};
+  if (d.missionKind === "presentation_investing") return <div className="module-submission"><p>{d.submittedAt ? "Purchases finalized" : d.draftAt ? "Allocation saved · no purchases yet" : "Not started"}</p><ul>{(d.response?.allocations || []).map((p:any)=><li key={p.ticker}><strong>{p.ticker}</strong> · {money(p.cents)}</li>)}</ul></div>;
   if (d.missionKind === "bond_mission") return <BondReview detail={d} />;
   if (d.missionKind === "college_pathways") return <div className="module-submission"><p className="small">{d.submittedAt ? `Submitted ${new Date(d.submittedAt).toLocaleString()}` : d.draftAt ? `Draft saved ${new Date(d.draftAt).toLocaleString()}` : d.earlierSubmittedAt ? `Earlier version submitted ${new Date(d.earlierSubmittedAt).toLocaleString()} · revised worksheet not submitted yet` : "Not started"}</p>{d.response && <CollegeResponseReview response={d.response} />}{d.education?.decision && <p><strong>Official outcome:</strong> {d.education.decision.outcome.title} · Loan: {money(d.education.decision.terms.monthlyCents)}/month · Remaining scheduled repayment: {money(d.education.decision.remainingCents)}</p>}</div>;
   if (mod.status === "not_started") return <p className="small">Not started — no qualifying trading yet.</p>;
@@ -2185,14 +2187,14 @@ function TeacherBanking({ periodBar, classId, classes, onChanged, onOpenStudent 
 
 // Shared frame for module cards; each activity has its own illustration.
 function ModuleCover({ moduleNumber, kindLabel, submitted, art }: {
-  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college" | "costs" | "education" | "bonds";
+  moduleNumber?: number; kindLabel: string; submitted?: boolean; art: "sort" | "portfolio" | "etf" | "college" | "costs" | "education" | "bonds" | "pitch";
 }) {
   return (
     <div className={`module-cover${art === "etf" ? " module-cover-etf" : ""}`}>
       <span className="module-kind">{moduleNumber ? `Module ${moduleNumber} · ${kindLabel}` : kindLabel}</span>
       {submitted && <span className="module-complete">Submitted ✓</span>}
       <div className="module-cover-art" aria-hidden="true">
-        {art === "bonds" ? <img src="/module-art/bonds.svg" alt="" /> : art === "education" ? <img src="/module-art/education-decision.svg" alt="" /> : art === "costs" ? <img src="/module-art/college-costs.svg" alt="" /> : art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
+        {art === "pitch" ? <img src="/module-art/presentation-investing.svg" alt="" /> : art === "bonds" ? <img src="/module-art/bonds.svg" alt="" /> : art === "education" ? <img src="/module-art/education-decision.svg" alt="" /> : art === "costs" ? <img src="/module-art/college-costs.svg" alt="" /> : art === "college" ? <img src="/module-art/college-paths.svg" alt="" /> : art === "etf" ? <img src="/module-art/two-etf-goals.svg" alt="" /> : art === "sort" ? (
           <svg viewBox="0 0 280 132" fill="none">
             <circle cx="140" cy="32" r="18" fill="#f4e7c4" stroke="#585a3a" strokeWidth="3" />
             <text x="140" y="39" textAnchor="middle" fontSize="20" fill="#585a3a" style={{ fontFamily: "var(--serif)", fontWeight: 600 }}>$</text>
@@ -2242,7 +2244,7 @@ function ModuleHead({ moduleNumber, kind, title, detail, onBack }: {
 function ClassSection({ onOpenInvesting, onCareerChanged }: { onOpenInvesting: () => void; onCareerChanged: () => void }) {
   const [activities, setActivities] = useState<any[] | null>(null);
   const [posts, setPosts] = useState<any[] | null>(null);
-  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college" | "costs" | "education" | "bonds"; id: string; moduleNumber?: number } | null>(null);
+  const [open, setOpen] = useState<{ kind: "sort" | "mission" | "etf" | "college" | "costs" | "education" | "bonds" | "pitch"; id: string; moduleNumber?: number } | null>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -2260,6 +2262,7 @@ function ClassSection({ onOpenInvesting, onCareerChanged }: { onOpenInvesting: (
   if (open?.kind === "sort") return <SortActivity id={open.id} moduleNumber={open.moduleNumber} onBack={close} />;
   if (open?.kind === "mission") return <PortfolioMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
   if (open?.kind === "etf") return <EtfMission id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
+  if (open?.kind === "pitch") return <PresentationInvesting onBack={close} />;
   if (open?.kind === "bonds") return <BondAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} onOpenInvesting={onOpenInvesting} />;
 
   if (open?.kind === "education") return <EducationAssignment id={open.id} moduleNumber={open.moduleNumber} onBack={close} onApplied={onCareerChanged} />;
@@ -2269,9 +2272,11 @@ function ClassSection({ onOpenInvesting, onCareerChanged }: { onOpenInvesting: (
   const announcements = posts?.filter((post) => post.kind === "announcement") ?? [];
   const missions = posts?.filter((post) => post.kind === "portfolio_mission") ?? [];
   const etfMissions = posts?.filter((post) => post.kind === "etf_mission") ?? [];
+  const pitchPosts = posts?.filter(post => post.kind === "presentation_investing") ?? [];
   const bondMissions = posts?.filter((post) => post.kind === "bond_mission") ?? [];
   const collegePosts = posts?.filter(post => post.kind === "college_pathways") ?? [];
   const modules = [
+    ...pitchPosts.map(post => ({ kind: "pitch" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...collegePosts.map(post => ({ kind: "college" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...missions.map((post) => ({ kind: "mission" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
     ...etfMissions.map((post) => ({ kind: "etf" as const, moduleNumber: post.moduleNumber, createdAt: post.createdAt, data: post })),
@@ -2307,6 +2312,9 @@ function ClassSection({ onOpenInvesting, onCareerChanged }: { onOpenInvesting: (
         {visibleModules.map((module) => module.kind === "college" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={() => setOpen({ kind: post.spec?.responseVersion === 4 ? "education" : post.spec?.responseVersion === 3 ? "costs" : "college", id: post.id, moduleNumber: post.moduleNumber })}>
           <ModuleCover moduleNumber={post.moduleNumber} kindLabel="College & career" submitted={!!post.submittedAt} art={post.spec?.responseVersion === 4 ? "education" : post.spec?.responseVersion === 3 ? "costs" : "college"} />
           <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt ? "badge-paid" : "badge-due"}>{post.submittedAt ? "Submitted" : post.hasDraft ? "Draft saved" : post.hasEarlierSubmission ? "Earlier work saved · revised assignment" : "Not started"}</span></div>
+        </button>; })() : module.kind === "pitch" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={()=>setOpen({kind:"pitch",id:post.id,moduleNumber:post.moduleNumber})}>
+          <ModuleCover moduleNumber={post.moduleNumber} kindLabel="Presentation day" submitted={!!post.submittedAt} art="pitch" />
+          <div className="module-card-body"><span className="eyebrow">Presentation day</span><h3>{post.title}</h3><p>{post.summary}</p><span className={post.submittedAt?"badge-paid":"badge-due"}>{post.submittedAt?"Investments complete":post.hasDraft?"Allocation saved":"Plan your $500"}</span></div>
         </button>; })() : module.kind === "bonds" ? (() => { const post = module.data; return <button key={`post:${post.id}`} className="module-card" onClick={()=>setOpen({kind:"bonds",id:post.id,moduleNumber:post.moduleNumber})}>
           <ModuleCover moduleNumber={post.moduleNumber} kindLabel="Interest & bonds" submitted={!!post.submittedAt} art="bonds" />
           <div className="module-card-body"><h3>{post.title}</h3><p>{post.summary}</p><div className="module-progress-line"><span>5 quick questions</span><span>{post.mission?.bonds.length??0} bond ETFs held</span></div><span className={post.submittedAt?"badge-paid":"badge-due"}>{post.submittedAt?"Submitted":post.hasDraft?"Draft saved":"Not submitted"}</span></div>
@@ -3471,6 +3479,7 @@ function TeacherClass({ classes, classId, periodBar, roster, moduleProgress, onO
       {err && <div className="error" role="alert">{err}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
 
+      {classId && <TeacherPresentationInvesting key={classId} classId={classId} />}
       <TeacherModuleVisibility classId={classId} refreshKey={moduleRevision} onChanged={onDashboardChanged} />
 
       <div className="panel class-module-roster">
