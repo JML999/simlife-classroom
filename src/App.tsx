@@ -52,7 +52,7 @@ export default function App() {
 
   const loadApp = useCallback(async () => {
     setLoading(true); setBootError("");
-    try { setConfig(await api("/api/auth/config")); await refresh(true); }
+    try { await Promise.all([api("/api/auth/config").then(setConfig), refresh(true)]); }
     catch (e: any) { setBootError(e.message); }
     finally { setLoading(false); }
   }, [refresh]);
@@ -216,8 +216,10 @@ function Student({ me, refreshSession }: { me: Me; refreshSession: () => void })
 
   const load = useCallback(async () => {
     try {
-      setPf(await api<Portfolio>("/api/portfolio"));
-      setHistory((await api<{ entries: any[] }>("/api/history")).entries);
+      await Promise.all([
+        api<Portfolio>("/api/portfolio").then(setPf),
+        api<{ entries: any[] }>("/api/history").then(result => setHistory(result.entries)),
+      ]);
       setErr("");
     } catch (e: any) { setErr(e.message); }
   }, []);
@@ -2557,13 +2559,11 @@ function LeaderboardSection() {
     const load = () => api<any>(`/api/class/leaderboard?period=${period}&sort=${sort}`, { cache: "no-store" })
       .then((result) => {
         if (cancelled) return;
-        if (result.refreshing && !boardCache.current.has(key)) {
-          setPendingKey(key); // first view waits for current prices instead of showing stale zeroes
-        } else {
-          boardCache.current.set(key, result);
-          setBoardState({ key, data: result });
-          setPendingKey(null);
-        }
+        // Saved standings are useful immediately. Background quote refreshes
+        // must not hide them behind a three-second polling cycle.
+        boardCache.current.set(key, result);
+        setBoardState({ key, data: result });
+        setPendingKey(result.refreshing ? key : null);
         setErrorState(null);
         if (result.refreshing) retry = window.setTimeout(load, 3000);
       })

@@ -1,3 +1,4 @@
+import { loadDirectory } from "./quotes.js";
 import { educationState } from "./education.js";
 import { bondMissionState, bondAnswerEvidence, cleanBondResponse } from "./bonds.js";
 /**
@@ -79,6 +80,8 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
   const submittedSorts: Record<string, Set<string>> = {}; // userId -> activityIds
   const draftedSorts: Record<string, Set<string>> = {};
   const submittedPosts: Record<string, Set<string>> = {};
+  const earlierPosts: Record<string, Set<string>> = {};
+  const draftedPosts: Record<string, Set<string>> = {};
 
   if (sortIds.length) {
     const marks = sortIds.map(() => "?").join(",");
@@ -96,34 +99,44 @@ async function progressForGroup(classId: string | null, students: StudentRef[]):
     const subs = await q<{ post_id: string; user_id: string; response: string; kind: string; spec: string }>(
       `SELECT s.post_id, s.user_id, s.response, p.kind, p.spec FROM class_post_submissions s JOIN class_posts p ON p.id = s.post_id WHERE s.post_id IN (${marks})`, postIds,
     );
+    const drafts = await q<{post_id:string;user_id:string}>(`SELECT post_id,user_id FROM class_post_drafts WHERE post_id IN (${marks})`,postIds);
+    for (const r of drafts) (draftedPosts[r.user_id] ??= new Set()).add(r.post_id);
     for (const r of subs) {
+      (earlierPosts[r.user_id] ??= new Set()).add(r.post_id);
       if (r.kind === "college_pathways" && JSON.parse(r.response).version !== collegeResponseVersion({ spec: JSON.parse(r.spec || "{}") })) continue;
       (submittedPosts[r.user_id] ??= new Set()).add(r.post_id);
     }
   }
 
-  // Any current stock holding counts as work started, even before either
-  // threshold has been reached.
-  const missionPosts = [];
-  for (const id of postIds) missionPosts.push(await getClassPost(id));
+  // Progress needs only presence of current stocks/funds, not a full priced
+  // portfolio or cost basis for each student and each assignment. One grouped
+  // ledger read covers the roster, including partial/full exits and rebuys.
+  const heldKinds = new Map<string, Set<string>>();
+  if (students.length && modules.some(m => m.kind === "post" && ["portfolio_mission","etf_mission","bond_mission"].includes(m.postKind || ""))) {
+    const marks=students.map(()=>"?").join(",");
+    const held=await q<{user_id:string;ticker:string}>(`SELECT a.user_id,l.ticker FROM ledger l JOIN accounts a ON a.id=l.account_id
+      WHERE a.user_id IN (${marks}) AND l.ticker IS NOT NULL AND l.kind IN ('buy','sell')
+      GROUP BY a.user_id,l.ticker HAVING SUM(l.qty_micro)>0`,students.map(s=>s.id));
+    const directory=new Map(loadDirectory().map(s=>[s.ticker,s]));
+    for(const row of held){
+      const security=directory.get(row.ticker);if(!security)continue;
+      const kinds=heldKinds.get(row.user_id)??new Set<string>();
+      kinds.add(security.kind);
+      if(security.kind==="ETF" && security.assetClass==="BOND")kinds.add("BOND");
+      heldKinds.set(row.user_id,kinds);
+    }
+  }
   const liveMissionStarted: Record<string, Set<string>> = {};
-  for (const post of missionPosts) {
-    if (!post) continue;
-    for (const s of students) {
-      if (submittedPosts[s.id]?.has(post.id)) continue;
-      const draft = await collegeDraftFor(post.id, s.id);
-      if (draft) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
-      if (post.kind === "presentation_investing") continue;
-      if (post.kind === "college_pathways") {
-        if (draft || await latestClassPostSubmission(post.id, s.id)) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
-        continue;
-      }
-      if (post.kind === "bond_mission") {
-        if ((await bondMissionState(post,s.id)).met) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
-        continue;
-      }
-      const state = post.kind === "etf_mission" ? await etfMissionState(post, s.id) : await portfolioMissionState(post, s.id);
-      if (post.kind === "etf_mission" ? state.etfs.length > 0 : state.counts.companies > 0) (liveMissionStarted[s.id] ??= new Set()).add(post.id);
+  for(const mod of modules.filter(m=>m.kind==="post")){
+    for(const student of students){
+      if(submittedPosts[student.id]?.has(mod.id))continue;
+      const kinds=heldKinds.get(student.id);
+      const started=draftedPosts[student.id]?.has(mod.id)
+        || (mod.postKind==="college_pathways" && earlierPosts[student.id]?.has(mod.id))
+        || (mod.postKind==="portfolio_mission" && kinds?.has("STOCK"))
+        || (mod.postKind==="etf_mission" && kinds?.has("ETF"))
+        || (mod.postKind==="bond_mission" && kinds?.has("BOND"));
+      if(started)(liveMissionStarted[student.id]??=new Set()).add(mod.id);
     }
   }
 

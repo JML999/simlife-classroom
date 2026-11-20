@@ -49,3 +49,37 @@ test("hidden modules are class-specific and replacement rejects junk keys", asyn
   await modules.replaceHiddenClassModules("module-class", []);
   assert.equal((await modules.hiddenClassModuleKeys("module-class")).size, 0);
 });
+
+test("batched roster progress agrees with individual details for drafts, prior revisions, sales and fund types", async () => {
+  const progress = await import("./module-progress.js");
+  const now=db.nowIso(),classId="batch-progress-class";
+  await db.run(`INSERT INTO classes(id,name,join_code,created_at) VALUES (?,?,?,?)`,[classId,"Batch progress","BATCH",now]);
+  for(const id of ["batch-empty","batch-held","batch-sold","batch-crypto"]){
+    await db.run(`INSERT INTO users(id,name,role,class_id,created_at) VALUES (?,?,'student',?,?)`,[id,id,classId,now]);
+    await db.run(`INSERT INTO accounts(id,user_id,cash_cents,created_at) VALUES (?,?,0,?)`,[`acct-${id}`,id,now]);
+  }
+  for(const [id,kind,spec]of [["batch-stock","portfolio_mission",{}],["batch-fund","etf_mission",{}],["batch-bond","bond_mission",{}],["batch-college","college_pathways",{responseVersion:2}] ] as const){
+    await db.run(`INSERT INTO class_posts(id,kind,class_id,title,summary,body,spec,status,created_at) VALUES (?,?,?,?,'','',?,'published',?)`,[id,kind,classId,id,JSON.stringify(spec),now]);
+  }
+  for(const [id,ticker]of [["batch-held","AAPL"],["batch-held","VOO"],["batch-held","BND"],["batch-sold","AAPL"],["batch-sold","BND"],["batch-crypto","ETHA"]]){
+    await db.run(`INSERT INTO ledger(id,account_id,kind,amount_cents,ticker,qty_micro,price_cents,created_at) VALUES (?,?,'buy',-100,?,1000000,100,?)`,[`${id}-${ticker}`,`acct-${id}`,ticker,now]);
+    if(id==="batch-sold")await db.run(`INSERT INTO ledger(id,account_id,kind,amount_cents,ticker,qty_micro,price_cents,created_at) VALUES (?,?,'sell',100,?,-1000000,100,?)`,[`${id}-${ticker}-sell`,`acct-${id}`,ticker,now]);
+  }
+  await db.run(`INSERT INTO class_post_drafts(post_id,user_id,response,updated_at) VALUES ('batch-bond','batch-empty','{}',?)`,[now]);
+  await db.run(`INSERT INTO class_post_submissions(id,post_id,user_id,response,evidence,created_at) VALUES ('batch-prior','batch-college','batch-held','{"version":1}','{}',?)`,[now]);
+  await db.run(`INSERT INTO class_post_submissions(id,post_id,user_id,response,evidence,created_at) VALUES ('batch-sub','batch-stock','batch-sold','{}','{}',?)`,[now]);
+  const check=async()=>{
+    const batch=await progress.moduleProgress(classId);
+    for(const id of ["batch-empty","batch-held","batch-sold","batch-crypto"]){
+      const details=await progress.studentModuleDetail(id);
+      assert.deepEqual(batch.students[id],{assigned:details.length,started:details.filter(m=>m.status!=="not_started").length,completed:details.filter(m=>m.status==="submitted").length});
+    }
+    assert.equal(batch.students['batch-sold'].completed,1,"submitted work stays complete after a full sale");
+    assert.equal(batch.students['batch-held'].completed,0,"old research revision is started, not submitted for the new version");
+  };
+  await check();
+  await modules.replaceHiddenClassModules(classId,["post:batch-fund"]);
+  await check();
+  const combined=await progress.moduleProgress(null),single=await progress.moduleProgress(classId);
+  assert.deepEqual(combined.students['batch-held'],single.students['batch-held']);
+});

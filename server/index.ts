@@ -1,3 +1,4 @@
+import { dailyStatementRefresh } from "./statement-refresh.js";
 import { ensurePresentationAssignment, presentationState, configurePresentation, teacherPresentationState, investPresentation } from "./presentation-investing.js";
 import { PRESENTATION_POST_ID } from "../shared/presentation-investing.js";
 import { ensureGrossGainRound, grossGainsFor } from "./gross-gains.js";
@@ -1596,9 +1597,13 @@ async function boot() {  validateProductionEnv();
   await ensureBondAssignment();
   await ensurePresentationAssignment();
   await ensureGrossGainRound();
-  await ensureEducationBills();
-  await ensureMonthlyBills();
-  const educationTimer = setInterval(() => { void (async()=>{await ensureEducationBills();await ensureMonthlyBills();})().catch(err => console.error("[monthly statements]", err instanceof Error ? err.message : "Statement refresh failed")); }, 60_000);
+  const refreshStatements = dailyStatementRefresh(async now => {
+    await ensureEducationBills(undefined, now);
+    await ensureMonthlyBills(undefined, now);
+  });
+  await refreshStatements();
+  // Ticks check the date in memory; only a new school day reaches the DB.
+  const educationTimer = setInterval(() => { void refreshStatements().catch(err => console.error("[monthly statements]", err instanceof Error ? err.message : "Statement refresh failed")); }, 60_000);
   educationTimer.unref();
   if (demoEnabled()) await ensureDemoUsers();
   // Capture fresh starting valuations for both teaching periods after deployment.
